@@ -3,6 +3,12 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "start": "python3 launch.py",
+    "lint": "eslint .",
     "test": "node tests/babel-v3.test.mjs && node tests/world-engine.test.mjs && node tests/world-model.test.mjs"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.5",
+    "globals": "^17.9.0"
   }
 }

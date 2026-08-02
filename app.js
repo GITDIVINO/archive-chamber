@@ -31,7 +31,6 @@ const ROOM_RADIUS = 8.9;
 const APOTHEM = ROOM_RADIUS * Math.cos(Math.PI / 6);
 const WALL_WIDTH = 9.04;
 const WALL_HEIGHT = 4.8;
-const PLAYER_RADIUS = 0.28;
 const PLAYER_BOUNDARY = 6.45;
 const INTERACTION_DISTANCE = 2.2;
 const MAX_PAGE_COLUMNS = 80;
