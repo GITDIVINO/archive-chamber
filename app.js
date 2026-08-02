@@ -49,11 +49,13 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xf4f2ec);
 scene.fog = new THREE.FogExp2(0xf4f2ec, 0.018);
  
-const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.08, 170);
+const viewportWidth = () => Math.max(1, innerWidth);
+const viewportHeight = () => Math.max(1, innerHeight);
+const camera = new THREE.PerspectiveCamera(70, viewportWidth() / viewportHeight(), 0.08, 170);
 camera.position.set(0, 1.65, 5.2);
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.domElement.className = 'world-canvas';
-renderer.setSize(innerWidth, innerHeight);
+renderer.setSize(viewportWidth(), viewportHeight());
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.7));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -117,8 +119,7 @@ const bookMaterials = [
   pencilMaterial(woodTexture),
   pencilMaterial(graphiteTexture),
 ];
-const manifestoBookMaterial = pencilMaterial(paperTexture, 0xd4af37);
-const edgeCache = new WeakMap();
+const MANIFESTO_TINT = new THREE.Color(0xd4af37).toArray();
 const BOOK_HEIGHTS = [0.66];
 const BOOK_WIDTH = 0.19;
 const BOOK_STEP = 0.22;
@@ -128,35 +129,72 @@ const BOOK_STEP = 0.22;
 // change only extends the book backward into the cabinet cavity.
 const BOOK_DEPTH = 0.4;
 const BOOK_FRONT_Z = -0.35;
-const bookGeometries = BOOK_HEIGHTS.map(height => new THREE.BoxGeometry(BOOK_WIDTH, height, BOOK_DEPTH));
-const spineGeometry = new THREE.PlaneGeometry(0.17, 0.62);
-const sharedGeometries = new Set([...bookGeometries, spineGeometry]);
-const SPINE_ATLAS_SIZE = 1024;
+const bookGeometry = new THREE.BoxGeometry(BOOK_WIDTH, BOOK_HEIGHTS[0], BOOK_DEPTH);
+const bookEdgeGeometry = new THREE.EdgesGeometry(bookGeometry, 18);
+const sharedGeometries = new Set([bookGeometry, bookEdgeGeometry]);
+const SPINE_WIDTH = 0.17;
+const SPINE_HEIGHT = 0.62;
+// A 2048 atlas holds 224 spines at the same cell resolution a 1024 atlas gave
+// 56, so one room needs three atlases instead of twelve.  Every spine sharing
+// an atlas is merged into a single geometry, making each atlas one draw call.
+const SPINE_ATLAS_SIZE = 2048;
 const SPINE_CELL_WIDTH = 72;
 const SPINE_CELL_HEIGHT = 256;
 const SPINE_ATLAS_COLUMNS = Math.floor(SPINE_ATLAS_SIZE / SPINE_CELL_WIDTH);
 const SPINE_ATLAS_ROWS = Math.floor(SPINE_ATLAS_SIZE / SPINE_CELL_HEIGHT);
 const SPINES_PER_ATLAS = SPINE_ATLAS_COLUMNS * SPINE_ATLAS_ROWS;
  
-function createBox(group, geometry, material, position, rotation = 0, outlined = true) {
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.position.copy(position);
-  mesh.rotation.y = rotation;
-  mesh.castShadow = mesh.receiveShadow = true;
-  group.add(mesh);
-  if (outlined) {
-    let edges = edgeCache.get(geometry);
-    if (!edges) {
-      edges = new THREE.EdgesGeometry(geometry, 18);
-      edgeCache.set(geometry, edges);
-    }
-    const outline = new THREE.LineSegments(edges, outlineMaterial);
-    outline.position.copy(position);
-    outline.rotation.y = rotation;
-    outline.renderOrder = 2;
-    group.add(outline);
+// Cabinet carcases repeat the same handful of box sizes in every room, so both
+// the box and its outline are built once and reused for the merged batches.
+const boxGeometryCache = new Map();
+function boxGeometryFor(width, height, depth) {
+  const key = width + ':' + height + ':' + depth;
+  let entry = boxGeometryCache.get(key);
+  if (!entry) {
+    const geometry = new THREE.BoxGeometry(width, height, depth);
+    entry = { geometry, edges: new THREE.EdgesGeometry(geometry, 18) };
+    sharedGeometries.add(geometry).add(entry.edges);
+    boxGeometryCache.set(key, entry);
   }
-  return mesh;
+  return entry;
+}
+
+const mergeVertex = new THREE.Vector3();
+// MeshBasicMaterial ignores normals, so only position and uv are carried over.
+function appendMergedGeometry(batch, geometry, matrix) {
+  const position = geometry.getAttribute('position');
+  const uv = geometry.getAttribute('uv');
+  const index = geometry.getIndex();
+  const base = batch.positions.length / 3;
+  for (let vertex = 0; vertex < position.count; vertex++) {
+    mergeVertex.fromBufferAttribute(position, vertex).applyMatrix4(matrix);
+    batch.positions.push(mergeVertex.x, mergeVertex.y, mergeVertex.z);
+    batch.uvs.push(uv.getX(vertex), uv.getY(vertex));
+  }
+  for (let element = 0; element < index.count; element++) batch.indices.push(base + index.getX(element));
+}
+function appendMergedEdges(target, edges, matrix) {
+  const position = edges.getAttribute('position');
+  for (let vertex = 0; vertex < position.count; vertex++) {
+    mergeVertex.fromBufferAttribute(position, vertex).applyMatrix4(matrix);
+    target.push(mergeVertex.x, mergeVertex.y, mergeVertex.z);
+  }
+}
+function staticBatchFor(room, material) {
+  let batch = room.userData.staticBatches.get(material);
+  if (!batch) {
+    batch = { material, positions: [], uvs: [], indices: [] };
+    room.userData.staticBatches.set(material, batch);
+  }
+  return batch;
+}
+const staticBoxMatrix = new THREE.Matrix4();
+function addBox(room, material, size, position, rotation = 0, parentMatrix = null, outlined = true) {
+  const entry = boxGeometryFor(size[0], size[1], size[2]);
+  staticBoxMatrix.makeRotationY(rotation).setPosition(position.x, position.y, position.z);
+  if (parentMatrix) staticBoxMatrix.premultiply(parentMatrix);
+  appendMergedGeometry(staticBatchFor(room, material), entry.geometry, staticBoxMatrix);
+  if (outlined) appendMergedEdges(room.userData.outlinePositions, entry.edges, staticBoxMatrix);
 }
  
 function wallBasis(index) {
@@ -226,35 +264,14 @@ function createSpineAtlas(room) {
   texture.minFilter = THREE.LinearFilter;
   texture.magFilter = THREE.LinearFilter;
   const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide, depthWrite: false });
-  const atlas = { canvas, context, material, next: 0 };
+  const atlas = { canvas, context, material, next: 0, positions: [], uvs: [], indices: [] };
   room.userData.spineAtlases.push(atlas);
   room.userData.disposableMaterials.push(material);
   return atlas;
 }
-function geometryForSpineCell(column, row) {
-  const inset = 2;
-  const u0 = (column * SPINE_CELL_WIDTH + inset) / SPINE_ATLAS_SIZE;
-  const u1 = ((column + 1) * SPINE_CELL_WIDTH - inset) / SPINE_ATLAS_SIZE;
-  const vTop = 1 - (row * SPINE_CELL_HEIGHT + inset) / SPINE_ATLAS_SIZE;
-  const vBottom = 1 - ((row + 1) * SPINE_CELL_HEIGHT - inset) / SPINE_ATLAS_SIZE;
-  const geometry = spineGeometry.clone();
-  const uv = geometry.getAttribute('uv');
-  uv.setXY(0, u0, vTop);
-  uv.setXY(1, u1, vTop);
-  uv.setXY(2, u0, vBottom);
-  uv.setXY(3, u1, vBottom);
-  uv.needsUpdate = true;
-  return geometry;
-}
-function spineVisual(room, label) {
-  let atlas = room.userData.spineAtlases.at(-1);
-  if (!atlas || atlas.next === SPINES_PER_ATLAS) atlas = createSpineAtlas(room);
-  const cell = atlas.next++;
-  const column = cell % SPINE_ATLAS_COLUMNS;
-  const row = Math.floor(cell / SPINE_ATLAS_COLUMNS);
+function paintSpineLabel(context, column, row, label) {
   const x = column * SPINE_CELL_WIDTH;
   const y = row * SPINE_CELL_HEIGHT;
-  const context = atlas.context;
   context.save();
   context.beginPath();
   context.rect(x + 2, y + 2, SPINE_CELL_WIDTH - 4, SPINE_CELL_HEIGHT - 4);
@@ -268,8 +285,37 @@ function spineVisual(room, label) {
   context.textBaseline = 'middle';
   context.fillText(label, 0, 0);
   context.restore();
-  atlas.material.map.needsUpdate = true;
-  return { geometry: geometryForSpineCell(column, row), material: atlas.material };
+}
+const spineCorner = new THREE.Vector3();
+// Spine quads are baked into room space and merged per atlas, so a whole room
+// of 640 labels costs one draw call per atlas instead of one per volume.
+function appendSpine(room, label, matrix) {
+  let atlas = room.userData.spineAtlases.at(-1);
+  if (!atlas || atlas.next === SPINES_PER_ATLAS) atlas = createSpineAtlas(room);
+  const cell = atlas.next++;
+  const column = cell % SPINE_ATLAS_COLUMNS;
+  const row = Math.floor(cell / SPINE_ATLAS_COLUMNS);
+  paintSpineLabel(atlas.context, column, row, label);
+  const inset = 2;
+  const u0 = (column * SPINE_CELL_WIDTH + inset) / SPINE_ATLAS_SIZE;
+  const u1 = ((column + 1) * SPINE_CELL_WIDTH - inset) / SPINE_ATLAS_SIZE;
+  const vTop = 1 - (row * SPINE_CELL_HEIGHT + inset) / SPINE_ATLAS_SIZE;
+  const vBottom = 1 - ((row + 1) * SPINE_CELL_HEIGHT - inset) / SPINE_ATLAS_SIZE;
+  const halfWidth = SPINE_WIDTH / 2;
+  const halfHeight = SPINE_HEIGHT / 2;
+  const base = atlas.positions.length / 3;
+  const corners = [
+    [-halfWidth, halfHeight, u0, vTop],
+    [halfWidth, halfHeight, u1, vTop],
+    [-halfWidth, -halfHeight, u0, vBottom],
+    [halfWidth, -halfHeight, u1, vBottom],
+  ];
+  for (const [cornerX, cornerY, u, v] of corners) {
+    spineCorner.set(cornerX, cornerY, 0).applyMatrix4(matrix);
+    atlas.positions.push(spineCorner.x, spineCorner.y, spineCorner.z);
+    atlas.uvs.push(u, v);
+  }
+  atlas.indices.push(base, base + 2, base + 1, base + 2, base + 3, base + 1);
 }
 function shortSpineTitle(title) {
   const value = title.replace(/\s+/g, ' ').trim().slice(0, 12);
@@ -278,26 +324,40 @@ function shortSpineTitle(title) {
  
 function addSolidWall(room, index) {
   const basis = wallBasis(index);
-  createBox(room, new THREE.BoxGeometry(WALL_WIDTH, WALL_HEIGHT, 0.2), wallMaterial, pointOnWall(basis, 0, WALL_HEIGHT / 2), basis.rotation);
+  addBox(room, wallMaterial, [WALL_WIDTH, WALL_HEIGHT, 0.2], pointOnWall(basis, 0, WALL_HEIGHT / 2), basis.rotation);
 }
  
-function makeBookWall(room, index, q, r) {
+const frameMatrix = new THREE.Matrix4();
+const bookMatrix = new THREE.Matrix4();
+const spineMatrix = new THREE.Matrix4();
+const outlineCorner = new THREE.Vector3();
+
+function appendBookOutline(outlinePositions, matrix) {
+  const source = bookEdgeGeometry.getAttribute('position');
+  for (let index = 0; index < source.count; index++) {
+    outlineCorner.fromBufferAttribute(source, index).applyMatrix4(matrix);
+    outlinePositions.push(outlineCorner.x, outlineCorner.y, outlineCorner.z);
+  }
+}
+
+// Collects one wall's volumes into the room-wide batches instead of adding a
+// mesh per book.  Shelving itself stays as ordinary meshes: there are only a
+// handful of them per wall.
+function collectBookWall(room, index, q, r) {
   const basis = wallBasis(index);
   const canonicalWall = BOOK_WALL_INDICES.indexOf(index) + 1;
-  const frame = new THREE.Group();
-  frame.rotation.y = basis.rotation;
-  room.add(frame);
   const frameOffset = pointOnWall(basis, 0, 0, 0.28);
-  frame.position.copy(frameOffset);
+  frameMatrix.makeRotationY(basis.rotation).setPosition(frameOffset.x, frameOffset.y, frameOffset.z);
   const postOffset = (CABINET_WIDTH - CABINET_POST_WIDTH) / 2;
-  createBox(frame, new THREE.BoxGeometry(CABINET_WIDTH, 0.12, 0.54), trimMaterial, new THREE.Vector3(0, 0.24, -0.14));
-  createBox(frame, new THREE.BoxGeometry(CABINET_WIDTH, 0.12, 0.54), trimMaterial, new THREE.Vector3(0, 4.56, -0.14));
-  createBox(frame, new THREE.BoxGeometry(CABINET_POST_WIDTH, 4.38, 0.54), shelfMaterial, new THREE.Vector3(-postOffset, 2.4, -0.14));
-  createBox(frame, new THREE.BoxGeometry(CABINET_POST_WIDTH, 4.38, 0.54), shelfMaterial, new THREE.Vector3(postOffset, 2.4, -0.14));
- 
+  addBox(room, trimMaterial, [CABINET_WIDTH, 0.12, 0.54], new THREE.Vector3(0, 0.24, -0.14), 0, frameMatrix);
+  addBox(room, trimMaterial, [CABINET_WIDTH, 0.12, 0.54], new THREE.Vector3(0, 4.56, -0.14), 0, frameMatrix);
+  addBox(room, shelfMaterial, [CABINET_POST_WIDTH, 4.38, 0.54], new THREE.Vector3(-postOffset, 2.4, -0.14), 0, frameMatrix);
+  addBox(room, shelfMaterial, [CABINET_POST_WIDTH, 4.38, 0.54], new THREE.Vector3(postOffset, 2.4, -0.14), 0, frameMatrix);
+
+  const { batches, outlinePositions } = room.userData;
   for (let shelfIndex = 0; shelfIndex < SHELVES_PER_WALL; shelfIndex++) {
     const shelfY = 0.32 + shelfIndex * 0.86;
-    createBox(frame, new THREE.BoxGeometry(CABINET_WIDTH, 0.09, 0.5), trimMaterial, new THREE.Vector3(0, shelfY, -0.18));
+    addBox(room, trimMaterial, [CABINET_WIDTH, 0.09, 0.5], new THREE.Vector3(0, shelfY, -0.18), 0, frameMatrix);
     for (let volumeIndex = 0; volumeIndex < VOLUMES_PER_SHELF; volumeIndex++) {
       const worldLocation = {
         q,
@@ -308,33 +368,87 @@ function makeBookWall(room, index, q, r) {
         page: 1,
       };
       const bookIndex = catalogBookIndexFor(worldLocation);
-      const materialIndex = (shelfIndex + volumeIndex) % bookMaterials.length;
-      const bookMaterial = isManifestoBookIndex(bookIndex) ? manifestoBookMaterial : bookMaterials[materialIndex];
-      const heightIndex = 0;
-      const height = BOOK_HEIGHTS[heightIndex];
+      const manifesto = isManifestoBookIndex(bookIndex);
+      // Physical copies of the manifesto keep the paper texture and are tinted
+      // gold through the instance colour, so they need no separate draw call.
+      const batch = manifesto ? batches[0] : batches[(shelfIndex + volumeIndex) % batches.length];
+      const height = BOOK_HEIGHTS[0];
       const x = -((VOLUMES_PER_SHELF - 1) * BOOK_STEP) / 2 + volumeIndex * BOOK_STEP;
       const y = shelfY + 0.07 + height / 2;
       const bookCenterZ = BOOK_FRONT_Z + BOOK_DEPTH / 2;
-      createBox(frame, bookGeometries[heightIndex], bookMaterial, new THREE.Vector3(x, y, bookCenterZ));
- 
+
+      bookMatrix.makeTranslation(x, y, bookCenterZ).premultiply(frameMatrix);
+      batch.matrices.push(bookMatrix.clone());
+      batch.tints.push(manifesto ? MANIFESTO_TINT : null);
       const title = shortSpineTitle(titleForBookIndex(bookIndex));
-      const visual = spineVisual(room, title);
-      const spine = new THREE.Mesh(visual.geometry, visual.material);
-      spine.position.set(x, y, BOOK_FRONT_Z - 0.015);
-      spine.rotation.y = Math.PI;
-      spine.renderOrder = 3;
-      spine.userData.bookIndex = bookIndex;
-      spine.userData.worldLocation = worldLocation;
-      spine.userData.volumeTitle = title;
-      room.userData.spines.push(spine);
-      frame.add(spine);
+      batch.records.push({ bookIndex, worldLocation, volumeTitle: title });
+      appendBookOutline(outlinePositions, bookMatrix);
+
+      spineMatrix.makeRotationY(Math.PI).setPosition(x, y, BOOK_FRONT_Z - 0.015).premultiply(frameMatrix);
+      appendSpine(room, title, spineMatrix);
     }
   }
+}
+
+function finalizeBooks(room) {
+  const { batches, outlinePositions, staticBatches } = room.userData;
+  for (const batch of staticBatches.values()) {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(batch.positions, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(batch.uvs, 2));
+    geometry.setIndex(batch.indices);
+    room.add(new THREE.Mesh(geometry, batch.material));
+  }
+  for (const batch of batches) {
+    if (!batch.matrices.length) continue;
+    const mesh = new THREE.InstancedMesh(bookGeometry, batch.material, batch.matrices.length);
+    const colors = new Float32Array(batch.matrices.length * 3).fill(1);
+    for (let index = 0; index < batch.matrices.length; index++) {
+      mesh.setMatrixAt(index, batch.matrices[index]);
+      const tint = batch.tints[index];
+      if (tint) colors.set(tint, index * 3);
+    }
+    mesh.instanceColor = new THREE.InstancedBufferAttribute(colors, 3);
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.userData.records = batch.records;
+    room.add(mesh);
+    room.userData.bookMeshes.push(mesh);
+  }
+  if (outlinePositions.length) {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(outlinePositions, 3));
+    const outlines = new THREE.LineSegments(geometry, outlineMaterial);
+    outlines.renderOrder = 2;
+    room.add(outlines);
+  }
+  for (const atlas of room.userData.spineAtlases) {
+    atlas.material.map.needsUpdate = true;
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(atlas.positions, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(atlas.uvs, 2));
+    geometry.setIndex(atlas.indices);
+    const mesh = new THREE.Mesh(geometry, atlas.material);
+    mesh.renderOrder = 3;
+    room.add(mesh);
+    atlas.positions = atlas.uvs = atlas.indices = null;
+  }
+  room.userData.batches = null;
+  room.userData.outlinePositions = null;
+  room.userData.staticBatches = null;
 }
  
 function makeRoom(q, r, roomTag) {
   const room = new THREE.Group();
-  room.userData = { q, r, spines: [], spineAtlases: [], disposableMaterials: [] };
+  room.userData = {
+    q,
+    r,
+    bookMeshes: [],
+    spineAtlases: [],
+    disposableMaterials: [],
+    outlinePositions: [],
+    staticBatches: new Map(),
+    batches: bookMaterials.map(material => ({ material, matrices: [], tints: [], records: [] })),
+  };
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(32, 32), floorMaterial);
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.01;
@@ -361,8 +475,9 @@ function makeRoom(q, r, roomTag) {
   }
   for (let index = 0; index < 6; index++) {
     addSolidWall(room, index);
-    if (BOOK_WALLS.has(index)) makeBookWall(room, index, q, r);
+    if (BOOK_WALLS.has(index)) collectBookWall(room, index, q, r);
   }
+  finalizeBooks(room);
   return room;
 }
  
@@ -387,6 +502,9 @@ function disposeRoom(room) {
   const geometries = new Set();
   room.traverse(object => {
     if (object.geometry && !sharedGeometries.has(object.geometry)) geometries.add(object.geometry);
+    // Instanced volumes own their matrix and colour buffers even though the box
+    // geometry itself is shared across every room.
+    if (object.isInstancedMesh) object.dispose();
   });
   for (const geometry of geometries) geometry.dispose();
   for (const material of room.userData.disposableMaterials) {
@@ -547,15 +665,18 @@ function constrainPlayer() {
   }
 }
  
-function currentSpines() {
-  return roomRegistry.get(roomKey(currentRoom.q, currentRoom.r))?.userData.spines ?? [];
+function currentBookMeshes() {
+  return roomRegistry.get(roomKey(currentRoom.q, currentRoom.r))?.userData.bookMeshes ?? [];
 }
 let targetedSpine = null;
+// Picking runs against the instanced volumes: three.js reports the instanceId,
+// which indexes the per-batch record built while the room was assembled.
 function volumeInView() {
   raycaster.setFromCamera(centerPointer, camera);
   raycaster.far = INTERACTION_DISTANCE;
-  const hit = raycaster.intersectObjects(currentSpines(), false)[0];
-  return hit?.object ?? null;
+  const hit = raycaster.intersectObjects(currentBookMeshes(), false)[0];
+  if (!hit || hit.instanceId === undefined) return null;
+  return hit.object.userData.records[hit.instanceId] ?? null;
 }
 function refreshTargetedSpine() {
   targetedSpine = locked ? volumeInView() : null;
@@ -674,7 +795,7 @@ function openBook() {
     showNotice('aim at a book');
     return;
   }
-  showCatalogueVolume(hit.userData.bookIndex, undefined, hit.userData.volumeTitle, hit.userData.worldLocation);
+  showCatalogueVolume(hit.bookIndex, undefined, hit.volumeTitle, hit.worldLocation);
 }
 async function copyExactRecord(element, copiedText) {
   const address = element.dataset.fullAddress;
@@ -772,7 +893,7 @@ function moveToWorldHex(q, r) {
   targetedSpine = null;
   refreshCatalogueView();
   refreshWorld();
-  drawMap();
+  mapNeedsRedraw = true;
 }
  
 let audio;
@@ -874,32 +995,57 @@ nextPage.addEventListener('click', event => {
 });
  
 let lastFrame = performance.now();
+// Reused every frame: allocating movement basis vectors inside the loop churned
+// the collector 120 times a second for no benefit.
+const forwardVector = new THREE.Vector3();
+const rightVector = new THREE.Vector3();
+let mapNeedsRedraw = true;
+let lastMapYaw = Number.NaN;
+let lastMapX = Number.NaN;
+let lastMapZ = Number.NaN;
+function syncMap() {
+  // The minimap is a canvas redraw with stroked text; it only has to run when
+  // the player actually moved or turned enough to change the picture.
+  if (!mapNeedsRedraw
+    && Math.abs(yaw - lastMapYaw) < 0.004
+    && Math.abs(camera.position.x - lastMapX) < 0.01
+    && Math.abs(camera.position.z - lastMapZ) < 0.01) return;
+  mapNeedsRedraw = false;
+  lastMapYaw = yaw;
+  lastMapX = camera.position.x;
+  lastMapZ = camera.position.z;
+  drawMap();
+}
 function animate(now) {
   requestAnimationFrame(animate);
   const delta = Math.min(0.05, (now - lastFrame) / 1000);
   lastFrame = now;
   if (locked && ready) {
     const speed = (keys.ShiftLeft || keys.ShiftRight ? 5.5 : 2.6) * delta;
-    const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
-    const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
-    if (keys.KeyW) camera.position.addScaledVector(forward, speed);
-    if (keys.KeyS) camera.position.addScaledVector(forward, -speed);
-    if (keys.KeyA) camera.position.addScaledVector(right, -speed);
-    if (keys.KeyD) camera.position.addScaledVector(right, speed);
+    forwardVector.set(-Math.sin(yaw), 0, -Math.cos(yaw));
+    rightVector.set(Math.cos(yaw), 0, -Math.sin(yaw));
+    if (keys.KeyW) camera.position.addScaledVector(forwardVector, speed);
+    if (keys.KeyS) camera.position.addScaledVector(forwardVector, -speed);
+    if (keys.KeyA) camera.position.addScaledVector(rightVector, -speed);
+    if (keys.KeyD) camera.position.addScaledVector(rightVector, speed);
     constrainPlayer();
   }
   refreshTargetedSpine();
   camera.rotation.set(pitch, yaw, 0, 'YXZ');
-  drawMap();
+  syncMap();
   renderer.render(scene, camera);
 }
 addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight;
+  // A hidden or zero-height viewport would otherwise make the aspect NaN, which
+  // poisons the projection matrix and silently breaks picking as well as render.
+  const width = viewportWidth();
+  const height = viewportHeight();
+  camera.aspect = width / height;
   camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
+  renderer.setSize(width, height);
   resizeMapCanvas();
   if (bookPanel.classList.contains('visible')) renderPage();
-  drawMap();
+  mapNeedsRedraw = true;
 });
  
 async function initializeLibrary() {
@@ -911,7 +1057,7 @@ async function initializeLibrary() {
     refreshWorld();
     camera.position.set(0, 1.65, 5.2);
     resizeMapCanvas();
-    drawMap();
+    mapNeedsRedraw = true;
     ready = true;
     startButton.disabled = false;
     setStartupState('ready');
