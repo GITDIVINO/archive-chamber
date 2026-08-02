@@ -89,7 +89,6 @@ button:focus-visible, .location-record:focus-visible { outline: 1px solid var(--
 .reader-meta p { margin: 0 0 clamp(8px, 1.8vh, 19px); }
 .location-record { cursor: pointer; user-select: none; }
 .location-record[hidden] { display: none; }
-.page-format { color: #918d84; font-size: 9px; }
 .address { max-height: 62px; overflow: hidden; overflow-wrap: anywhere; color: #555; font-size: 10px !important; }
 .reader-action { display: block; width: 100%; margin: 0 0 12px; padding: 0; border: 0; background: transparent; color: var(--muted); font: 600 12px/1.45 "Courier New", monospace; letter-spacing: 0; text-align: left; }
 .reader-action:hover { background: transparent; color: var(--muted); }

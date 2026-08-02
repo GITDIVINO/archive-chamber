@@ -25,7 +25,6 @@ import {
   intro,
   locationRecord,
   nextPage,
-  pageFormat,
   pageNumber,
   pageTotal,
   previousPage,
@@ -63,7 +62,6 @@ function formatPage(text) {
     { length: Math.ceil(text.length / columns) },
     (_, index) => text.slice(index * columns, index * columns + columns),
   );
-  pageFormat.textContent = lines.length + ' lines × ' + columns + ' characters' + (columns === MAX_PAGE_COLUMNS ? '' : ' · adaptive');
   return lines.join('\n');
 }
 

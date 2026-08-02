@@ -25,7 +25,6 @@ export const bookTitle = find('#book-title');
 export const bookAddress = find('#book-address');
 export const locationRecord = find('#location-record');
 export const catalogueRecord = find('#catalogue-record');
-export const pageFormat = find('#page-format');
 export const bookPage = find('#book-page');
 export const pageNumber = find('.page-counter span');
 export const pageTotal = find('#page-total');
