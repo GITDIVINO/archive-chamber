@@ -46,24 +46,36 @@ export function pencilMaterial(texture, color = 0xffffff) {
   return new THREE.MeshBasicMaterial({ color, map: texture });
 }
 
+// The scene is unlit, so depth cannot come from a light. Surfaces that need to
+// read as recessed carry their tone in the vertex colour instead, in the spirit
+// of an architectural drawing where a recess is darker hatching rather than a
+// cast shadow. Only geometry that supplies a colour attribute may use these.
+function shadedMaterial(texture, color = 0xffffff) {
+  return new THREE.MeshBasicMaterial({ color, map: texture, vertexColors: true });
+}
+
 const paperTexture = pencilTexture('#ffffff', '#141414', 95);
 const woodTexture = pencilTexture('#ffffff', '#141414', 105);
 const graphiteTexture = pencilTexture('#ffffff', '#141414', 115);
 
 export const floorMaterial = pencilMaterial(paperTexture, 0xc8c8c4);
 export const ceilingMaterial = pencilMaterial(paperTexture, 0xd8d8d4);
-export const shelfMaterial = pencilMaterial(woodTexture);
-export const trimMaterial = pencilMaterial(graphiteTexture);
-export const wallMaterial = pencilMaterial(paperTexture, 0xdfdfdb);
+// Everything below is built through the merged static batches, which always
+// supply a colour attribute.
+export const shelfMaterial = shadedMaterial(woodTexture);
+export const trimMaterial = shadedMaterial(graphiteTexture);
+export const wallMaterial = shadedMaterial(paperTexture, 0xdfdfdb);
 export const outlineMaterial = new THREE.LineBasicMaterial({ color: 0x141414, transparent: true, opacity: 0.82 });
 export const roomLineMaterial = new THREE.LineBasicMaterial({ color: 0x242424, transparent: true, opacity: 0.7 });
 
 // Volumes are instanced per texture, so this array also defines how many
-// instanced draw calls a wall of books costs.
+// instanced draw calls a wall of books costs. The shared box geometry carries
+// per-face tone so a volume reads as a solid rather than a flat card, and the
+// instance colour tints each copy on top of that.
 export const bookMaterials = [
-  pencilMaterial(paperTexture),
-  pencilMaterial(woodTexture),
-  pencilMaterial(graphiteTexture),
+  shadedMaterial(paperTexture),
+  shadedMaterial(woodTexture),
+  shadedMaterial(graphiteTexture),
 ];
 
 // Physical copies of the manifesto keep the paper texture and are tinted gold

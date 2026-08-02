@@ -99,16 +99,32 @@ export function boxGeometryFor(width, height, depth) {
 }
 
 const mergeVertex = new THREE.Vector3();
-// MeshBasicMaterial ignores normals, so only position and uv are carried over.
-export function appendMergedGeometry(batch, geometry, matrix) {
+const shadeVertex = new THREE.Vector3();
+/**
+ * Merges a box into a batch.
+ *
+ * MeshBasicMaterial ignores normals, so only position, uv and colour are
+ * carried over. `shade` receives the vertex in the parent's own space — the
+ * cabinet interior, say — and returns a brightness, which is how depth is
+ * expressed in a scene that has no lighting to cast it.
+ */
+export function appendMergedGeometry(batch, geometry, matrix, shade = null, localMatrix = null) {
   const position = geometry.getAttribute('position');
   const uv = geometry.getAttribute('uv');
   const index = geometry.getIndex();
   const base = batch.positions.length / 3;
   for (let vertex = 0; vertex < position.count; vertex++) {
-    mergeVertex.fromBufferAttribute(position, vertex).applyMatrix4(matrix);
+    mergeVertex.fromBufferAttribute(position, vertex);
+    let brightness = 1;
+    if (shade) {
+      shadeVertex.copy(mergeVertex);
+      if (localMatrix) shadeVertex.applyMatrix4(localMatrix);
+      brightness = shade(shadeVertex);
+    }
+    mergeVertex.applyMatrix4(matrix);
     batch.positions.push(mergeVertex.x, mergeVertex.y, mergeVertex.z);
     batch.uvs.push(uv.getX(vertex), uv.getY(vertex));
+    batch.colors.push(brightness, brightness, brightness);
   }
   for (let element = 0; element < index.count; element++) batch.indices.push(base + index.getX(element));
 }
@@ -125,6 +141,7 @@ export function mergedMesh(batch, material) {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(batch.positions, 3));
   geometry.setAttribute('uv', new THREE.Float32BufferAttribute(batch.uvs, 2));
+  if (batch.colors?.length) geometry.setAttribute('color', new THREE.Float32BufferAttribute(batch.colors, 3));
   geometry.setIndex(batch.indices);
   return new THREE.Mesh(geometry, material);
 }

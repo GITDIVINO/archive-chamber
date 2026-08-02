@@ -64,6 +64,45 @@ const bookGeometry = new THREE.BoxGeometry(BOOK_WIDTH, BOOK_HEIGHT, BOOK_DEPTH);
 const bookEdgeGeometry = new THREE.EdgesGeometry(bookGeometry, 18);
 sharedGeometries.add(bookGeometry).add(bookEdgeGeometry);
 
+// Every volume shares one geometry, so its faces are toned once here. Without
+// this a book is a flat card: the spine faces the room and stays light, the
+// head and sides fall away, and the board behind it is barely lit at all.
+// Read from the normals rather than vertex ranges so it cannot silently
+// mismatch if the box is ever rebuilt.
+(function toneBookFaces() {
+  const normal = bookGeometry.getAttribute('normal');
+  const position = bookGeometry.getAttribute('position');
+  const colors = new Float32Array(normal.count * 3);
+  for (let vertex = 0; vertex < normal.count; vertex++) {
+    const y = normal.getY(vertex);
+    const z = normal.getZ(vertex);
+    let tone = 0.78;
+    if (z < -0.5) {
+      // The spine. The shelf above overhangs the volumes, so its shadow falls
+      // across their heads and lifts off towards the foot: on a real shelf this
+      // gradient, not the side faces, is what makes a packed row read as solid.
+      const height = position.getY(vertex) / BOOK_HEIGHT + 0.5;
+      tone = THREE.MathUtils.lerp(1.06, 0.7, height);
+    } else if (z > 0.5) tone = 0.46;
+    else if (y > 0.5) tone = 0.72;
+    else if (y < -0.5) tone = 0.6;
+    colors[vertex * 3] = tone;
+    colors[vertex * 3 + 1] = tone;
+    colors[vertex * 3 + 2] = tone;
+  }
+  bookGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+})();
+
+// A shelf of identical volumes reads as one printed band, so each copy is
+// nudged a little lighter or darker. Derived from the catalogue index, so a
+// given book looks the same in every room it repeats in.
+const BOOK_TONE_STEPS = 7n;
+function bookTone(bookIndex) {
+  const step = Number(((bookIndex % BOOK_TONE_STEPS) + BOOK_TONE_STEPS) % BOOK_TONE_STEPS);
+  const tone = 0.9 + step * 0.03;
+  return [tone, tone, tone];
+}
+
 export function shortSpineTitle(title) {
   const value = title.replace(/\s+/g, ' ').trim().slice(0, 12);
   return value || 'untitled';
@@ -140,18 +179,23 @@ function appendSpine(room, label, matrix) {
 function staticBatchFor(room, material) {
   let batch = room.userData.staticBatches.get(material);
   if (!batch) {
-    batch = { material, positions: [], uvs: [], indices: [] };
+    batch = { material, positions: [], uvs: [], indices: [], colors: [] };
     room.userData.staticBatches.set(material, batch);
   }
   return batch;
 }
 
+const staticLocalMatrix = new THREE.Matrix4();
 const staticBoxMatrix = new THREE.Matrix4();
-function addBox(room, material, size, position, rotation = 0, parentMatrix = null, outlined = true) {
+function addBox(room, material, size, position, rotation = 0, parentMatrix = null, options = {}) {
+  const { outlined = true, shade = null } = options;
   const entry = boxGeometryFor(size[0], size[1], size[2]);
-  staticBoxMatrix.makeRotationY(rotation).setPosition(position.x, position.y, position.z);
+  staticLocalMatrix.makeRotationY(rotation).setPosition(position.x, position.y, position.z);
+  staticBoxMatrix.copy(staticLocalMatrix);
   if (parentMatrix) staticBoxMatrix.premultiply(parentMatrix);
-  appendMergedGeometry(staticBatchFor(room, material), entry.geometry, staticBoxMatrix);
+  // The shade callback sees the vertex in cabinet space, before the wall
+  // transform, so depth into the niche is simply its z.
+  appendMergedGeometry(staticBatchFor(room, material), entry.geometry, staticBoxMatrix, shade, staticLocalMatrix);
   if (outlined) appendMergedEdges(room.userData.outlinePositions, entry.edges, staticBoxMatrix);
 }
 
@@ -223,6 +267,30 @@ const SHELF_DEPTH = 0.5;
 const SHELF_CENTRE_Z = -0.18;
 const SHELF_FRONT_Z = SHELF_CENTRE_Z - SHELF_DEPTH / 2;
 const SHELF_SURFACE_OFFSET = SHELF_THICKNESS / 2;
+
+// Depth has to be drawn, because the scene is unlit and nothing casts a shadow.
+// Treating the room as the only light source, tone falls away with distance
+// into the carcase: the front edges stay near paper white, the backing board
+// sits darkest. This is the hatching of an architectural section rather than a
+// rendered shadow, which is why it follows one consistent direction.
+const CARCASE_BACK_FACE_Z = CARCASE_CENTRE_Z + CARCASE_DEPTH / 2;
+const NICHE_FRONT_TONE = 1;
+const NICHE_BACK_TONE = 0.44;
+
+function nicheShade(local) {
+  const depth = THREE.MathUtils.clamp(
+    (local.z - CARCASE_FRONT_Z) / (CARCASE_BACK_FACE_Z - CARCASE_FRONT_Z),
+    0,
+    1,
+  );
+  return THREE.MathUtils.lerp(NICHE_FRONT_TONE, NICHE_BACK_TONE, depth ** 0.8);
+}
+
+// The underside of a shelf is the ceiling of the niche below it and never
+// catches the room, so it takes the darkest tone in the cabinet.
+function shelfBoardShade(shelfY) {
+  return local => (local.y < shelfY ? nicheShade(local) * 0.74 : nicheShade(local));
+}
 
 const framePoint = new THREE.Vector3();
 function pushLine(outlinePositions, parentMatrix, from, to) {
@@ -308,10 +376,11 @@ function collectBookWall(room, index, q, r) {
   frameMatrix.makeRotationY(basis.rotation).setPosition(frameOffset.x, frameOffset.y, frameOffset.z);
   const postOffset = (CABINET_WIDTH - CABINET_POST_WIDTH) / 2;
   const postHeight = CARCASE_HEIGHT - 2 * RAIL_THICKNESS;
-  addBox(room, shelfMaterial, [CABINET_WIDTH, RAIL_THICKNESS, CARCASE_DEPTH], new THREE.Vector3(0, RAIL_THICKNESS / 2, CARCASE_CENTRE_Z), 0, frameMatrix, false);
-  addBox(room, shelfMaterial, [CABINET_WIDTH, RAIL_THICKNESS, CARCASE_DEPTH], new THREE.Vector3(0, CARCASE_HEIGHT - RAIL_THICKNESS / 2, CARCASE_CENTRE_Z), 0, frameMatrix, false);
+  const carcase = { outlined: false, shade: nicheShade };
+  addBox(room, shelfMaterial, [CABINET_WIDTH, RAIL_THICKNESS, CARCASE_DEPTH], new THREE.Vector3(0, RAIL_THICKNESS / 2, CARCASE_CENTRE_Z), 0, frameMatrix, carcase);
+  addBox(room, shelfMaterial, [CABINET_WIDTH, RAIL_THICKNESS, CARCASE_DEPTH], new THREE.Vector3(0, CARCASE_HEIGHT - RAIL_THICKNESS / 2, CARCASE_CENTRE_Z), 0, frameMatrix, carcase);
   for (const side of [-1, 1]) {
-    addBox(room, shelfMaterial, [CABINET_POST_WIDTH, postHeight, CARCASE_DEPTH], new THREE.Vector3(side * postOffset, CARCASE_CENTRE_Y, CARCASE_CENTRE_Z), 0, frameMatrix, false);
+    addBox(room, shelfMaterial, [CABINET_POST_WIDTH, postHeight, CARCASE_DEPTH], new THREE.Vector3(side * postOffset, CARCASE_CENTRE_Y, CARCASE_CENTRE_Z), 0, frameMatrix, carcase);
   }
   // Backing board: without it the volumes stood against open space and the
   // gaps between them showed straight through the cabinet.
@@ -322,14 +391,15 @@ function collectBookWall(room, index, q, r) {
     new THREE.Vector3(0, CARCASE_CENTRE_Y, CARCASE_BACK_Z),
     0,
     frameMatrix,
-    false,
+    carcase,
   );
   addCarcaseOutline(room, frameMatrix);
 
   const { batches, outlinePositions } = room.userData;
   for (let shelfIndex = 0; shelfIndex < SHELVES_PER_WALL; shelfIndex++) {
     const shelfY = SHELF_BASE_Y + shelfIndex * SHELF_PITCH;
-    addBox(room, shelfMaterial, [CABINET_WIDTH, SHELF_THICKNESS, SHELF_DEPTH], new THREE.Vector3(0, shelfY, SHELF_CENTRE_Z), 0, frameMatrix, false);
+    addBox(room, shelfMaterial, [CABINET_WIDTH, SHELF_THICKNESS, SHELF_DEPTH], new THREE.Vector3(0, shelfY, SHELF_CENTRE_Z), 0, frameMatrix,
+      { outlined: false, shade: shelfBoardShade(shelfY) });
     addShelfEdge(outlinePositions, frameMatrix, shelfY);
     for (let volumeIndex = 0; volumeIndex < VOLUMES_PER_SHELF; volumeIndex++) {
       const worldLocation = {
@@ -351,7 +421,7 @@ function collectBookWall(room, index, q, r) {
 
       bookMatrix.makeTranslation(x, y, bookCenterZ).premultiply(frameMatrix);
       batch.matrices.push(bookMatrix.clone());
-      batch.tints.push(manifesto ? MANIFESTO_TINT : null);
+      batch.tints.push(manifesto ? MANIFESTO_TINT : bookTone(bookIndex));
       const title = shortSpineTitle(titleForBookIndex(bookIndex));
       batch.records.push({ bookIndex, worldLocation, volumeTitle: title });
       appendBookOutline(outlinePositions, bookMatrix);
