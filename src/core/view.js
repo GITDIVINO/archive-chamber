@@ -9,7 +9,11 @@ export const viewportHeight = () => Math.max(1, innerHeight);
 
 export const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xf4f2ec);
-scene.fog = new THREE.FogExp2(0xf4f2ec, 0.018);
+// Deliberately a shade darker than the paper. Fog the colour of the background
+// made the corridor recede into glare, where nothing could be read; a drawing
+// puts distance into grey instead, as lines crowd together. At room scale this
+// is about one percent and invisible — it only tells in the passages.
+scene.fog = new THREE.FogExp2(0xd3cfc3, 0.013);
 
 export const camera = new THREE.PerspectiveCamera(70, viewportWidth() / viewportHeight(), 0.08, 170);
 camera.position.set(0, 1.65, 5.2);

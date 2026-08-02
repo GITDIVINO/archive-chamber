@@ -270,6 +270,29 @@ assert.equal(walk.bouncedStraightBack, false, 'arriving does not immediately cou
 assert.equal(walk.enteredBack, true, 'the opposite doorway leads home');
 assert.deepEqual([walk.afterBack.q, walk.afterBack.r], ['0', '0'], 'walking back returns to w1;0');
 
+// The corridor seen through the doorways is built once and left alone: walking
+// a threshold must not rebuild or move it, or the repetition would visibly
+// restart instead of continuing.
+const vista = await page.evaluate(async () => {
+  const { renderedWorld } = await import('./src/core/view.js');
+  const { syncDoorways } = await import('./src/world/rooms.js');
+  const groups = renderedWorld.children.filter(child => child.type === 'Group' && child.userData.q === undefined);
+  const measure = () => {
+    const group = renderedWorld.children.filter(c => c.type === 'Group' && c.userData.q === undefined)[0];
+    if (!group) return null;
+    let vertices = 0;
+    for (const mesh of group.children) vertices += mesh.geometry.getAttribute('position').count;
+    return { meshes: group.children.length, vertices, id: group.id };
+  };
+  const before = measure();
+  syncDoorways();
+  return { groups: groups.length, before, after: measure() };
+});
+
+assert.equal(vista.groups, 1, 'exactly one corridor group stands beside the built room');
+assert.ok(vista.before.meshes > 0 && vista.before.vertices > 1000, 'the corridor carries real geometry');
+assert.deepEqual(vista.after, vista.before, 'the corridor is never rebuilt as the player moves');
+
 // Position carries across the threshold instead of snapping to the centre.
 assert.ok(
   Math.hypot(walk.afterForward.x, walk.afterForward.z) > 5,

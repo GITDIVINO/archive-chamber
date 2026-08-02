@@ -250,23 +250,23 @@ const outlineCorner = new THREE.Vector3();
 // The carcase stands on the floor and stops short of the ceiling: a case that
 // began at y=0.18 read as hanging in mid-air, and one reaching 4.6 put its top
 // shelf out of arm's length.
-const CARCASE_HEIGHT = 3.5;
-const CARCASE_DEPTH = 0.56;
-const CARCASE_CENTRE_Y = CARCASE_HEIGHT / 2;
-const CARCASE_CENTRE_Z = -0.15;
-const CARCASE_FRONT_Z = CARCASE_CENTRE_Z - CARCASE_DEPTH / 2;
-const RAIL_THICKNESS = 0.12;
-const CARCASE_BACK_THICKNESS = 0.06;
-const CARCASE_BACK_Z = CARCASE_CENTRE_Z + CARCASE_DEPTH / 2 - CARCASE_BACK_THICKNESS / 2;
+export const CARCASE_HEIGHT = 3.5;
+export const CARCASE_DEPTH = 0.56;
+export const CARCASE_CENTRE_Y = CARCASE_HEIGHT / 2;
+export const CARCASE_CENTRE_Z = -0.15;
+export const CARCASE_FRONT_Z = CARCASE_CENTRE_Z - CARCASE_DEPTH / 2;
+export const RAIL_THICKNESS = 0.12;
+export const CARCASE_BACK_THICKNESS = 0.06;
+export const CARCASE_BACK_Z = CARCASE_CENTRE_Z + CARCASE_DEPTH / 2 - CARCASE_BACK_THICKNESS / 2;
 
 // The shelf reads because its front face is drawn as a band, not because it
 // juts out: a deep overhang hides the volumes on the shelf below whenever the
 // player looks up, and thickening it eats the headroom above the books.
-const SHELF_THICKNESS = 0.11;
-const SHELF_DEPTH = 0.5;
-const SHELF_CENTRE_Z = -0.18;
-const SHELF_FRONT_Z = SHELF_CENTRE_Z - SHELF_DEPTH / 2;
-const SHELF_SURFACE_OFFSET = SHELF_THICKNESS / 2;
+export const SHELF_THICKNESS = 0.11;
+export const SHELF_DEPTH = 0.5;
+export const SHELF_CENTRE_Z = -0.18;
+export const SHELF_FRONT_Z = SHELF_CENTRE_Z - SHELF_DEPTH / 2;
+export const SHELF_SURFACE_OFFSET = SHELF_THICKNESS / 2;
 
 // Depth has to be drawn, because the scene is unlit and nothing casts a shadow.
 // Treating the room as the only light source, tone falls away with distance
@@ -277,7 +277,7 @@ const CARCASE_BACK_FACE_Z = CARCASE_CENTRE_Z + CARCASE_DEPTH / 2;
 const NICHE_FRONT_TONE = 1;
 const NICHE_BACK_TONE = 0.44;
 
-function nicheShade(local) {
+export function nicheShade(local) {
   const depth = THREE.MathUtils.clamp(
     (local.z - CARCASE_FRONT_Z) / (CARCASE_BACK_FACE_Z - CARCASE_FRONT_Z),
     0,
@@ -288,7 +288,7 @@ function nicheShade(local) {
 
 // The underside of a shelf is the ceiling of the niche below it and never
 // catches the room, so it takes the darkest tone in the cabinet.
-function shelfBoardShade(shelfY) {
+export function shelfBoardShade(shelfY) {
   return local => (local.y < shelfY ? nicheShade(local) * 0.74 : nicheShade(local));
 }
 

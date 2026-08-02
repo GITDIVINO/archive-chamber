@@ -11,6 +11,7 @@ import { player } from '../player.js';
 import { crossedDoorway, hasClearedDoorway, oppositeWall } from './doors.js';
 import { axialMapOffset } from './geometry.js';
 import { disposeRoom, makeRoom } from './room.js';
+import { buildVista } from './vista.js';
 
 const roomRegistry = new Map();
 
@@ -52,9 +53,19 @@ function refreshScene() {
   roomRegistry.get(activeKey).position.set(0, 0, 0);
 }
 
+// Chambers are identical and the player always stands at the origin of their
+// own, so what shows through the doorways never changes. It is built once and
+// simply left there: walking a threshold does not disturb it, which is what
+// makes the corridor read as continuing rather than as being redrawn.
+let vista = null;
+
 export function buildCurrentRoom() {
   refreshRoomRecord();
   refreshScene();
+  if (!vista) {
+    vista = buildVista();
+    renderedWorld.add(vista);
+  }
   roomChangeListener?.();
 }
 

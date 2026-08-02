@@ -39,10 +39,18 @@ export function axialMapOffset(q, r) {
   );
 }
 
+/**
+ * The six vertical arrises of the room.
+ *
+ * A wall normal points at PI/6 + i*PI/3 and the wall spans thirty degrees to
+ * either side, so the vertices lie between them, at multiples of PI/3. Using
+ * the normal angles here put each line down the middle of a wall instead —
+ * invisible until a doorway was cut and one appeared standing in the opening.
+ */
 export function hexCorners(scale = 0.975) {
   const corners = [];
   for (let index = 0; index < 6; index++) {
-    const angle = Math.PI / 6 + index * Math.PI / 3;
+    const angle = index * Math.PI / 3;
     corners.push(new THREE.Vector3(
       Math.cos(angle) * ROOM_RADIUS * scale,
       0.01,
