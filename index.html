@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>archive chamber</title>
+    <link rel="stylesheet" href="style.css?v=design-polish-1" />
+  </head>
+  <body>
+    <main id="ui">
+      <section id="intro" class="panel" aria-live="polite">
+        <p class="eyebrow">babylonian library · world w1</p>
+        <p class="library-description">the catalogue contains every possible 410-page volume. the world repeats it without end.</p>
+        <p id="startup-state" class="startup-state">locating archive…</p>
+        <button id="start" type="button" disabled>enter the chamber</button>
+        <p class="controls">wasd — move · mouse — look · e — read · f — search · shift — faster · m — sound</p>
+      </section>
+
+      <div id="reticle" aria-hidden="true">+</div>
+      <canvas id="hex-map" aria-label="world adjacency map"></canvas>
+      <div id="status"><button id="cell" type="button" title="copy exact w1 room address">chamber locating…</button><span id="sound">sound: muted</span><button id="open-search" type="button">search</button></div>
+      <div id="notice" role="status" aria-live="polite"></div>
+
+      <aside id="search-panel" aria-live="polite" aria-label="catalogue search">
+        <header class="overlay-header">
+          <p class="eyebrow">catalogue</p>
+          <button id="close-search" class="overlay-close" type="button">close</button>
+        </header>
+        <h2>find a fragment</h2>
+        <p class="overlay-copy">calculate one existing occurrence using exact lower-case letters, spaces, commas, and periods. spaces are part of the fragment.</p>
+        <label for="search-input">text</label>
+        <textarea id="search-input" maxlength="3200" spellcheck="false" autocomplete="off" autocapitalize="none" autocorrect="off"></textarea>
+        <button id="search-submit" type="button">locate one occurrence</button>
+        <p class="catalogue-divider">or open a known v3 or w1 record</p>
+        <label for="address-input">full address</label>
+        <input id="address-input" type="text" inputmode="text" maxlength="1600000" spellcheck="false" autocomplete="off" autocapitalize="none" autocorrect="off" placeholder="w1;0;2;2;13;197" />
+        <button id="address-submit" type="button">open exact address</button>
+        <p id="search-result" class="search-result"></p>
+      </aside>
+
+      <aside id="book-panel" aria-live="polite">
+        <header class="reader-header">
+          <p class="page-counter">page <span>001</span> / <span id="page-total">410</span></p>
+          <h2 id="book-title">—</h2>
+        </header>
+        <aside class="reader-meta">
+          <p id="book-address" class="address">—</p>
+          <p id="location-record" class="location-record" role="button" tabindex="0" title="copy exact record">copy record</p>
+          <p id="catalogue-record" class="location-record" role="button" tabindex="0" title="copy exact v3 catalogue record" hidden>copy catalogue record</p>
+          <p id="page-format" class="page-format">40 lines × 80 characters</p>
+          <button id="close-book" class="reader-action" aria-label="return to chamber">return to chamber</button>
+        </aside>
+        <main id="book-page" class="page" aria-label="book page"></main>
+        <nav class="page-navigation" aria-label="page navigation">
+          <button id="previous-page" class="reader-action" type="button">previous</button>
+          <button id="next-page" class="reader-action" type="button">next</button>
+        </nav>
+      </aside>
+    </main>
+    <script>
+      window.addEventListener('error', () => {
+        const state = document.querySelector('#startup-state');
+        const start = document.querySelector('#start');
+        if (state && state.textContent !== 'ready') state.textContent = 'library unavailable';
+        if (start) start.disabled = true;
+      });
+      window.setTimeout(() => {
+        const state = document.querySelector('#startup-state');
+        const start = document.querySelector('#start');
+        if (state && start && start.disabled && state.textContent !== 'library unavailable') state.textContent = 'library unavailable';
+      }, 12000);
+    </script>
+    <script type="importmap">
+      { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js" } }
+    </script>
+    <script type="module" src="app.js?v=cabinet-grounded-1"></script>
+  </body>
+</html>

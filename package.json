@@ -1,0 +1,8 @@
+{
+  "name": "archive-chamber-prototype",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node tests/babel-v3.test.mjs && node tests/world-engine.test.mjs && node tests/world-model.test.mjs"
+  }
+}
