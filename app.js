@@ -5,17 +5,13 @@ import {
   SHELVES_PER_WALL,
   VOLUMES_PER_SHELF,
   bookIndexFor,
-  createPageAddress,
   createPageAddressForBookIndex,
-  getPage,
   getPageForBookIndex,
   initialPageForBookIndex,
-  initialPageForVolume,
   isManifestoBookIndex,
   parsePageAddress,
   search,
   titleForBookIndex,
-  titleForVolume,
 } from './babel-v3.js?v=w1-foundation-1';
 import {
   WORLD_ALGORITHM_VERSION,
@@ -39,7 +35,11 @@ const PLAYER_RADIUS = 0.28;
 const PLAYER_BOUNDARY = 6.45;
 const INTERACTION_DISTANCE = 2.2;
 const MAX_PAGE_COLUMNS = 80;
-const MAX_CLIENT_ADDRESS_LENGTH = 1_600_000;
+// The longest address this client can itself produce is a v3 search record of
+// ~3900 characters.  Parsing is synchronous BigInt work whose cost grows
+// superlinearly with the room index, so the field is bounded at roughly twice
+// that: a 1.6M-character room index froze the main thread for 2.6 seconds.
+const MAX_CLIENT_ADDRESS_LENGTH = 8192;
 const CABINET_WIDTH = WALL_WIDTH - 1.6;
 const CABINET_POST_WIDTH = 0.14;
 const BOOK_WALL_INDICES = Object.freeze([0, 1, 3, 4]);
@@ -702,36 +702,25 @@ function formatPage(text) {
   pageFormat.textContent = lines.length + ' lines × ' + columns + ' characters' + (columns === MAX_PAGE_COLUMNS ? '' : ' · adaptive');
   return lines.join('\n');
 }
-function archiveLocationForPage(page) {
-  return { ...activeVolume.location, page };
-}
 function readerAddressLabel(kind, address) {
   if (address.length <= 180) return address;
   return kind + ' record · ' + address.length + ' characters';
 }
 function syncReaderAddress(page) {
+  const catalogueAddress = createPageAddressForBookIndex(activeVolume.bookIndex, page);
   let primaryAddress;
   let primaryKind;
-  if (activeVolume.kind === 'catalogue') {
-    const catalogueAddress = createPageAddressForBookIndex(activeVolume.bookIndex, page);
-    if (activeVolume.worldLocation) {
-      primaryAddress = createWorldPageAddress({ ...activeVolume.worldLocation, page });
-      primaryKind = 'world';
-      locationRecord.textContent = 'copy world record';
-      catalogueRecord.hidden = false;
-      catalogueRecord.textContent = 'copy catalogue record';
-      catalogueRecord.dataset.fullAddress = catalogueAddress;
-    } else {
-      primaryAddress = catalogueAddress;
-      primaryKind = 'catalogue';
-      locationRecord.textContent = 'copy catalogue record';
-      catalogueRecord.hidden = true;
-      delete catalogueRecord.dataset.fullAddress;
-    }
+  if (activeVolume.worldLocation) {
+    primaryAddress = createWorldPageAddress({ ...activeVolume.worldLocation, page });
+    primaryKind = 'world';
+    locationRecord.textContent = 'copy world record';
+    catalogueRecord.hidden = false;
+    catalogueRecord.textContent = 'copy catalogue record';
+    catalogueRecord.dataset.fullAddress = catalogueAddress;
   } else {
-    primaryAddress = createPageAddress(archiveLocationForPage(page));
-    primaryKind = 'archive';
-    locationRecord.textContent = 'copy archive record';
+    primaryAddress = catalogueAddress;
+    primaryKind = 'catalogue';
+    locationRecord.textContent = 'copy catalogue record';
     catalogueRecord.hidden = true;
     delete catalogueRecord.dataset.fullAddress;
   }
@@ -741,21 +730,12 @@ function syncReaderAddress(page) {
   locationRecord.dataset.fullAddress = primaryAddress;
 }
 function isPageAvailable(page) {
-  if (!Number.isInteger(page) || page < 1 || page > PAGES_PER_VOLUME) return false;
-  if (activeVolume?.kind === 'catalogue') return true;
-  try {
-    createPageAddress(archiveLocationForPage(page));
-    return true;
-  } catch {
-    return false;
-  }
+  return Number.isInteger(page) && page >= 1 && page <= PAGES_PER_VOLUME;
 }
 function renderPage() {
   if (!activeVolume) return;
   const renderVersion = ++pageRenderVersion;
-  const decoded = activeVolume.kind === 'catalogue'
-    ? getPageForBookIndex(activeVolume.bookIndex, currentPage)
-    : getPage(archiveLocationForPage(currentPage));
+  const decoded = getPageForBookIndex(activeVolume.bookIndex, currentPage);
   if (renderVersion !== pageRenderVersion) return;
   pageNumber.textContent = String(currentPage).padStart(3, '0');
   bookPage.textContent = formatPage(decoded);
@@ -765,7 +745,6 @@ function renderPage() {
 }
 function showCatalogueVolume(bookIndex, initialPage, titleHint = null, worldLocation = null) {
   activeVolume = {
-    kind: 'catalogue',
     bookIndex: BigInt(bookIndex),
     worldLocation: worldLocation ? { ...worldLocation, page: 1 } : null,
   };
@@ -774,15 +753,6 @@ function showCatalogueVolume(bookIndex, initialPage, titleHint = null, worldLoca
   intro.classList.add('gone');
   releasePointerLock();
   bookTitle.textContent = titleHint || shortSpineTitle(titleForBookIndex(activeVolume.bookIndex));
-  renderPage();
-}
-function showArchiveVolume(location, initialPage = initialPageForVolume(location), titleHint = null) {
-  activeVolume = { kind: 'archive', location: { ...location, page: 1 } };
-  currentPage = initialPage;
-  bookPanel.classList.add('visible');
-  intro.classList.add('gone');
-  releasePointerLock();
-  bookTitle.textContent = titleHint || shortSpineTitle(titleForVolume(activeVolume.location));
   renderPage();
 }
 function closeBook() {
