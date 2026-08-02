@@ -56,25 +56,31 @@ w1;<world-room-index lowercase hex>;<wall>;<shelf>;<volume>;<page>
 
 Текущие слои репозитория:
 
+Детерминированное ядро лежит в корне и не зависит от клиента:
+
 - `babel-v3.js` — содержимое полного тома и v3-адреса;
 - `world-engine.js` — точные координаты, w1-адреса и циклический placement;
-- `world-model.js` — соседи, карта, exact room record и декоративные теги;
-- `app.js` — three.js-сцена, ввод, reader и catalogue ui;
-- `index.html` и `style.css` — оболочка, desktop-сетка 40 × 80 и adaptive fallback.
+- `world-model.js` — соседи, карта, exact room record и декоративные теги.
+
+Клиент разложен по слоям:
+
+~~~
+src/
+  constants.js   размеры комнаты, полок и лимит адреса
+  player.js      общее состояние игрока (yaw, pitch, locked)
+  audio.js       фоновый дрон
+  core/          scene, camera, renderer, общие материалы
+  world/         геометрия, построение комнаты, текущая комната
+  ui/            reader, catalogue panel, room record, map, hud
+  input/         pointer lock, движение, прицеливание
+  main.js        связывание слоёв и кадровый цикл
+~~~
+
+`main.js` — единственное место, знающее, какая клавиша открывает какую панель. Благодаря этому `input`, `world` и `ui` не импортируют друг друга по кругу. Слой `net/` появится вместе с фазой присутствия.
 
 В three.js одновременно существует одна комната. Это ограничение рендера, не модели w1. Будущий проход освобождает старую сцену и строит следующую только после подтверждённого перехода.
 
-По мере декомпозиции целевая структура клиента:
-
-~~~
-client/
-  core/       scene, camera, render loop
-  catalogue/  v3 addresses and search records
-  world/      w1 address, placement, room builder
-  ui/         reader, catalogue panel, room record, map
-  input/      pointer lock, keyboard, interaction
-  net/        presence client, absent until multiplayer phase
-~~~
+Комната из 640 томов стоит меньше 20 draw calls: тома собраны в `InstancedMesh` по текстурам, обводки слиты в один буфер, а названия корешков — в один меш на текстурный атлас. Регрессию сторожит headless smoke-тест.
 
 ## 4. будущая сетевая схема
 
