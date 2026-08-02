@@ -10,6 +10,7 @@ export const APOTHEM = ROOM_RADIUS * Math.cos(Math.PI / 6);
 export const WALL_WIDTH = 9.04;
 export const WALL_HEIGHT = 4.8;
 export const PLAYER_BOUNDARY = 6.45;
+export const PLAYER_RADIUS = 0.28;
 export const INTERACTION_DISTANCE = 2.2;
 export const MAX_PAGE_COLUMNS = 80;
 
@@ -24,7 +25,24 @@ export const CABINET_POST_WIDTH = 0.14;
 export const BOOK_WALL_INDICES = Object.freeze([0, 1, 3, 4]);
 export const BOOK_WALLS = new Set(BOOK_WALL_INDICES);
 
-export const BOOK_HEIGHT = 0.66;
+// The two walls without shelves carry the doorways.  A wall index is also its
+// axial direction, so these are neighbours [-1,+1] and [+1,-1] — exact
+// opposites.  Walking therefore travels a line of rooms; every other hex stays
+// reachable by address.  Doors cannot move to a book wall without deleting
+// volumes, and 640 volumes per room is a frozen w1 contract.
+export const DOOR_WALL_INDICES = Object.freeze([2, 5]);
+export const DOOR_WALLS = new Set(DOOR_WALL_INDICES);
+export const DOOR_WIDTH = 2.4;
+export const DOOR_HEIGHT = 3.05;
+export const DOOR_HALF_WIDTH = DOOR_WIDTH / 2;
+export const WALL_THICKNESS = 0.2;
+
+// Sized so that a cabinet of five shelves stands on the floor and still ends
+// below the player's reach: at the old height the top shelf sat 2.63 away from
+// the eye, past INTERACTION_DISTANCE, and could never be opened.
+export const BOOK_HEIGHT = 0.46;
+export const SHELF_BASE_Y = 0.26;
+export const SHELF_PITCH = 0.66;
 export const BOOK_WIDTH = 0.19;
 export const BOOK_STEP = 0.22;
 // Depth of a volume as it recedes into the shelf. Kept well above BOOK_WIDTH
@@ -34,13 +52,14 @@ export const BOOK_DEPTH = 0.4;
 export const BOOK_FRONT_Z = -0.35;
 
 export const SPINE_WIDTH = 0.17;
-export const SPINE_HEIGHT = 0.62;
+export const SPINE_HEIGHT = 0.42;
 // A 2048 atlas holds 224 spines at the same cell resolution a 1024 atlas gave
 // 56, so one room needs three atlases instead of twelve.  Every spine sharing
 // an atlas is merged into a single geometry, making each atlas one draw call.
 export const SPINE_ATLAS_SIZE = 2048;
 export const SPINE_CELL_WIDTH = 72;
-export const SPINE_CELL_HEIGHT = 256;
+// Kept proportional to the spine quad so the rotated label is not squashed.
+export const SPINE_CELL_HEIGHT = 176;
 export const SPINE_ATLAS_COLUMNS = Math.floor(SPINE_ATLAS_SIZE / SPINE_CELL_WIDTH);
 export const SPINE_ATLAS_ROWS = Math.floor(SPINE_ATLAS_SIZE / SPINE_CELL_HEIGHT);
 export const SPINES_PER_ATLAS = SPINE_ATLAS_COLUMNS * SPINE_ATLAS_ROWS;

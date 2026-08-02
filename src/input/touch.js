@@ -13,7 +13,11 @@ import { player } from '../player.js';
 
 const STICK_RADIUS = 56;
 const TAP_MOVEMENT = 12;
-const TAP_DURATION = 320;
+// What makes a tap a tap here is that the finger did not travel; the time limit
+// only separates a deliberate tap from a finger left resting on the screen.
+// 500ms matches the usual platform long-press threshold, and no other gesture
+// competes for it, so being generous costs nothing.
+const TAP_DURATION = 500;
 
 export const isTouchDevice = matchMedia('(hover: none) and (pointer: coarse)').matches;
 

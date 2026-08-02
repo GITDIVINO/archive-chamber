@@ -20,6 +20,11 @@ import {
   BOOK_WIDTH,
   CABINET_POST_WIDTH,
   CABINET_WIDTH,
+  DOOR_HEIGHT,
+  DOOR_WALLS,
+  DOOR_WIDTH,
+  SHELF_BASE_Y,
+  SHELF_PITCH,
   SPINES_PER_ATLAS,
   SPINE_ATLAS_COLUMNS,
   SPINE_ATLAS_SIZE,
@@ -28,6 +33,7 @@ import {
   SPINE_HEIGHT,
   SPINE_WIDTH,
   WALL_HEIGHT,
+  WALL_THICKNESS,
   WALL_WIDTH,
 } from '../constants.js';
 import { renderer } from '../core/view.js';
@@ -151,7 +157,42 @@ function addBox(room, material, size, position, rotation = 0, parentMatrix = nul
 
 function addSolidWall(room, index) {
   const basis = wallBasis(index);
-  addBox(room, wallMaterial, [WALL_WIDTH, WALL_HEIGHT, 0.2], pointOnWall(basis, 0, WALL_HEIGHT / 2), basis.rotation);
+  addBox(room, wallMaterial, [WALL_WIDTH, WALL_HEIGHT, WALL_THICKNESS], pointOnWall(basis, 0, WALL_HEIGHT / 2), basis.rotation);
+}
+
+// A doorway wall is the same surface with a hole in it: two jambs and a lintel.
+// Everything above and beside the opening stays closed, so the room reads as
+// sealed apart from the two passages.
+function addDoorWall(room, index) {
+  const basis = wallBasis(index);
+  const jambWidth = (WALL_WIDTH - DOOR_WIDTH) / 2;
+  const jambOffset = (DOOR_WIDTH + jambWidth) / 2;
+  const lintelHeight = WALL_HEIGHT - DOOR_HEIGHT;
+  for (const side of [-1, 1]) {
+    addBox(
+      room,
+      wallMaterial,
+      [jambWidth, WALL_HEIGHT, WALL_THICKNESS],
+      pointOnWall(basis, side * jambOffset, WALL_HEIGHT / 2),
+      basis.rotation,
+    );
+  }
+  addBox(
+    room,
+    wallMaterial,
+    [DOOR_WIDTH, lintelHeight, WALL_THICKNESS],
+    pointOnWall(basis, 0, DOOR_HEIGHT + lintelHeight / 2),
+    basis.rotation,
+  );
+  // A shallow reveal around the opening so the threshold reads as cut stone
+  // rather than a floating edge.
+  addBox(
+    room,
+    trimMaterial,
+    [DOOR_WIDTH + 0.18, 0.1, WALL_THICKNESS + 0.06],
+    pointOnWall(basis, 0, DOOR_HEIGHT + 0.05),
+    basis.rotation,
+  );
 }
 
 const frameMatrix = new THREE.Matrix4();
@@ -159,10 +200,100 @@ const bookMatrix = new THREE.Matrix4();
 const spineMatrix = new THREE.Matrix4();
 const outlineCorner = new THREE.Vector3();
 
+// The carcase is drawn as one body: its parts share a material and carry no
+// edges of their own, and only this silhouette is outlined. Shelves therefore
+// read as recesses cut into a solid block rather than boards stacked together.
+// The carcase stands on the floor and stops short of the ceiling: a case that
+// began at y=0.18 read as hanging in mid-air, and one reaching 4.6 put its top
+// shelf out of arm's length.
+const CARCASE_HEIGHT = 3.5;
+const CARCASE_DEPTH = 0.56;
+const CARCASE_CENTRE_Y = CARCASE_HEIGHT / 2;
+const CARCASE_CENTRE_Z = -0.15;
+const CARCASE_FRONT_Z = CARCASE_CENTRE_Z - CARCASE_DEPTH / 2;
+const RAIL_THICKNESS = 0.12;
+const CARCASE_BACK_THICKNESS = 0.06;
+const CARCASE_BACK_Z = CARCASE_CENTRE_Z + CARCASE_DEPTH / 2 - CARCASE_BACK_THICKNESS / 2;
+
+// The shelf reads because its front face is drawn as a band, not because it
+// juts out: a deep overhang hides the volumes on the shelf below whenever the
+// player looks up, and thickening it eats the headroom above the books.
+const SHELF_THICKNESS = 0.11;
+const SHELF_DEPTH = 0.5;
+const SHELF_CENTRE_Z = -0.18;
+const SHELF_FRONT_Z = SHELF_CENTRE_Z - SHELF_DEPTH / 2;
+const SHELF_SURFACE_OFFSET = SHELF_THICKNESS / 2;
+
+const framePoint = new THREE.Vector3();
+function pushLine(outlinePositions, parentMatrix, from, to) {
+  for (const point of [from, to]) {
+    framePoint.set(point[0], point[1], point[2]).applyMatrix4(parentMatrix);
+    outlinePositions.push(framePoint.x, framePoint.y, framePoint.z);
+  }
+}
+
+// Only the front of the carcase is drawn. Its back and depth edges sat behind
+// the volumes where they read as stray lines rather than structure.
+function addCarcaseOutline(room, parentMatrix) {
+  const { outlinePositions } = room.userData;
+  const halfWidth = CABINET_WIDTH / 2;
+  const top = CARCASE_HEIGHT;
+  const bottom = 0;
+  const frame = [
+    [[-halfWidth, bottom], [halfWidth, bottom]],
+    [[halfWidth, bottom], [halfWidth, top]],
+    [[halfWidth, top], [-halfWidth, top]],
+    [[-halfWidth, top], [-halfWidth, bottom]],
+  ];
+  for (const [from, to] of frame) {
+    pushLine(outlinePositions, parentMatrix, [from[0], from[1], CARCASE_FRONT_Z], [to[0], to[1], CARCASE_FRONT_Z]);
+  }
+  // Inner edge of each upright, so the carcase reads as a frame with real
+  // stiles rather than a flat rectangle.
+  const innerX = halfWidth - CABINET_POST_WIDTH;
+  for (const side of [-1, 1]) {
+    pushLine(outlinePositions, parentMatrix, [side * innerX, bottom, CARCASE_FRONT_Z], [side * innerX, top, CARCASE_FRONT_Z]);
+  }
+}
+
+const shelfEdgePoint = new THREE.Vector3();
+// Only the front face of a shelf is drawn, as two horizontal lines running the
+// full width with no end caps. That reads as a ledge cut into the carcase and
+// gives the volumes something to visibly stand on, without turning the shelf
+// back into a separate box.
+function addShelfEdge(outlinePositions, parentMatrix, shelfY) {
+  const halfWidth = CABINET_WIDTH / 2;
+  for (const y of [shelfY + SHELF_SURFACE_OFFSET, shelfY - SHELF_SURFACE_OFFSET]) {
+    for (const x of [-halfWidth, halfWidth]) {
+      shelfEdgePoint.set(x, y, SHELF_FRONT_Z).applyMatrix4(parentMatrix);
+      outlinePositions.push(shelfEdgePoint.x, shelfEdgePoint.y, shelfEdgePoint.z);
+    }
+  }
+}
+
+// Only the face of the spine is drawn. Outlining the whole box also drew each
+// volume's back edges, which tripled the line count and left the books looking
+// like crates trailing off into empty space behind the shelf.
+const BOOK_FACE_SEGMENTS = (() => {
+  const halfWidth = BOOK_WIDTH / 2;
+  const halfHeight = BOOK_HEIGHT / 2;
+  const faceZ = -BOOK_DEPTH / 2;
+  const corners = [
+    [-halfWidth, -halfHeight, faceZ],
+    [halfWidth, -halfHeight, faceZ],
+    [halfWidth, halfHeight, faceZ],
+    [-halfWidth, halfHeight, faceZ],
+  ];
+  const segments = [];
+  for (let index = 0; index < corners.length; index++) {
+    segments.push(corners[index], corners[(index + 1) % corners.length]);
+  }
+  return segments;
+})();
+
 function appendBookOutline(outlinePositions, matrix) {
-  const source = bookEdgeGeometry.getAttribute('position');
-  for (let index = 0; index < source.count; index++) {
-    outlineCorner.fromBufferAttribute(source, index).applyMatrix4(matrix);
+  for (const [x, y, z] of BOOK_FACE_SEGMENTS) {
+    outlineCorner.set(x, y, z).applyMatrix4(matrix);
     outlinePositions.push(outlineCorner.x, outlineCorner.y, outlineCorner.z);
   }
 }
@@ -176,15 +307,30 @@ function collectBookWall(room, index, q, r) {
   const frameOffset = pointOnWall(basis, 0, 0, 0.28);
   frameMatrix.makeRotationY(basis.rotation).setPosition(frameOffset.x, frameOffset.y, frameOffset.z);
   const postOffset = (CABINET_WIDTH - CABINET_POST_WIDTH) / 2;
-  addBox(room, trimMaterial, [CABINET_WIDTH, 0.12, 0.54], new THREE.Vector3(0, 0.24, -0.14), 0, frameMatrix);
-  addBox(room, trimMaterial, [CABINET_WIDTH, 0.12, 0.54], new THREE.Vector3(0, 4.56, -0.14), 0, frameMatrix);
-  addBox(room, shelfMaterial, [CABINET_POST_WIDTH, 4.38, 0.54], new THREE.Vector3(-postOffset, 2.4, -0.14), 0, frameMatrix);
-  addBox(room, shelfMaterial, [CABINET_POST_WIDTH, 4.38, 0.54], new THREE.Vector3(postOffset, 2.4, -0.14), 0, frameMatrix);
+  const postHeight = CARCASE_HEIGHT - 2 * RAIL_THICKNESS;
+  addBox(room, shelfMaterial, [CABINET_WIDTH, RAIL_THICKNESS, CARCASE_DEPTH], new THREE.Vector3(0, RAIL_THICKNESS / 2, CARCASE_CENTRE_Z), 0, frameMatrix, false);
+  addBox(room, shelfMaterial, [CABINET_WIDTH, RAIL_THICKNESS, CARCASE_DEPTH], new THREE.Vector3(0, CARCASE_HEIGHT - RAIL_THICKNESS / 2, CARCASE_CENTRE_Z), 0, frameMatrix, false);
+  for (const side of [-1, 1]) {
+    addBox(room, shelfMaterial, [CABINET_POST_WIDTH, postHeight, CARCASE_DEPTH], new THREE.Vector3(side * postOffset, CARCASE_CENTRE_Y, CARCASE_CENTRE_Z), 0, frameMatrix, false);
+  }
+  // Backing board: without it the volumes stood against open space and the
+  // gaps between them showed straight through the cabinet.
+  addBox(
+    room,
+    shelfMaterial,
+    [CABINET_WIDTH, CARCASE_HEIGHT, CARCASE_BACK_THICKNESS],
+    new THREE.Vector3(0, CARCASE_CENTRE_Y, CARCASE_BACK_Z),
+    0,
+    frameMatrix,
+    false,
+  );
+  addCarcaseOutline(room, frameMatrix);
 
   const { batches, outlinePositions } = room.userData;
   for (let shelfIndex = 0; shelfIndex < SHELVES_PER_WALL; shelfIndex++) {
-    const shelfY = 0.32 + shelfIndex * 0.86;
-    addBox(room, trimMaterial, [CABINET_WIDTH, 0.09, 0.5], new THREE.Vector3(0, shelfY, -0.18), 0, frameMatrix);
+    const shelfY = SHELF_BASE_Y + shelfIndex * SHELF_PITCH;
+    addBox(room, shelfMaterial, [CABINET_WIDTH, SHELF_THICKNESS, SHELF_DEPTH], new THREE.Vector3(0, shelfY, SHELF_CENTRE_Z), 0, frameMatrix, false);
+    addShelfEdge(outlinePositions, frameMatrix, shelfY);
     for (let volumeIndex = 0; volumeIndex < VOLUMES_PER_SHELF; volumeIndex++) {
       const worldLocation = {
         q,
@@ -198,7 +344,9 @@ function collectBookWall(room, index, q, r) {
       const manifesto = isManifestoBookIndex(bookIndex);
       const batch = manifesto ? batches[0] : batches[(shelfIndex + volumeIndex) % batches.length];
       const x = -((VOLUMES_PER_SHELF - 1) * BOOK_STEP) / 2 + volumeIndex * BOOK_STEP;
-      const y = shelfY + 0.07 + BOOK_HEIGHT / 2;
+      // Seated exactly on the shelf surface: the old constant left a 25mm gap
+      // that read as books hovering once the shelf lost its outline.
+      const y = shelfY + SHELF_SURFACE_OFFSET + BOOK_HEIGHT / 2;
       const bookCenterZ = BOOK_FRONT_Z + BOOK_DEPTH / 2;
 
       bookMatrix.makeTranslation(x, y, bookCenterZ).premultiply(frameMatrix);
@@ -293,7 +441,8 @@ export function makeRoom(q, r, roomTag) {
   }
 
   for (let index = 0; index < 6; index++) {
-    addSolidWall(room, index);
+    if (DOOR_WALLS.has(index)) addDoorWall(room, index);
+    else addSolidWall(room, index);
     if (BOOK_WALLS.has(index)) collectBookWall(room, index, q, r);
   }
   finalizeRoom(room);

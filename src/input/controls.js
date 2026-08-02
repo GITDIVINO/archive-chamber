@@ -6,10 +6,10 @@
  */
 
 import * as THREE from 'three';
-import { INTERACTION_DISTANCE, PLAYER_BOUNDARY } from '../constants.js';
+import { INTERACTION_DISTANCE } from '../constants.js';
 import { camera, renderer } from '../core/view.js';
 import { isEngaged, keys, player } from '../player.js';
-import { wallBasis } from '../world/geometry.js';
+import { constrainToRoom } from '../world/doors.js';
 import { currentBookMeshes } from '../world/rooms.js';
 import { reticle } from '../ui/dom.js';
 
@@ -43,19 +43,6 @@ export function applyLook(deltaX, deltaY, sensitivity = player.lookSensitivity) 
   player.pitch = THREE.MathUtils.clamp(player.pitch - deltaY * sensitivity, -PITCH_LIMIT, PITCH_LIMIT);
 }
 
-// Keeps the player inside the hexagon by pushing them back along each wall
-// normal they crossed.
-function constrainPlayer() {
-  for (let index = 0; index < 6; index++) {
-    const basis = wallBasis(index);
-    const normalDistance = basis.nx * camera.position.x + basis.nz * camera.position.z;
-    if (normalDistance <= PLAYER_BOUNDARY) continue;
-    const correction = PLAYER_BOUNDARY - normalDistance;
-    camera.position.x += basis.nx * correction;
-    camera.position.z += basis.nz * correction;
-  }
-}
-
 export function movePlayer(delta, forwardAxis, strafeAxis, running) {
   if (forwardAxis === 0 && strafeAxis === 0) return;
   const speed = (running ? RUN_SPEED : WALK_SPEED) * delta;
@@ -63,7 +50,7 @@ export function movePlayer(delta, forwardAxis, strafeAxis, running) {
   rightVector.set(Math.cos(player.yaw), 0, -Math.sin(player.yaw));
   camera.position.addScaledVector(forwardVector, forwardAxis * speed);
   camera.position.addScaledVector(rightVector, strafeAxis * speed);
-  constrainPlayer();
+  constrainToRoom(camera.position);
 }
 
 export function keyboardAxes() {

@@ -183,6 +183,99 @@ assert.ok(Date.now() - started < 2000, 'refusing an oversized address must be im
 
 assert.deepEqual(consoleErrors, [], 'the page must boot without console errors');
 
+// --- doorways ----------------------------------------------------------------
+// Driven against the page's own module instances, so this exercises the same
+// camera and room registry the player does rather than a copy.
+await openCatalogue();
+await page.locator('#address-input').fill('w1;0');
+await page.locator('#address-submit').click();
+await page.waitForFunction(() => document.querySelector('#search-result').textContent === 'world room opened');
+
+const doorGeometry = await page.evaluate(async () => {
+  const doors = await import('./src/world/doors.js');
+  const { APOTHEM } = await import('./src/constants.js');
+  const beyond = doors.DOOR_CROSSING_DISTANCE + 0.1;
+  const at = (index, normal, tangent) => {
+    const { basis } = doors.wallCoordinates(index, 0, 0);
+    return {
+      x: basis.nx * normal + basis.tx * tangent,
+      z: basis.nz * normal + basis.tz * tangent,
+    };
+  };
+  const centred = at(2, beyond, 0);
+  const offCentre = at(2, beyond, 1.9);
+  const bookWall = at(0, beyond, 0);
+  return {
+    apothem: APOTHEM,
+    opposite: [doors.oppositeWall(2), doors.oppositeWall(5)],
+    doorWalls: [0, 1, 2, 3, 4, 5].filter(index => doors.isDoorWall(index)),
+    crossingCentred: doors.crossedDoorway(centred.x, centred.z),
+    crossingOffCentre: doors.crossedDoorway(offCentre.x, offCentre.z),
+    crossingThroughBookWall: doors.crossedDoorway(bookWall.x, bookWall.z),
+    crossingWhileBlocked: doors.crossedDoorway(centred.x, centred.z, 2),
+  };
+});
+
+assert.deepEqual(doorGeometry.doorWalls, [2, 5], 'only the two shelf-free walls carry doorways');
+assert.deepEqual(doorGeometry.opposite, [5, 2], 'the doorways face each other');
+assert.equal(doorGeometry.crossingCentred, 2, 'walking through the opening crosses');
+assert.equal(doorGeometry.crossingOffCentre, null, 'the jambs block a crossing beside the opening');
+assert.equal(doorGeometry.crossingThroughBookWall, null, 'a shelved wall is never a doorway');
+assert.equal(doorGeometry.crossingWhileBlocked, null, 'the wall just entered by stays inert');
+
+// A real crossing: place the player in the threshold and let the world react.
+const walk = await page.evaluate(async () => {
+  const { camera } = await import('./src/core/view.js');
+  const { syncDoorways, world } = await import('./src/world/rooms.js');
+  const doors = await import('./src/world/doors.js');
+  const step = (index, normal) => {
+    const { basis } = doors.wallCoordinates(index, 0, 0);
+    camera.position.x = basis.nx * normal;
+    camera.position.z = basis.nz * normal;
+  };
+  const record = () => ({
+    q: String(world.room.q),
+    r: String(world.room.r),
+    tag: world.tag,
+    x: Number(camera.position.x.toFixed(3)),
+    z: Number(camera.position.z.toFixed(3)),
+  });
+
+  const before = record();
+  step(2, doors.DOOR_CROSSING_DISTANCE + 0.1);
+  const enteredForward = Boolean(syncDoorways());
+  const afterForward = record();
+
+  // Arriving must not immediately bounce back out of the opposite doorway.
+  const bouncedStraightBack = Boolean(syncDoorways());
+
+  // Step inside to re-arm, then walk back the way we came.
+  step(5, 4);
+  syncDoorways();
+  step(5, doors.DOOR_CROSSING_DISTANCE + 0.1);
+  const enteredBack = Boolean(syncDoorways());
+  const afterBack = record();
+
+  return { before, enteredForward, afterForward, bouncedStraightBack, enteredBack, afterBack };
+});
+
+assert.equal(walk.enteredForward, true, 'crossing the threshold enters the neighbour');
+assert.deepEqual(
+  [walk.afterForward.q, walk.afterForward.r],
+  ['-1', '1'],
+  'wall 2 leads to the axial neighbour [-1,+1]',
+);
+assert.notEqual(walk.afterForward.tag, walk.before.tag, 'the new chamber has its own tag');
+assert.equal(walk.bouncedStraightBack, false, 'arriving does not immediately count as leaving');
+assert.equal(walk.enteredBack, true, 'the opposite doorway leads home');
+assert.deepEqual([walk.afterBack.q, walk.afterBack.r], ['0', '0'], 'walking back returns to w1;0');
+
+// Position carries across the threshold instead of snapping to the centre.
+assert.ok(
+  Math.hypot(walk.afterForward.x, walk.afterForward.z) > 5,
+  'the player emerges at the doorway, not teleported to the middle of the room',
+);
+
 // --- touch devices -----------------------------------------------------------
 // Phones have no pointer lock, so entering the chamber is a mode switch driven
 // by a virtual stick. Real touch events are dispatched through CDP so the
@@ -245,8 +338,12 @@ await touchPage.waitForTimeout(120);
 assert.notEqual(await mapSnapshot(), beforeLook, 'dragging the right half turns the view');
 
 // A tap on the right half aims rather than turns; nothing is in reach at spawn.
-await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 300, y: 400, id: 1 }] });
-await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+// Both events are queued without waiting for a round trip in between, so the
+// measured press length is the client's, not the test harness's latency.
+await Promise.all([
+  cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 300, y: 400, id: 1 }] }),
+  cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }),
+]);
 await touchPage.waitForFunction(() => document.querySelector('#notice').textContent !== '', null, { timeout: 5000 });
 assert.equal(await touchPage.locator('#notice').textContent(), 'aim at a book', 'a tap triggers the read action');
 

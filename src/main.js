@@ -10,7 +10,7 @@
 import { camera, render, renderer, resizeView } from './core/view.js';
 import { isEngaged, keys, player } from './player.js';
 import { startAudio, toggleAudio } from './audio.js';
-import { buildCurrentRoom, onRoomChange, world } from './world/rooms.js';
+import { buildCurrentRoom, onRoomChange, syncDoorways, world } from './world/rooms.js';
 import {
   applyLook,
   clearTarget,
@@ -208,6 +208,9 @@ function animate(now) {
     const forward = keyboard.forward || pad?.forward || touch?.forward || 0;
     const strafe = keyboard.strafe || pad?.strafe || touch?.strafe || 0;
     movePlayer(delta, forward, strafe, keyboard.running || Boolean(pad?.running));
+    // Stepping over a threshold swaps the room under the player without
+    // moving them: the neighbour is built and the old one released.
+    if (syncDoorways()) showNotice('chamber ' + world.tag);
     // Stick look is an angular velocity, so the frame time is the scale.
     if (pad) applyLook(pad.lookX, pad.lookY, delta);
     if (isTouchDevice) {
