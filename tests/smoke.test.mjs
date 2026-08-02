@@ -183,6 +183,75 @@ assert.ok(Date.now() - started < 2000, 'refusing an oversized address must be im
 
 assert.deepEqual(consoleErrors, [], 'the page must boot without console errors');
 
+// --- touch devices -----------------------------------------------------------
+// Phones have no pointer lock, so entering the chamber is a mode switch driven
+// by a virtual stick. Real touch events are dispatched through CDP so the
+// client sees pointerType 'touch' exactly as it would on a device.
+const touchContext = await browser.newContext({
+  viewport: { width: 390, height: 844 },
+  hasTouch: true,
+  isMobile: true,
+});
+const touchPage = await touchContext.newPage();
+const touchErrors = [];
+touchPage.on('pageerror', error => touchErrors.push(String(error)));
+await touchPage.goto(origin, { waitUntil: 'load' });
+await touchPage.waitForFunction(() => document.querySelector('#startup-state').textContent === 'ready', null, { timeout: 30000 });
+
+assert.equal(await touchPage.locator('.controls-touch').isVisible(), true, 'touch devices get gesture instructions');
+assert.equal(await touchPage.locator('p.controls:not(.controls-touch)').isVisible(), false, 'keyboard instructions are hidden on touch');
+
+await touchPage.locator('#start').click();
+assert.equal(await touchPage.locator('#intro').getAttribute('class'), 'panel gone', 'entering hides the intro without pointer lock');
+assert.equal(await touchPage.evaluate(() => document.querySelector('#reticle').style.display), 'block');
+
+const cdp = await touchContext.newCDPSession(touchPage);
+async function touchDrag(fromX, fromY, toX, toY, steps = 8) {
+  await cdp.send('Input.dispatchTouchEvent', {
+    type: 'touchStart',
+    touchPoints: [{ x: fromX, y: fromY, id: 1 }],
+  });
+  for (let step = 1; step <= steps; step++) {
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [{
+        x: fromX + (toX - fromX) * step / steps,
+        y: fromY + (toY - fromY) * step / steps,
+        id: 1,
+      }],
+    });
+  }
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+}
+
+// The minimap only repaints when the player actually moved or turned, so a
+// changed canvas is proof the input reached the world rather than the DOM.
+const mapSnapshot = () => touchPage.evaluate(() => document.querySelector('#hex-map').toDataURL());
+
+// Dragging the left half raises the stick and walks.
+const beforeWalk = await mapSnapshot();
+await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 100, y: 600, id: 1 }] });
+await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 100, y: 540, id: 1 }] });
+assert.equal(await touchPage.locator('#touch-stick.visible').count(), 1, 'the virtual stick follows the finger');
+await touchPage.waitForTimeout(250);
+await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+assert.equal(await touchPage.locator('#touch-stick.visible').count(), 0, 'the stick disappears on release');
+assert.notEqual(await mapSnapshot(), beforeWalk, 'the stick moves the player');
+
+// Dragging the right half turns the view.
+const beforeLook = await mapSnapshot();
+await touchDrag(300, 400, 180, 400);
+await touchPage.waitForTimeout(120);
+assert.notEqual(await mapSnapshot(), beforeLook, 'dragging the right half turns the view');
+
+// A tap on the right half aims rather than turns; nothing is in reach at spawn.
+await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 300, y: 400, id: 1 }] });
+await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+await touchPage.waitForFunction(() => document.querySelector('#notice').textContent !== '', null, { timeout: 5000 });
+assert.equal(await touchPage.locator('#notice').textContent(), 'aim at a book', 'a tap triggers the read action');
+
+assert.deepEqual(touchErrors, [], 'the touch client must run without errors');
+
 await browser.close();
 server.close();
-console.log('smoke: room renders in ' + perFrame + ' draw calls/frame; reader, catalogue, and search paths pass');
+console.log('smoke: room renders in ' + perFrame + ' draw calls/frame; reader, catalogue, search and touch paths pass');

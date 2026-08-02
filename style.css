@@ -142,3 +142,41 @@ button:focus-visible, .location-record:focus-visible { outline: 1px solid var(--
   #open-search { right: 16px; }
   #search-panel { width: calc(100vw - 24px); padding: 20px; }
 }
+
+/* Virtual stick, created only on touch devices. It follows the finger that
+   opened it rather than sitting in a fixed corner. */
+#touch-stick {
+  position: fixed;
+  z-index: 5;
+  display: none;
+  width: 112px;
+  height: 112px;
+  margin: -56px 0 0 -56px;
+  border: 1px solid rgba(32, 32, 32, .35);
+  border-radius: 50%;
+  background: rgba(244, 242, 236, .28);
+  pointer-events: none;
+}
+#touch-stick.visible { display: block; }
+#touch-knob {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 46px;
+  height: 46px;
+  border: 1px solid rgba(32, 32, 32, .55);
+  border-radius: 50%;
+  background: rgba(244, 242, 236, .72);
+  transform: translate(-50%, -50%);
+}
+
+/* Declared before the media query: same specificity, so a later rule would
+   otherwise win no matter what the query matched. */
+.controls-touch { display: none; }
+
+@media (hover: none) and (pointer: coarse) {
+  /* wasd and pointer lock do not exist here, so the intro explains the
+     gestures that replace them. */
+  p.controls:not(.controls-touch) { display: none; }
+  .controls-touch { display: block; }
+}

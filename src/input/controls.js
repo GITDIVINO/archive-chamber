@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { INTERACTION_DISTANCE, PLAYER_BOUNDARY } from '../constants.js';
 import { camera, renderer } from '../core/view.js';
-import { keys, player } from '../player.js';
+import { isEngaged, keys, player } from '../player.js';
 import { wallBasis } from '../world/geometry.js';
 import { currentBookMeshes } from '../world/rooms.js';
 import { reticle } from '../ui/dom.js';
@@ -57,7 +57,7 @@ function constrainPlayer() {
 }
 
 export function movePlayer(delta, forwardAxis, strafeAxis, running) {
-  if (!forwardAxis && !strafeAxis) return;
+  if (forwardAxis === 0 && strafeAxis === 0) return;
   const speed = (running ? RUN_SPEED : WALK_SPEED) * delta;
   forwardVector.set(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
   rightVector.set(Math.cos(player.yaw), 0, -Math.sin(player.yaw));
@@ -85,7 +85,7 @@ export function volumeInView() {
 }
 
 export function refreshTargetedVolume() {
-  targetedVolume = player.locked ? volumeInView() : null;
+  targetedVolume = isEngaged() ? volumeInView() : null;
   reticle.classList.toggle('target', Boolean(targetedVolume));
 }
 
