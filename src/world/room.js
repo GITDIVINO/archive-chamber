@@ -472,7 +472,12 @@ function collectBookWall(room, index, q, r) {
   const postHeight = CARCASE_HEIGHT - 2 * RAIL_THICKNESS;
   const carcase = { outlined: false, shade: nicheShade };
   addBox(room, shelfMaterial, [CABINET_WIDTH, RAIL_THICKNESS, CARCASE_DEPTH], new THREE.Vector3(0, RAIL_THICKNESS / 2, CARCASE_CENTRE_Z), 0, frameMatrix, carcase);
-  addBox(room, shelfMaterial, [CABINET_WIDTH, RAIL_THICKNESS, CARCASE_DEPTH], new THREE.Vector3(0, CARCASE_HEIGHT - RAIL_THICKNESS / 2, CARCASE_CENTRE_Z), 0, frameMatrix, carcase);
+  // The head rail is the ceiling of the topmost niche, so it takes the same
+  // underside tone a shelf board does. Without it the top row was the one shelf
+  // in the case with nothing shading it from above.
+  const headRailY = CARCASE_HEIGHT - RAIL_THICKNESS / 2;
+  addBox(room, shelfMaterial, [CABINET_WIDTH, RAIL_THICKNESS, CARCASE_DEPTH], new THREE.Vector3(0, headRailY, CARCASE_CENTRE_Z), 0, frameMatrix,
+    { outlined: false, shade: shelfBoardShade(headRailY) });
   for (const side of [-1, 1]) {
     addBox(room, shelfMaterial, [CABINET_POST_WIDTH, postHeight, CARCASE_DEPTH], new THREE.Vector3(side * postOffset, CARCASE_CENTRE_Y, CARCASE_CENTRE_Z), 0, frameMatrix, carcase);
   }
