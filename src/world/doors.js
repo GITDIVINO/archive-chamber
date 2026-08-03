@@ -14,6 +14,7 @@ import {
   DOOR_WALLS,
   PLAYER_BOUNDARY,
   PLAYER_RADIUS,
+  WALL_THICKNESS,
 } from '../constants.js';
 import { wallBasis } from './geometry.js';
 
@@ -71,25 +72,38 @@ export function hasClearedDoorway(index, x, z) {
   return wallCoordinates(index, x, z).normal < DOOR_REARM_DISTANCE;
 }
 
+// Only somebody standing inside the opening can be this deep, because anywhere
+// else the wall has already stopped them. Sliding along a jamb is gated on it:
+// keyed on the player boundary instead, the test also passed in the corners of
+// the room, where a player is exactly boundary-far from both adjacent walls but
+// several units off to one side. It clamped that sideways offset to the width
+// of the opening and threw them bodily into the doorway.
+const DOOR_THRESHOLD_DEPTH = APOTHEM - WALL_THICKNESS / 2;
+
 /**
  * Keeps the player inside the room, letting them pass only where a doorway
- * actually is.  Beyond the wall line the opening also acts as jambs, so
- * stepping sideways in the threshold cannot pop them back into the room.
+ * actually is. Beyond the wall line the opening also acts as jambs, so stepping
+ * sideways in the threshold cannot pop them back into the room.
  */
 export function constrainToRoom(position) {
   for (let index = 0; index < 6; index++) {
     const { basis, normal, tangent } = wallCoordinates(index, position.x, position.z);
-    if (isDoorWall(index) && Math.abs(tangent) <= DOOR_CLEAR_HALF_WIDTH) {
-      if (normal > PLAYER_BOUNDARY) continue;
-    } else if (isDoorWall(index) && normal > PLAYER_BOUNDARY) {
-      // Inside the threshold but drifting sideways: slide along the jamb.
-      const limit = Math.sign(tangent) * DOOR_CLEAR_HALF_WIDTH;
-      const correction = limit - tangent;
-      position.x += basis.tx * correction;
-      position.z += basis.tz * correction;
-      continue;
-    }
     if (normal <= PLAYER_BOUNDARY) continue;
+
+    if (isDoorWall(index)) {
+      // Lined up with the opening: walk on through.
+      if (Math.abs(tangent) <= DOOR_CLEAR_HALF_WIDTH) continue;
+      // Past the wall's inner face, so they came through the opening and have
+      // drifted into a jamb: slide them along it rather than back into the room.
+      if (normal > DOOR_THRESHOLD_DEPTH) {
+        const limit = Math.sign(tangent) * DOOR_CLEAR_HALF_WIDTH;
+        const correction = limit - tangent;
+        position.x += basis.tx * correction;
+        position.z += basis.tz * correction;
+        continue;
+      }
+    }
+
     const correction = PLAYER_BOUNDARY - normal;
     position.x += basis.nx * correction;
     position.z += basis.nz * correction;

@@ -258,6 +258,40 @@ assert.equal(doorGeometry.crossingOffCentre, null, 'the jambs block a crossing b
 assert.equal(doorGeometry.crossingThroughBookWall, null, 'a shelved wall is never a doorway');
 assert.equal(doorGeometry.crossingWhileBlocked, null, 'the wall just entered by stays inert');
 
+// Walking into a corner must not fling the player sideways into a doorway.
+// Every corner of the room lies exactly the player boundary away from both
+// walls that meet there, which is also the depth the jamb-slide used to test
+// for — so approaching one clamped the player's sideways offset to the width
+// of the opening and moved them bodily into it.
+const corners = await page.evaluate(async () => {
+  const doors = await import('./src/world/doors.js');
+  const { PLAYER_BOUNDARY, ROOM_RADIUS } = await import('./src/constants.js');
+  const results = [];
+  // The six corners sit between the wall normals, at multiples of PI/3.
+  for (let corner = 0; corner < 6; corner++) {
+    const angle = corner * Math.PI / 3;
+    // Just past the reachable corner, as a frame of movement would leave them.
+    const reach = PLAYER_BOUNDARY / Math.cos(Math.PI / 6) + 0.25;
+    const start = { x: Math.cos(angle) * reach, y: 0, z: Math.sin(angle) * reach };
+    const moved = { ...start };
+    doors.constrainToRoom(moved);
+    results.push({
+      corner,
+      shift: Math.hypot(moved.x - start.x, moved.z - start.z),
+      insideRoom: Math.hypot(moved.x, moved.z) <= ROOM_RADIUS,
+    });
+  }
+  return results;
+});
+
+for (const { corner, shift, insideRoom } of corners) {
+  assert.ok(insideRoom, `corner ${corner}: the player must stay inside the room`);
+  assert.ok(
+    shift < 0.6,
+    `corner ${corner}: hitting a corner should nudge the player back, not carry them ${shift.toFixed(2)} units along the wall`,
+  );
+}
+
 // A real crossing: place the player in the threshold and let the world react.
 const walk = await page.evaluate(async () => {
   const { camera } = await import('./src/core/view.js');
