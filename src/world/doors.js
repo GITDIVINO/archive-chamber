@@ -14,7 +14,7 @@ import {
   DOOR_HALF_WIDTH,
   PLAYER_BOUNDARY,
   PLAYER_RADIUS,
-  WALL_THICKNESS,
+  DOOR_WALL_THICKNESS,
 } from '../constants.js';
 import { wallBasis } from './geometry.js';
 
@@ -83,7 +83,7 @@ export function hasClearedDoorway(index, x, z) {
 // the room, where a player is exactly boundary-far from both adjacent walls but
 // several units off to one side. It clamped that sideways offset to the width
 // of the opening and threw them bodily into the doorway.
-const DOOR_THRESHOLD_DEPTH = APOTHEM - WALL_THICKNESS / 2;
+const DOOR_THRESHOLD_DEPTH = APOTHEM - DOOR_WALL_THICKNESS / 2;
 
 /**
  * Keeps the player inside the room, letting them pass only where a doorway

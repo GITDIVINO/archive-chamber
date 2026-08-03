@@ -34,6 +34,13 @@ export const DOOR_WIDTH = 2.4;
 export const DOOR_HEIGHT = 3.05;
 export const DOOR_HALF_WIDTH = DOOR_WIDTH / 2;
 export const WALL_THICKNESS = 0.2;
+// The free walls are built deep, so a doorway is a short passage to walk
+// through rather than a hole to step over — the narrow hallway the story puts
+// between one gallery and the next. It cannot grow without limit: the passage
+// eats inward from the shared plane, and once its inner face drops near the
+// corners of the room the collision code can no longer tell a walker standing
+// in a corner from one standing in a threshold. At 1.2 the margin is 0.38.
+export const DOOR_WALL_THICKNESS = 1.2;
 
 // Sized so that a cabinet of five shelves stands on the floor and still ends
 // below the player's reach: at the old height the top shelf sat 2.63 away from

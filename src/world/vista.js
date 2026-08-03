@@ -34,6 +34,7 @@ import {
   SPINE_HEIGHT,
   SPINE_WIDTH,
   WALL_HEIGHT,
+  DOOR_WALL_THICKNESS,
   WALL_THICKNESS,
   WALL_WIDTH,
 } from '../constants.js';
@@ -266,10 +267,10 @@ function addDistantDoorWall(batches, index, roomOffset) {
   const jambOffset = (DOOR_WIDTH + jambWidth) / 2;
   const lintelHeight = WALL_HEIGHT - DOOR_HEIGHT;
   for (const side of [-1, 1]) {
-    addBox(batches, wallMaterial, [jambWidth, WALL_HEIGHT, WALL_THICKNESS],
+    addBox(batches, wallMaterial, [jambWidth, WALL_HEIGHT, DOOR_WALL_THICKNESS],
       pointOnWall(basis, side * jambOffset, WALL_HEIGHT / 2), basis.rotation, null, roomOffset, null);
   }
-  addBox(batches, wallMaterial, [DOOR_WIDTH, lintelHeight, WALL_THICKNESS],
+  addBox(batches, wallMaterial, [DOOR_WIDTH, lintelHeight, DOOR_WALL_THICKNESS],
     pointOnWall(basis, 0, DOOR_HEIGHT + lintelHeight / 2), basis.rotation, null, roomOffset, null);
 }
 

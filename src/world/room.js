@@ -36,6 +36,7 @@ import {
   SPINE_HEIGHT,
   SPINE_WIDTH,
   WALL_HEIGHT,
+  DOOR_WALL_THICKNESS,
   WALL_THICKNESS,
   WALL_WIDTH,
 } from '../constants.js';
@@ -226,7 +227,7 @@ function addDoorWall(room, index) {
     addBox(
       room,
       wallMaterial,
-      [jambWidth, WALL_HEIGHT, WALL_THICKNESS],
+      [jambWidth, WALL_HEIGHT, DOOR_WALL_THICKNESS],
       pointOnWall(basis, side * jambOffset, WALL_HEIGHT / 2),
       basis.rotation,
     );
@@ -234,7 +235,7 @@ function addDoorWall(room, index) {
   addBox(
     room,
     wallMaterial,
-    [DOOR_WIDTH, lintelHeight, WALL_THICKNESS],
+    [DOOR_WIDTH, lintelHeight, DOOR_WALL_THICKNESS],
     pointOnWall(basis, 0, DOOR_HEIGHT + lintelHeight / 2),
     basis.rotation,
   );
@@ -243,7 +244,7 @@ function addDoorWall(room, index) {
   addBox(
     room,
     trimMaterial,
-    [DOOR_WIDTH + 0.18, 0.1, WALL_THICKNESS + 0.06],
+    [DOOR_WIDTH + 0.18, 0.1, DOOR_WALL_THICKNESS + 0.06],
     pointOnWall(basis, 0, DOOR_HEIGHT + 0.05),
     basis.rotation,
   );
