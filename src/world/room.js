@@ -61,9 +61,11 @@ import {
   wallBasis,
 } from './geometry.js';
 
-const bookGeometry = new THREE.BoxGeometry(BOOK_WIDTH, BOOK_HEIGHT, BOOK_DEPTH);
-const bookEdgeGeometry = new THREE.EdgesGeometry(bookGeometry, 18);
-sharedGeometries.add(bookGeometry).add(bookEdgeGeometry);
+// Split up its height so the spine can carry a three-stop tone: a box corner
+// only has vertices at top and bottom, which is not enough to darken a volume
+// where it meets the board and again where the shelf overhangs it.
+const bookGeometry = new THREE.BoxGeometry(BOOK_WIDTH, BOOK_HEIGHT, BOOK_DEPTH, 1, 2, 1);
+sharedGeometries.add(bookGeometry);
 
 // Every volume shares one geometry, so its faces are toned once here. Without
 // this a book is a flat card: the spine faces the room and stays light, the
@@ -79,11 +81,15 @@ sharedGeometries.add(bookGeometry).add(bookEdgeGeometry);
     const z = normal.getZ(vertex);
     let tone = 0.78;
     if (z < -0.5) {
-      // The spine. The shelf above overhangs the volumes, so its shadow falls
-      // across their heads and lifts off towards the foot: on a real shelf this
-      // gradient, not the side faces, is what makes a packed row read as solid.
+      // The spine, and the only face of a packed volume really on show. Two
+      // shadows shape it: the shelf above overhangs and darkens its head, and
+      // where it stands on the board there is contact shadow. Without that
+      // second one the foot of the spine was the brightest thing on the shelf
+      // and ran straight into the board it was standing on.
       const height = position.getY(vertex) / BOOK_HEIGHT + 0.5;
-      tone = THREE.MathUtils.lerp(1.06, 0.7, height);
+      tone = height < 0.5
+        ? THREE.MathUtils.lerp(0.66, 1.06, height / 0.5)
+        : THREE.MathUtils.lerp(1.06, 0.7, (height - 0.5) / 0.5);
     } else if (z > 0.5) tone = 0.46;
     else if (y > 0.5) tone = 0.72;
     else if (y < -0.5) tone = 0.6;
@@ -319,6 +325,8 @@ const WALL_NUMBER_CLEARANCE = 0.42;
 // The cabinet frame stands this far off the wall plane, so the wall's inner
 // face lies here in cabinet space. The numeral is painted onto it rather than
 // hung in the air in front of the case.
+// The base runs solid from the floor to the underside of the lowest board.
+const PLINTH_HEIGHT = SHELF_BASE_Y - SHELF_THICKNESS / 2;
 const CABINET_WALL_INSET = 0.28;
 const WALL_FACE_Z = CABINET_WALL_INSET - WALL_THICKNESS / 2;
 
@@ -416,14 +424,18 @@ function addCarcaseOutline(room, parentMatrix) {
   for (const side of [-1, 1]) {
     pushLine(outlinePositions, parentMatrix, [side * innerX, bottom, CARCASE_FRONT_Z], [side * innerX, top, CARCASE_FRONT_Z]);
   }
-  // The head rail and the plinth close the top and bottom niches, so their
-  // inner arrises are drawn exactly as a shelf's front is. A shelf reads as a
-  // shelf because of that line: with tone alone the rail shaded the top row
-  // but nothing appeared to stand above it. Both lie in the same plane as the
-  // shelf edges, so they land on the same front face.
-  for (const y of [top - RAIL_THICKNESS, bottom + RAIL_THICKNESS]) {
-    pushLine(outlinePositions, parentMatrix, [-halfWidth, y, CARCASE_FRONT_Z], [halfWidth, y, CARCASE_FRONT_Z]);
-  }
+  // The head rail closes the top niche, so its lower arris is drawn exactly as
+  // a shelf's front is. A shelf reads as a shelf because of that line: with
+  // tone alone the rail shaded the top row but nothing appeared to stand above
+  // it. It lies in the same plane as the shelf edges, so it lands on the same
+  // front face. The base needs no such line — it runs solid into the lowest
+  // board, whose own edge already marks where it ends.
+  pushLine(
+    outlinePositions,
+    parentMatrix,
+    [-halfWidth, top - RAIL_THICKNESS, CARCASE_FRONT_Z],
+    [halfWidth, top - RAIL_THICKNESS, CARCASE_FRONT_Z],
+  );
 }
 
 const shelfEdgePoint = new THREE.Vector3();
@@ -479,7 +491,10 @@ function collectBookWall(room, index, q, r) {
   const postOffset = (CABINET_WIDTH - CABINET_POST_WIDTH) / 2;
   const postHeight = CARCASE_HEIGHT - 2 * RAIL_THICKNESS;
   const carcase = { outlined: false, shade: nicheShade };
-  addBox(room, shelfMaterial, [CABINET_WIDTH, RAIL_THICKNESS, CARCASE_DEPTH], new THREE.Vector3(0, RAIL_THICKNESS / 2, CARCASE_CENTRE_Z), 0, frameMatrix, carcase);
+  // The base is one block up to the underside of the lowest board. A 120mm
+  // plinth left an 85mm void beneath that board with the backing showing
+  // through it, so the foot of the case read as three stacked pieces.
+  addBox(room, shelfMaterial, [CABINET_WIDTH, PLINTH_HEIGHT, CARCASE_DEPTH], new THREE.Vector3(0, PLINTH_HEIGHT / 2, CARCASE_CENTRE_Z), 0, frameMatrix, carcase);
   // The head rail is the ceiling of the topmost niche, so it takes the same
   // underside tone a shelf board does. Without it the top row was the one shelf
   // in the case with nothing shading it from above.
