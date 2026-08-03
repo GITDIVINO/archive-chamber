@@ -416,6 +416,14 @@ function addCarcaseOutline(room, parentMatrix) {
   for (const side of [-1, 1]) {
     pushLine(outlinePositions, parentMatrix, [side * innerX, bottom, CARCASE_FRONT_Z], [side * innerX, top, CARCASE_FRONT_Z]);
   }
+  // The head rail and the plinth close the top and bottom niches, so their
+  // inner arrises are drawn exactly as a shelf's front is. A shelf reads as a
+  // shelf because of that line: with tone alone the rail shaded the top row
+  // but nothing appeared to stand above it. Both lie in the same plane as the
+  // shelf edges, so they land on the same front face.
+  for (const y of [top - RAIL_THICKNESS, bottom + RAIL_THICKNESS]) {
+    pushLine(outlinePositions, parentMatrix, [-halfWidth, y, CARCASE_FRONT_Z], [halfWidth, y, CARCASE_FRONT_Z]);
+  }
 }
 
 const shelfEdgePoint = new THREE.Vector3();
