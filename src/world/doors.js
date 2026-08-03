@@ -8,10 +8,10 @@
  * room's centre.
  */
 
+import { freeWallsForLevel } from '../../world-engine.js';
 import {
   APOTHEM,
   DOOR_HALF_WIDTH,
-  DOOR_WALLS,
   PLAYER_BOUNDARY,
   PLAYER_RADIUS,
   WALL_THICKNESS,
@@ -27,8 +27,13 @@ const DOOR_REARM_DISTANCE = APOTHEM - 0.9;
 // Half-width the player's centre may reach before the jambs stop them.
 const DOOR_CLEAR_HALF_WIDTH = DOOR_HALF_WIDTH - PLAYER_RADIUS;
 
-export function isDoorWall(index) {
-  return DOOR_WALLS.has(index);
+/** Which walls a level leaves open. The pair turns as the player climbs. */
+export function doorWallsForLevel(level) {
+  return freeWallsForLevel(level);
+}
+
+export function isDoorWall(index, level) {
+  return freeWallsForLevel(level).includes(index);
 }
 
 export function oppositeWall(index) {
@@ -46,8 +51,8 @@ export function wallCoordinates(index, x, z) {
 }
 
 /** True while the player is lined up with the opening rather than the wall. */
-export function isWithinDoorway(index, x, z) {
-  if (!isDoorWall(index)) return false;
+export function isWithinDoorway(index, level, x, z) {
+  if (!isDoorWall(index, level)) return false;
   return Math.abs(wallCoordinates(index, x, z).tangent) <= DOOR_CLEAR_HALF_WIDTH;
 }
 
@@ -56,8 +61,8 @@ export function isWithinDoorway(index, x, z) {
  * `blockedWall` is the wall they just arrived by; it stays inert until they
  * clear it, so a crossing never bounces straight back.
  */
-export function crossedDoorway(x, z, blockedWall = null) {
-  for (const index of DOOR_WALLS) {
+export function crossedDoorway(x, z, level, blockedWall = null) {
+  for (const index of freeWallsForLevel(level)) {
     if (index === blockedWall) continue;
     const { normal, tangent } = wallCoordinates(index, x, z);
     if (normal < DOOR_CROSSING_DISTANCE) continue;
@@ -85,12 +90,13 @@ const DOOR_THRESHOLD_DEPTH = APOTHEM - WALL_THICKNESS / 2;
  * actually is. Beyond the wall line the opening also acts as jambs, so stepping
  * sideways in the threshold cannot pop them back into the room.
  */
-export function constrainToRoom(position) {
+export function constrainToRoom(position, level) {
+  const free = freeWallsForLevel(level);
   for (let index = 0; index < 6; index++) {
     const { basis, normal, tangent } = wallCoordinates(index, position.x, position.z);
     if (normal <= PLAYER_BOUNDARY) continue;
 
-    if (isDoorWall(index)) {
+    if (free.includes(index)) {
       // Lined up with the opening: walk on through.
       if (Math.abs(tangent) <= DOOR_CLEAR_HALF_WIDTH) continue;
       // Past the wall's inner face, so they came through the opening and have

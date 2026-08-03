@@ -22,16 +22,14 @@ export const MAX_CLIENT_ADDRESS_LENGTH = 8192;
 
 export const CABINET_WIDTH = WALL_WIDTH - 1.6;
 export const CABINET_POST_WIDTH = 0.14;
-export const BOOK_WALL_INDICES = Object.freeze([0, 1, 3, 4]);
-export const BOOK_WALLS = new Set(BOOK_WALL_INDICES);
+// Which walls carry shelves is no longer fixed: it turns with the level, and
+// the placement decides it. Only the count is constant, and it is the count
+// that keeps a room at 640 volumes.
+export const SHELVED_WALLS_PER_ROOM = 4;
 
-// The two walls without shelves carry the doorways.  A wall index is also its
-// axial direction, so these are neighbours [-1,+1] and [+1,-1] — exact
-// opposites.  Walking therefore travels a line of rooms; every other hex stays
-// reachable by address.  Doors cannot move to a book wall without deleting
-// volumes, and 640 volumes per room is a frozen w1 contract.
-export const DOOR_WALL_INDICES = Object.freeze([2, 5]);
-export const DOOR_WALLS = new Set(DOOR_WALL_INDICES);
+// The two walls without shelves carry the doorways, and which two those are
+// turns with the level. See world-engine.js: on one level alone a walker can
+// never leave their corridor, so the axis rotates as you climb.
 export const DOOR_WIDTH = 2.4;
 export const DOOR_HEIGHT = 3.05;
 export const DOOR_HALF_WIDTH = DOOR_WIDTH / 2;

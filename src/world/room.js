@@ -9,22 +9,25 @@
 
 import * as THREE from 'three';
 import { SHELVES_PER_WALL, VOLUMES_PER_SHELF, isManifestoBookIndex, titleForBookIndex } from '../../babel-v3.js';
-import { catalogBookIndexFor } from '../../world-engine.js';
+import {
+  bookWallsForLevel,
+  canonicalWallForWallIndex,
+  catalogBookIndexFor,
+  freeWallsForLevel,
+} from '../../world-engine.js';
 import {
   BOOK_DEPTH,
   BOOK_FRONT_Z,
   BOOK_HEIGHT,
   BOOK_STEP,
-  BOOK_WALLS,
-  BOOK_WALL_INDICES,
   BOOK_WIDTH,
   CABINET_POST_WIDTH,
   CABINET_WIDTH,
   DOOR_HEIGHT,
-  DOOR_WALLS,
   DOOR_WIDTH,
   SHELF_BASE_Y,
   SHELF_PITCH,
+  SHELVED_WALLS_PER_ROOM,
   SPINES_PER_ATLAS,
   SPINE_ATLAS_COLUMNS,
   SPINE_ATLAS_SIZE,
@@ -336,10 +339,10 @@ let sharedWallNumberMaterial = null;
 export function wallNumberMaterial() {
   if (sharedWallNumberMaterial) return sharedWallNumberMaterial;
   const canvas = document.createElement('canvas');
-  canvas.width = WALL_NUMBER_CELL_WIDTH * BOOK_WALL_INDICES.length;
+  canvas.width = WALL_NUMBER_CELL_WIDTH * SHELVED_WALLS_PER_ROOM;
   canvas.height = WALL_NUMBER_CELL_HEIGHT;
   const context = canvas.getContext('2d');
-  for (let wall = 0; wall < BOOK_WALL_INDICES.length; wall++) {
+  for (let wall = 0; wall < SHELVED_WALLS_PER_ROOM; wall++) {
     drawDraftedLabel(
       context,
       {
@@ -368,8 +371,8 @@ export function wallNumberMaterial() {
 const wallNumberCorner = new THREE.Vector3();
 function addWallNumber(batch, canonicalWall, parentMatrix) {
   const cell = canonicalWall - 1;
-  const u0 = cell / BOOK_WALL_INDICES.length;
-  const u1 = (cell + 1) / BOOK_WALL_INDICES.length;
+  const u0 = cell / SHELVED_WALLS_PER_ROOM;
+  const u1 = (cell + 1) / SHELVED_WALLS_PER_ROOM;
   const halfWidth = WALL_NUMBER_WIDTH / 2;
   const halfHeight = WALL_NUMBER_HEIGHT / 2;
   const centreY = CARCASE_HEIGHT + WALL_NUMBER_CLEARANCE + halfHeight;
@@ -483,9 +486,11 @@ function appendBookOutline(outlinePositions, matrix) {
 // Collects one wall's volumes into the room-wide batches instead of adding a
 // mesh per book.  Shelving itself stays merged too: there are only a handful
 // of carcase pieces per wall, but they share two materials across four walls.
-function collectBookWall(room, index, q, r) {
+function collectBookWall(room, index, q, r, level) {
   const basis = wallBasis(index);
-  const canonicalWall = BOOK_WALL_INDICES.indexOf(index) + 1;
+  // On another level the same canonical wall faces a different way, so the
+  // number comes from the placement rather than from a fixed list.
+  const canonicalWall = canonicalWallForWallIndex(level, index);
   const frameOffset = pointOnWall(basis, 0, 0, CABINET_WALL_INSET);
   frameMatrix.makeRotationY(basis.rotation).setPosition(frameOffset.x, frameOffset.y, frameOffset.z);
   const postOffset = (CABINET_WIDTH - CABINET_POST_WIDTH) / 2;
@@ -528,6 +533,7 @@ function collectBookWall(room, index, q, r) {
       const worldLocation = {
         q,
         r,
+        level,
         wall: canonicalWall,
         shelf: shelfIndex + 1,
         volume: volumeIndex + 1,
@@ -604,11 +610,12 @@ function finalizeRoom(room) {
   room.userData.wallNumbers = null;
 }
 
-export function makeRoom(q, r, roomTag) {
+export function makeRoom(q, r, level, roomTag) {
   const room = new THREE.Group();
   room.userData = {
     q,
     r,
+    level,
     bookMeshes: [],
     spineAtlases: [],
     disposableMaterials: [],
@@ -642,10 +649,12 @@ export function makeRoom(q, r, roomTag) {
     room.add(new THREE.Line(line, roomLineMaterial));
   }
 
+  const doorWalls = freeWallsForLevel(level);
+  const shelvedWalls = bookWallsForLevel(level);
   for (let index = 0; index < 6; index++) {
-    if (DOOR_WALLS.has(index)) addDoorWall(room, index);
+    if (doorWalls.includes(index)) addDoorWall(room, index);
     else addSolidWall(room, index);
-    if (BOOK_WALLS.has(index)) collectBookWall(room, index, q, r);
+    if (shelvedWalls.includes(index)) collectBookWall(room, index, q, r, level);
   }
   finalizeRoom(room);
   return room;

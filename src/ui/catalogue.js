@@ -8,6 +8,7 @@
 
 import { ALPHABET, bookIndexFor, parsePageAddress, search } from '../../babel-v3.js';
 import {
+  LEGACY_WORLD_ALGORITHM_VERSION,
   WORLD_ALGORITHM_VERSION,
   catalogBookIndexFor,
   parseWorldPageAddress,
@@ -81,7 +82,7 @@ export async function runSearch() {
 export function openExactAddress() {
   const candidate = addressInput.value.trim();
   if (!candidate) {
-    searchResult.textContent = 'enter a full v3 or w1 page address';
+    searchResult.textContent = 'enter a full v3 or w2 page address';
     return;
   }
   if (candidate.length > MAX_CLIENT_ADDRESS_LENGTH) {
@@ -89,10 +90,10 @@ export function openExactAddress() {
     return;
   }
   try {
-    if (candidate.startsWith(WORLD_ALGORITHM_VERSION + ';')) {
+    if (candidate.startsWith(WORLD_ALGORITHM_VERSION + ';') || candidate.startsWith(LEGACY_WORLD_ALGORITHM_VERSION + ';')) {
       if (candidate.split(';').length === 2) {
         const worldRoom = parseWorldRoomAddress(candidate);
-        moveToWorldHex(worldRoom.q, worldRoom.r);
+        moveToWorldHex(worldRoom.q, worldRoom.r, worldRoom.level);
         searchResult.textContent = 'world room opened';
         closeSearch();
         showNotice('world room opened');
@@ -100,7 +101,7 @@ export function openExactAddress() {
       }
       const worldLocation = parseWorldPageAddress(candidate);
       const bookIndex = catalogBookIndexFor(worldLocation);
-      moveToWorldHex(worldLocation.q, worldLocation.r);
+      moveToWorldHex(worldLocation.q, worldLocation.r, worldLocation.level);
       showCatalogueVolume(bookIndex, worldLocation.page, null, worldLocation);
     } else {
       const location = parsePageAddress(candidate);
@@ -109,6 +110,6 @@ export function openExactAddress() {
     searchResult.textContent = 'exact record opened';
     searchPanel.classList.remove('visible');
   } catch {
-    searchResult.textContent = 'enter a valid full v3 or w1 page address';
+    searchResult.textContent = 'enter a valid full v3 or w2 page address';
   }
 }

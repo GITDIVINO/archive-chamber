@@ -17,6 +17,7 @@
 
 import * as THREE from 'three';
 import { SHELVES_PER_WALL, VOLUMES_PER_SHELF } from '../../babel-v3.js';
+import { bookWallsForLevel, freeWallsForLevel } from '../../world-engine.js';
 import { WALL_DIRECTIONS } from '../../world-model.js';
 import {
   BOOK_DEPTH,
@@ -24,11 +25,9 @@ import {
   BOOK_HEIGHT,
   BOOK_STEP,
   BOOK_WIDTH,
-  BOOK_WALL_INDICES,
   CABINET_POST_WIDTH,
   CABINET_WIDTH,
   DOOR_HEIGHT,
-  DOOR_WALL_INDICES,
   DOOR_WIDTH,
   SHELF_BASE_Y,
   SHELF_PITCH,
@@ -63,8 +62,9 @@ const VISTA_DEPTH = 10;
 // Chambers this close still show individual volumes; past it a filled band is
 // indistinguishable and far cheaper.
 const VISTA_DETAIL_DEPTH = 3;
-// The corridor runs along the axis shared by the two doorways.
-const CORRIDOR_DIRECTION = DOOR_WALL_INDICES[0];
+// The corridor runs along the axis shared by the two doorways, and that axis
+// turns with the level: what shows through a doorway on the floor above runs a
+// different way, which is the whole reason a stair is worth climbing.
 
 const localMatrix = new THREE.Matrix4();
 const worldMatrix = new THREE.Matrix4();
@@ -286,14 +286,17 @@ function addSolidWall(batches, index, roomOffset) {
  * of their own, so this never needs rebuilding — walking through a doorway
  * leaves the view unchanged, which is exactly the point.
  */
-export function buildVista() {
+export function buildVista(level) {
   const group = new THREE.Group();
   const batches = new Map();
   const outlinePositions = [];
   const labels = { positions: [], uvs: [], indices: [], colors: [] };
   // A wall index is its own axial direction, so the corridor axis follows
   // straight from which wall carries a doorway.
-  const step = axialMapOffset(...WALL_DIRECTIONS[CORRIDOR_DIRECTION]);
+  const doorWalls = freeWallsForLevel(level);
+  const shelvedWalls = bookWallsForLevel(level);
+  const corridorDirection = doorWalls[0];
+  const step = axialMapOffset(...WALL_DIRECTIONS[corridorDirection]);
 
   const corridorLength = 2 * (VISTA_DEPTH + 1) * Math.hypot(step.x, step.z);
   addCorridorSlab(batches, floorMaterial, corridorLength, -0.06, -Math.PI / 2);
@@ -304,13 +307,13 @@ export function buildVista() {
     offsetMatrix.makeTranslation(step.x * n, 0, step.z * n);
     const separateVolumes = Math.abs(n) <= VISTA_DETAIL_DEPTH;
     const roomSeed = ((n % SPINE_TEMPLATES.length) + SPINE_TEMPLATES.length) % SPINE_TEMPLATES.length;
-    for (const index of BOOK_WALL_INDICES) addDistantBookWall(batches, outlinePositions, labels, index, offsetMatrix, separateVolumes, roomSeed);
+    for (const index of shelvedWalls) addDistantBookWall(batches, outlinePositions, labels, index, offsetMatrix, separateVolumes, roomSeed);
     // Each chamber closes only its far side, so the wall shared with the
     // chamber before it is drawn exactly once and never z-fights.
-    const farWall = n > 0 ? CORRIDOR_DIRECTION : (CORRIDOR_DIRECTION + 3) % 6;
+    const farWall = n > 0 ? corridorDirection : (corridorDirection + 3) % 6;
     addDistantDoorWall(batches, farWall, offsetMatrix);
     for (let index = 0; index < 6; index++) {
-      if (DOOR_WALL_INDICES.includes(index) || BOOK_WALL_INDICES.includes(index)) continue;
+      if (doorWalls.includes(index) || shelvedWalls.includes(index)) continue;
       addSolidWall(batches, index, offsetMatrix);
     }
   }

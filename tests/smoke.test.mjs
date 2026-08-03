@@ -111,10 +111,10 @@ async function openAddress(address) {
   await page.locator('#address-submit').click();
 }
 
-await openAddress('w1;0;2;2;13;197');
+await openAddress('w2;0;2;2;13;197');
 await page.waitForSelector('#book-panel.visible');
 assert.equal(await page.locator('.page-counter span').first().textContent(), '197');
-assert.equal(await page.locator('#book-address').textContent(), 'w1;0;2;2;13;197');
+assert.equal(await page.locator('#book-address').textContent(), 'w2;0;2;2;13;197');
 assert.equal(await page.locator('#location-record').textContent(), 'copy world record');
 assert.equal(await page.locator('#catalogue-record').isHidden(), false, 'a world record also exposes its catalogue address');
 const manifestoPage = (await page.locator('#book-page').textContent()).replace(/\n/g, '');
@@ -126,7 +126,7 @@ assert.ok(
 // paging keeps the address and the counter in step
 await page.locator('#next-page').click();
 assert.equal(await page.locator('.page-counter span').first().textContent(), '198');
-assert.equal(await page.locator('#book-address').textContent(), 'w1;0;2;2;13;198');
+assert.equal(await page.locator('#book-address').textContent(), 'w2;0;2;2;13;198');
 
 // --- a catalogue address opens without a world record ------------------------
 await openAddress('v3;129d19;2;2;13;197');
@@ -156,7 +156,7 @@ assert.equal(await page.locator('#cell').textContent(), roomBeforeSearch, 'searc
 // First line of defence: the field itself refuses to hold a huge value.
 await openCatalogue();
 assert.equal(await page.locator('#address-input').getAttribute('maxlength'), '8192');
-await page.locator('#address-input').fill('w1;' + '1'.repeat(20000));
+await page.locator('#address-input').fill('w2;' + '1'.repeat(20000));
 assert.equal(
   (await page.locator('#address-input').inputValue()).length,
   8192,
@@ -174,7 +174,7 @@ await openCatalogue();
 await page.evaluate(() => {
   const input = document.querySelector('#address-input');
   input.removeAttribute('maxlength');
-  input.value = 'w1;' + '1'.repeat(50000);
+  input.value = 'w2;' + '1'.repeat(50000);
 });
 started = Date.now();
 await page.locator('#address-submit').click();
@@ -222,7 +222,7 @@ assert.ok(
 // Driven against the page's own module instances, so this exercises the same
 // camera and room registry the player does rather than a copy.
 await openCatalogue();
-await page.locator('#address-input').fill('w1;0');
+await page.locator('#address-input').fill('w2;0');
 await page.locator('#address-submit').click();
 await page.waitForFunction(() => document.querySelector('#search-result').textContent === 'world room opened');
 
@@ -243,11 +243,11 @@ const doorGeometry = await page.evaluate(async () => {
   return {
     apothem: APOTHEM,
     opposite: [doors.oppositeWall(2), doors.oppositeWall(5)],
-    doorWalls: [0, 1, 2, 3, 4, 5].filter(index => doors.isDoorWall(index)),
-    crossingCentred: doors.crossedDoorway(centred.x, centred.z),
-    crossingOffCentre: doors.crossedDoorway(offCentre.x, offCentre.z),
-    crossingThroughBookWall: doors.crossedDoorway(bookWall.x, bookWall.z),
-    crossingWhileBlocked: doors.crossedDoorway(centred.x, centred.z, 2),
+    doorWalls: [0, 1, 2, 3, 4, 5].filter(index => doors.isDoorWall(index, 0n)),
+    crossingCentred: doors.crossedDoorway(centred.x, centred.z, 0n),
+    crossingOffCentre: doors.crossedDoorway(offCentre.x, offCentre.z, 0n),
+    crossingThroughBookWall: doors.crossedDoorway(bookWall.x, bookWall.z, 0n),
+    crossingWhileBlocked: doors.crossedDoorway(centred.x, centred.z, 0n, 2),
   };
 });
 
@@ -274,7 +274,7 @@ const corners = await page.evaluate(async () => {
     const reach = PLAYER_BOUNDARY / Math.cos(Math.PI / 6) + 0.25;
     const start = { x: Math.cos(angle) * reach, y: 0, z: Math.sin(angle) * reach };
     const moved = { ...start };
-    doors.constrainToRoom(moved);
+    doors.constrainToRoom(moved, 0n);
     results.push({
       corner,
       shift: Math.hypot(moved.x - start.x, moved.z - start.z),
@@ -337,7 +337,7 @@ assert.deepEqual(
 assert.notEqual(walk.afterForward.tag, walk.before.tag, 'the new chamber has its own tag');
 assert.equal(walk.bouncedStraightBack, false, 'arriving does not immediately count as leaving');
 assert.equal(walk.enteredBack, true, 'the opposite doorway leads home');
-assert.deepEqual([walk.afterBack.q, walk.afterBack.r], ['0', '0'], 'walking back returns to w1;0');
+assert.deepEqual([walk.afterBack.q, walk.afterBack.r], ['0', '0'], 'walking back returns to w2;0');
 
 // The corridor seen through the doorways is built once and left alone: walking
 // a threshold must not rebuild or move it, or the repetition would visibly
