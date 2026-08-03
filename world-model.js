@@ -1,5 +1,6 @@
 import {
   createWorldRoomAddress,
+  freeWallsForLevel,
   worldRoomIndexFor,
 } from './world-engine.js';
 
@@ -27,19 +28,19 @@ function decorativeHashForRoomIndex(room) {
   return hash;
 }
 
-export function roomKey(q, r) {
-  return worldRoomIndexFor(q, r);
+export function roomKey(q, r, level = 0n) {
+  return worldRoomIndexFor(q, r, level);
 }
 
-export function roomTagFor(q, r) {
+export function roomTagFor(q, r, level = 0n) {
   // The tag is deliberately decorative, never an exact room identifier.  FNV
   // consumes every byte so arbitrarily high BigInt bits still affect it.
-  const hash = decorativeHashForRoomIndex(worldRoomIndexFor(q, r));
+  const hash = decorativeHashForRoomIndex(worldRoomIndexFor(q, r, level));
   return 'h-' + hash.toString(36).padStart(13, '0');
 }
 
-export function exactWorldRoomAddressFor(q, r) {
-  return createWorldRoomAddress({ q, r });
+export function exactWorldRoomAddressFor(q, r, level = 0n) {
+  return createWorldRoomAddress({ q, r, level });
 }
 
 export function axialDistance(a, b) {
@@ -50,27 +51,39 @@ export function axialDistance(a, b) {
   return (absolute(dq) + absolute(dr) + absolute(ds)) / 2n;
 }
 
+/** The room through a given wall.  Neighbours are always on the same level. */
 export function neighborFor(room, direction) {
   const offset = WALL_DIRECTIONS[direction];
   if (!offset) throw new RangeError('wall direction must be between 0 and 5.');
   const [dq, dr] = offset;
-  return { q: room.q + dq, r: room.r + dr };
+  return { q: room.q + dq, r: room.r + dr, level: room.level ?? 0n };
 }
 
-export function isAddressableHex(q, r) {
+/** The room directly above or below, which is what a stair connects. */
+export function roomAtLevel(room, delta) {
+  return { q: room.q, r: room.r, level: (room.level ?? 0n) + BigInt(delta) };
+}
+
+export function isAddressableHex(q, r, level = 0n) {
   try {
-    worldRoomIndexFor(q, r);
+    worldRoomIndexFor(q, r, level);
     return true;
   } catch {
     return false;
   }
 }
 
-// w1 has no boundary: every axial neighbour is a complete world room.
+// w2 has no boundary: every axial neighbour on every level is a complete room.
 export function catalogueCoordinates(center) {
-  const result = [{ q: center.q, r: center.r }];
+  const level = center.level ?? 0n;
+  const result = [{ q: center.q, r: center.r, level }];
   for (let direction = 0; direction < WALL_DIRECTIONS.length; direction++) {
     result.push(neighborFor(center, direction));
   }
   return result;
+}
+
+/** Which of a room's neighbours can actually be walked to from this level. */
+export function walkableDirections(level) {
+  return freeWallsForLevel(level);
 }
