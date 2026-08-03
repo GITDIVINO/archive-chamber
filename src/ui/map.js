@@ -53,30 +53,38 @@ function drawMap() {
     return { x: centerX + dx * cosine - dy * sine, y: centerY + dx * sine + dy * cosine };
   };
   const screenScale = radius / ROOM_RADIUS;
-  for (const cell of world.mapCells) {
+  const placed = world.mapCells.map(cell => {
     const delta = axialMapOffset(cell.q - world.room.q, cell.r - world.room.r);
-    const x = centerX + delta.x * screenScale;
-    const y = centerY + delta.z * screenScale;
-    const points = [];
+    return {
+      cell,
+      x: centerX + delta.x * screenScale,
+      y: centerY + delta.z * screenScale,
+      isCurrent: cell.q === world.room.q && cell.r === world.room.r,
+    };
+  });
+
+  // Every hex first, then every tag. Drawing each cell complete meant the next
+  // cell's outline cut across the tag already written in the last one, which is
+  // the only reason the tags used to be haloed in paper white to stay legible.
+  for (const { x, y, isCurrent } of placed) {
+    mapContext.beginPath();
     for (let index = 0; index < 6; index++) {
       const angle = index * Math.PI / 3;
-      points.push(rotatePoint(x + Math.cos(angle) * radius, y + Math.sin(angle) * radius));
+      const point = rotatePoint(x + Math.cos(angle) * radius, y + Math.sin(angle) * radius);
+      if (index) mapContext.lineTo(point.x, point.y);
+      else mapContext.moveTo(point.x, point.y);
     }
-    mapContext.beginPath();
-    points.forEach((point, index) => index ? mapContext.lineTo(point.x, point.y) : mapContext.moveTo(point.x, point.y));
     mapContext.closePath();
-    const isCurrent = cell.q === world.room.q && cell.r === world.room.r;
     mapContext.fillStyle = isCurrent ? 'rgba(211,200,178,.2)' : 'rgba(211,200,178,.06)';
     mapContext.fill();
     mapContext.strokeStyle = isCurrent ? '#d3c8b2' : '#8f8778';
     mapContext.stroke();
+  }
+
+  mapContext.fillStyle = '#202020';
+  for (const { cell, x, y } of placed) {
     const label = rotatePoint(x, y);
-    mapContext.lineWidth = 3;
-    mapContext.strokeStyle = 'rgba(244,242,236,.95)';
-    mapContext.strokeText(cell.tag, label.x, label.y);
-    mapContext.fillStyle = '#202020';
     mapContext.fillText(cell.tag, label.x, label.y);
-    mapContext.lineWidth = 1;
   }
   const playerPoint = rotatePoint(centerX + camera.position.x * screenScale, centerY + camera.position.z * screenScale);
   mapContext.fillStyle = '#f4f2ec';
