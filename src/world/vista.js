@@ -3,9 +3,11 @@
  *
  * Only the player's own hex is ever built in full. What lies beyond a doorway
  * is this: the same chamber repeated down the corridor axis, stripped to the
- * shapes that still read at distance — carcase, shelf ledges, and a solid band
- * where a row of volumes would be. Individual spines are illegible long before
- * the second room, so building them would cost memory for nothing.
+ * shapes that still read at distance — carcase, shelf ledges, and volumes.
+ * Nothing here is looked up in the catalogue and no spine is lettered: a title
+ * is a smudge by the second room, and these chambers exist only to be seen
+ * through a doorway. The books a player can actually open are built when they
+ * walk in.
  *
  * Walls 2 and 5 face each other, so the passages line up and the repetition
  * runs straight to the fog. The horror is meant to be that it is not a trick:
@@ -21,6 +23,7 @@ import {
   BOOK_FRONT_Z,
   BOOK_HEIGHT,
   BOOK_STEP,
+  BOOK_WIDTH,
   BOOK_WALL_INDICES,
   CABINET_POST_WIDTH,
   CABINET_WIDTH,
@@ -33,7 +36,7 @@ import {
   WALL_THICKNESS,
   WALL_WIDTH,
 } from '../constants.js';
-import { ceilingMaterial, floorMaterial, shelfMaterial, trimMaterial, wallMaterial } from '../core/materials.js';
+import { ceilingMaterial, floorMaterial, outlineMaterial, shelfMaterial, trimMaterial, wallMaterial } from '../core/materials.js';
 import { appendMergedGeometry, axialMapOffset, boxGeometryFor, mergedMesh, pointOnWall, wallBasis } from './geometry.js';
 import {
   CARCASE_BACK_THICKNESS,
@@ -55,12 +58,16 @@ import {
 // units, inside the camera's far plane, by which point the fog has closed
 // completely: the corridor ends out of sight rather than at a visible edge.
 const VISTA_DEPTH = 10;
+// Chambers this close still show individual volumes; past it a filled band is
+// indistinguishable and far cheaper.
+const VISTA_DETAIL_DEPTH = 3;
 // The corridor runs along the axis shared by the two doorways.
 const CORRIDOR_DIRECTION = DOOR_WALL_INDICES[0];
 
 const localMatrix = new THREE.Matrix4();
 const worldMatrix = new THREE.Matrix4();
 const offsetMatrix = new THREE.Matrix4();
+const outlineCorner = new THREE.Vector3();
 
 function batchFor(batches, material) {
   let batch = batches.get(material);
@@ -91,15 +98,49 @@ function addCorridorSlab(batches, material, size, y, rotationX) {
   geometry.dispose();
 }
 
-// The volumes on a distant shelf, toned like a real spine: the shelf above
-// shadows their heads. Without this the band reads as a blank white rail.
-function bandShade(bottomY) {
-  return local => THREE.MathUtils.lerp(0.98, 0.6, THREE.MathUtils.clamp((local.y - bottomY) / BOOK_HEIGHT, 0, 1));
+// A volume through a doorway, toned like a real spine: the shelf above shadows
+// its head. What actually makes a row read as books, though, is the shadowed
+// gap between one volume and the next.
+function volumeShade(bottomY) {
+  return local => THREE.MathUtils.lerp(1.02, 0.66, THREE.MathUtils.clamp((local.y - bottomY) / BOOK_HEIGHT, 0, 1));
+}
+
+// Volumes are placed on the same grid the real room uses, but nothing is looked
+// up in the catalogue and no spine is lettered: at this range a title is a
+// smudge, and these chambers exist only to be seen through a doorway. The books
+// a player actually opens are built when they walk into the room.
+function addDistantVolumes(batches, outlinePositions, shelfY, frame, roomOffset) {
+  const bottomY = shelfY + SHELF_SURFACE_OFFSET;
+  const shade = volumeShade(bottomY);
+  const centreY = bottomY + BOOK_HEIGHT / 2;
+  const centreZ = BOOK_FRONT_Z + BOOK_DEPTH / 2;
+  const halfWidth = BOOK_WIDTH / 2;
+  const faceZ = BOOK_FRONT_Z;
+  for (let volumeIndex = 0; volumeIndex < VOLUMES_PER_SHELF; volumeIndex++) {
+    const x = -((VOLUMES_PER_SHELF - 1) * BOOK_STEP) / 2 + volumeIndex * BOOK_STEP;
+    addBox(batches, trimMaterial, [BOOK_WIDTH, BOOK_HEIGHT, BOOK_DEPTH],
+      new THREE.Vector3(x, centreY, centreZ), 0, frame, roomOffset, shade);
+    // The 30mm gap between neighbours is barely a pixel from the next chamber,
+    // so tone alone left the row a blank slab. Drawing each spine's front face
+    // is what separates them, exactly as it does in the room the player is in.
+    const corners = [
+      [x - halfWidth, bottomY],
+      [x + halfWidth, bottomY],
+      [x + halfWidth, bottomY + BOOK_HEIGHT],
+      [x - halfWidth, bottomY + BOOK_HEIGHT],
+    ];
+    for (let corner = 0; corner < corners.length; corner++) {
+      for (const [cornerX, cornerY] of [corners[corner], corners[(corner + 1) % corners.length]]) {
+        outlineCorner.set(cornerX, cornerY, faceZ).applyMatrix4(frame).applyMatrix4(roomOffset);
+        outlinePositions.push(outlineCorner.x, outlineCorner.y, outlineCorner.z);
+      }
+    }
+  }
 }
 
 // One wall of shelving, reduced to what survives the distance: the carcase, the
-// ledges, and a filled band per shelf standing in for its thirty-two volumes.
-function addDistantBookWall(batches, index, roomOffset) {
+// ledges, and its volumes.
+function addDistantBookWall(batches, outlinePositions, index, roomOffset, separateVolumes) {
   const basis = wallBasis(index);
   const frameOffset = pointOnWall(basis, 0, 0, 0.28);
   const frame = new THREE.Matrix4().makeRotationY(basis.rotation)
@@ -124,12 +165,16 @@ function addDistantBookWall(batches, index, roomOffset) {
     const shelfY = SHELF_BASE_Y + shelfIndex * SHELF_PITCH;
     addBox(batches, shelfMaterial, [CABINET_WIDTH, SHELF_THICKNESS, SHELF_DEPTH],
       new THREE.Vector3(0, shelfY, SHELF_CENTRE_Z), 0, frame, roomOffset, shelfBoardShade(shelfY));
-    // The volumes. One band rather than thirty-two boxes: at this range the
-    // spines have merged into a single tone anyway.
+    if (separateVolumes) {
+      addDistantVolumes(batches, outlinePositions, shelfY, frame, roomOffset);
+      continue;
+    }
+    // Further off, one filled band: the gaps between spines have closed to
+    // less than a pixel, so thirty-two boxes would buy nothing.
     const bandBottom = shelfY + SHELF_SURFACE_OFFSET;
     addBox(batches, trimMaterial, [bandWidth, BOOK_HEIGHT, BOOK_DEPTH],
       new THREE.Vector3(0, bandBottom + BOOK_HEIGHT / 2, BOOK_FRONT_Z + BOOK_DEPTH / 2),
-      0, frame, roomOffset, bandShade(bandBottom));
+      0, frame, roomOffset, volumeShade(bandBottom));
   }
 }
 
@@ -162,6 +207,7 @@ function addSolidWall(batches, index, roomOffset) {
 export function buildVista() {
   const group = new THREE.Group();
   const batches = new Map();
+  const outlinePositions = [];
   // A wall index is its own axial direction, so the corridor axis follows
   // straight from which wall carries a doorway.
   const step = axialMapOffset(...WALL_DIRECTIONS[CORRIDOR_DIRECTION]);
@@ -173,7 +219,8 @@ export function buildVista() {
   for (let n = -VISTA_DEPTH; n <= VISTA_DEPTH; n++) {
     if (n === 0) continue;
     offsetMatrix.makeTranslation(step.x * n, 0, step.z * n);
-    for (const index of BOOK_WALL_INDICES) addDistantBookWall(batches, index, offsetMatrix);
+    const separateVolumes = Math.abs(n) <= VISTA_DETAIL_DEPTH;
+    for (const index of BOOK_WALL_INDICES) addDistantBookWall(batches, outlinePositions, index, offsetMatrix, separateVolumes);
     // Each chamber closes only its far side, so the wall shared with the
     // chamber before it is drawn exactly once and never z-fights.
     const farWall = n > 0 ? CORRIDOR_DIRECTION : (CORRIDOR_DIRECTION + 3) % 6;
@@ -189,6 +236,14 @@ export function buildVista() {
     // Never picked and never walked into; it exists only to be looked at.
     mesh.raycast = () => {};
     group.add(mesh);
+  }
+  if (outlinePositions.length) {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(outlinePositions, 3));
+    const outlines = new THREE.LineSegments(geometry, outlineMaterial);
+    outlines.renderOrder = 2;
+    outlines.raycast = () => {};
+    group.add(outlines);
   }
   return group;
 }
