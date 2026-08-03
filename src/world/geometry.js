@@ -60,29 +60,51 @@ export function hexCorners(scale = 0.975) {
   return corners;
 }
 
+export const DRAFTED_INK = '#69717b';
+
+/**
+ * The hand every marking in the room is written in: a drafted caption between
+ * two ruled lines with ticks at their ends.
+ *
+ * Shared so that the chamber tag overhead and the wall numbers on the cabinets
+ * cannot drift into different lettering. Proportions are given as fractions of
+ * the box, so the same treatment scales from a long hex tag to a single digit.
+ */
+export function drawDraftedLabel(context, box, text) {
+  const { x, y, width, height } = box;
+  const inset = width * 0.083;
+  const tick = width * 0.112;
+  const ruleTop = y + height * 0.215;
+  const ruleBottom = y + height * 0.785;
+  const tickReach = height * 0.047;
+  context.save();
+  context.strokeStyle = DRAFTED_INK;
+  context.fillStyle = DRAFTED_INK;
+  context.globalAlpha = 0.8;
+  context.lineWidth = Math.max(1, height * 0.0137);
+  context.beginPath();
+  context.moveTo(x + inset, ruleTop); context.lineTo(x + width - inset, ruleTop);
+  context.moveTo(x + inset, ruleBottom); context.lineTo(x + width - inset, ruleBottom);
+  context.stroke();
+  for (const tickX of [x + inset, x + tick, x + width - tick, x + width - inset]) {
+    context.beginPath();
+    context.moveTo(tickX, ruleTop - tickReach); context.lineTo(tickX, ruleTop + tickReach);
+    context.moveTo(tickX, ruleBottom - tickReach); context.lineTo(tickX, ruleBottom + tickReach);
+    context.stroke();
+  }
+  context.font = '700 ' + Math.round(height * 0.344) + 'px "Courier New", monospace';
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  context.fillText(text, x + width / 2, y + height / 2);
+  context.restore();
+}
+
 export function ceilingMark(text) {
   const canvas = document.createElement('canvas');
   canvas.width = 2048;
   canvas.height = 512;
   const context = canvas.getContext('2d');
-  context.strokeStyle = '#69717b';
-  context.fillStyle = '#69717b';
-  context.globalAlpha = 0.8;
-  context.lineWidth = 7;
-  context.beginPath();
-  context.moveTo(170, 110); context.lineTo(1878, 110);
-  context.moveTo(170, 402); context.lineTo(1878, 402);
-  context.stroke();
-  for (const x of [170, 400, 1648, 1878]) {
-    context.beginPath();
-    context.moveTo(x, 86); context.lineTo(x, 134);
-    context.moveTo(x, 378); context.lineTo(x, 426);
-    context.stroke();
-  }
-  context.font = '700 176px "Courier New", monospace';
-  context.textAlign = 'center';
-  context.textBaseline = 'middle';
-  context.fillText(text, 1024, 256);
+  drawDraftedLabel(context, { x: 0, y: 0, width: 2048, height: 512 }, text);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   return new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide, depthWrite: false });

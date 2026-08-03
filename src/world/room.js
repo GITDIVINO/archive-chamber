@@ -53,6 +53,7 @@ import {
   appendMergedGeometry,
   boxGeometryFor,
   ceilingMark,
+  drawDraftedLabel,
   hexCorners,
   mergedMesh,
   pointOnWall,
@@ -307,9 +308,19 @@ export function shelfBoardShade(shelfY) {
 // chamber tag overhead and the shelf and volume countable by eye, a reader can
 // now read a whole address off the room itself instead of having to open a book
 // to find out where they are standing.
-const WALL_NUMBER_CELL = 256;
-const WALL_NUMBER_SIZE = 0.62;
-const WALL_NUMBER_CLEARANCE = 0.34;
+// The ceiling tag is a long string in a 4:1 plate; a single digit needs a
+// squarer one or the rules dwarf it. The lettering is sized from the plate's
+// height, so this is also what makes the numeral legible across the room.
+const WALL_NUMBER_CELL_WIDTH = 256;
+const WALL_NUMBER_CELL_HEIGHT = 128;
+const WALL_NUMBER_WIDTH = 1.6;
+const WALL_NUMBER_HEIGHT = WALL_NUMBER_WIDTH * WALL_NUMBER_CELL_HEIGHT / WALL_NUMBER_CELL_WIDTH;
+const WALL_NUMBER_CLEARANCE = 0.42;
+// The cabinet frame stands this far off the wall plane, so the wall's inner
+// face lies here in cabinet space. The numeral is painted onto it rather than
+// hung in the air in front of the case.
+const CABINET_WALL_INSET = 0.28;
+const WALL_FACE_Z = CABINET_WALL_INSET - WALL_THICKNESS / 2;
 
 // The four numerals are the same in every chamber, so one texture serves the
 // whole world and is never rebuilt or disposed with a room.
@@ -317,24 +328,20 @@ let sharedWallNumberMaterial = null;
 export function wallNumberMaterial() {
   if (sharedWallNumberMaterial) return sharedWallNumberMaterial;
   const canvas = document.createElement('canvas');
-  canvas.width = WALL_NUMBER_CELL * BOOK_WALL_INDICES.length;
-  canvas.height = WALL_NUMBER_CELL;
+  canvas.width = WALL_NUMBER_CELL_WIDTH * BOOK_WALL_INDICES.length;
+  canvas.height = WALL_NUMBER_CELL_HEIGHT;
   const context = canvas.getContext('2d');
-  context.textAlign = 'center';
-  context.textBaseline = 'middle';
   for (let wall = 0; wall < BOOK_WALL_INDICES.length; wall++) {
-    const centre = wall * WALL_NUMBER_CELL + WALL_NUMBER_CELL / 2;
-    context.strokeStyle = '#8d8778';
-    context.globalAlpha = 0.75;
-    context.lineWidth = 4;
-    context.beginPath();
-    context.moveTo(centre - 62, 196);
-    context.lineTo(centre + 62, 196);
-    context.stroke();
-    context.globalAlpha = 0.82;
-    context.fillStyle = '#6f6a5e';
-    context.font = '700 132px "Courier New", monospace';
-    context.fillText(String(wall + 1), centre, 108);
+    drawDraftedLabel(
+      context,
+      {
+        x: wall * WALL_NUMBER_CELL_WIDTH,
+        y: 0,
+        width: WALL_NUMBER_CELL_WIDTH,
+        height: WALL_NUMBER_CELL_HEIGHT,
+      },
+      String(wall + 1),
+    );
   }
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -355,17 +362,20 @@ function addWallNumber(batch, canonicalWall, parentMatrix) {
   const cell = canonicalWall - 1;
   const u0 = cell / BOOK_WALL_INDICES.length;
   const u1 = (cell + 1) / BOOK_WALL_INDICES.length;
-  const half = WALL_NUMBER_SIZE / 2;
-  const centreY = CARCASE_HEIGHT + WALL_NUMBER_CLEARANCE + half;
-  const z = CARCASE_FRONT_Z - 0.02;
+  const halfWidth = WALL_NUMBER_WIDTH / 2;
+  const halfHeight = WALL_NUMBER_HEIGHT / 2;
+  const centreY = CARCASE_HEIGHT + WALL_NUMBER_CLEARANCE + halfHeight;
+  // Painted on the wall behind the case, a hair proud of it so the two
+  // surfaces never fight for depth.
+  const z = WALL_FACE_Z - 0.006;
   const base = batch.positions.length / 3;
   // The cabinet's local -Z faces the room, so the numeral is read from behind
   // and the horizontal mapping has to be reversed or it comes out mirrored.
   const corners = [
-    [-half, centreY + half, u1, 1],
-    [half, centreY + half, u0, 1],
-    [-half, centreY - half, u1, 0],
-    [half, centreY - half, u0, 0],
+    [-halfWidth, centreY + halfHeight, u1, 1],
+    [halfWidth, centreY + halfHeight, u0, 1],
+    [-halfWidth, centreY - halfHeight, u1, 0],
+    [halfWidth, centreY - halfHeight, u0, 0],
   ];
   for (const [x, y, u, v] of corners) {
     wallNumberCorner.set(x, y, z).applyMatrix4(parentMatrix);
@@ -456,7 +466,7 @@ function appendBookOutline(outlinePositions, matrix) {
 function collectBookWall(room, index, q, r) {
   const basis = wallBasis(index);
   const canonicalWall = BOOK_WALL_INDICES.indexOf(index) + 1;
-  const frameOffset = pointOnWall(basis, 0, 0, 0.28);
+  const frameOffset = pointOnWall(basis, 0, 0, CABINET_WALL_INSET);
   frameMatrix.makeRotationY(basis.rotation).setPosition(frameOffset.x, frameOffset.y, frameOffset.z);
   const postOffset = (CABINET_WIDTH - CABINET_POST_WIDTH) / 2;
   const postHeight = CARCASE_HEIGHT - 2 * RAIL_THICKNESS;
