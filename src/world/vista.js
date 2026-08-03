@@ -4,10 +4,10 @@
  * Only the player's own hex is ever built in full. What lies beyond a doorway
  * is this: the same chamber repeated down the corridor axis, stripped to the
  * shapes that still read at distance — carcase, shelf ledges, and volumes.
- * Nothing here is looked up in the catalogue and no spine is lettered: a title
- * is a smudge by the second room, and these chambers exist only to be seen
- * through a doorway. The books a player can actually open are built when they
- * walk in.
+ * Nothing here is looked up in the catalogue: spines carry stand-in markings
+ * from a fixed set, not titles, because a title is a smudge by the second room
+ * and these chambers exist only to be seen through a doorway. The books a
+ * player can actually open are built when they walk in.
  *
  * Walls 2 and 5 face each other, so the passages line up and the repetition
  * runs straight to the fog. The horror is meant to be that it is not a trick:
@@ -32,6 +32,8 @@ import {
   DOOR_WIDTH,
   SHELF_BASE_Y,
   SHELF_PITCH,
+  SPINE_HEIGHT,
+  SPINE_WIDTH,
   WALL_HEIGHT,
   WALL_THICKNESS,
   WALL_WIDTH,
@@ -105,11 +107,9 @@ function volumeShade(bottomY) {
   return local => THREE.MathUtils.lerp(1.02, 0.66, THREE.MathUtils.clamp((local.y - bottomY) / BOOK_HEIGHT, 0, 1));
 }
 
-// Volumes are placed on the same grid the real room uses, but nothing is looked
-// up in the catalogue and no spine is lettered: at this range a title is a
-// smudge, and these chambers exist only to be seen through a doorway. The books
-// a player actually opens are built when they walk into the room.
-function addDistantVolumes(batches, outlinePositions, shelfY, frame, roomOffset) {
+// Volumes are placed on the same grid the real room uses, but none of them is
+// a particular book: no catalogue index is computed and no title is read.
+function addDistantVolumes(batches, outlinePositions, labels, seed, shelfY, frame, roomOffset) {
   const bottomY = shelfY + SHELF_SURFACE_OFFSET;
   const shade = volumeShade(bottomY);
   const centreY = bottomY + BOOK_HEIGHT / 2;
@@ -135,12 +135,16 @@ function addDistantVolumes(batches, outlinePositions, shelfY, frame, roomOffset)
         outlinePositions.push(outlineCorner.x, outlineCorner.y, outlineCorner.z);
       }
     }
+    // Cycled by position so neighbours never share a marking, which would make
+    // the repetition look like a texture rather than a shelf.
+    const cell = (seed + volumeIndex * 3) % SPINE_TEMPLATES.length;
+    addSpineTemplate(labels, cell, x, centreY, frame, roomOffset);
   }
 }
 
 // One wall of shelving, reduced to what survives the distance: the carcase, the
 // ledges, and its volumes.
-function addDistantBookWall(batches, outlinePositions, index, roomOffset, separateVolumes) {
+function addDistantBookWall(batches, outlinePositions, labels, index, roomOffset, separateVolumes, roomSeed) {
   const basis = wallBasis(index);
   const frameOffset = pointOnWall(basis, 0, 0, 0.28);
   const frame = new THREE.Matrix4().makeRotationY(basis.rotation)
@@ -166,7 +170,7 @@ function addDistantBookWall(batches, outlinePositions, index, roomOffset, separa
     addBox(batches, shelfMaterial, [CABINET_WIDTH, SHELF_THICKNESS, SHELF_DEPTH],
       new THREE.Vector3(0, shelfY, SHELF_CENTRE_Z), 0, frame, roomOffset, shelfBoardShade(shelfY));
     if (separateVolumes) {
-      addDistantVolumes(batches, outlinePositions, shelfY, frame, roomOffset);
+      addDistantVolumes(batches, outlinePositions, labels, roomSeed + index * 5 + shelfIndex * 2, shelfY, frame, roomOffset);
       continue;
     }
     // Further off, one filled band: the gaps between spines have closed to
@@ -176,6 +180,84 @@ function addDistantBookWall(batches, outlinePositions, index, roomOffset, separa
       new THREE.Vector3(0, bandBottom + BOOK_HEIGHT / 2, BOOK_FRONT_Z + BOOK_DEPTH / 2),
       0, frame, roomOffset, volumeShade(bandBottom));
   }
+}
+
+// Stand-in spine markings. These are literals on purpose: they are not titles,
+// they are not derived from any volume, and nothing addresses them. A spine
+// this far off is a smudge with the shape of lettering, and that shape is the
+// whole job — a shelf of blank spines reads as empty boxes.
+const SPINE_TEMPLATES = Object.freeze([
+  'ei.mrtqvlch',
+  'nkbadu wsyf',
+  'tqjr,plexn',
+  'ozvghmd.ik',
+  'wsfleun,ba',
+  'jhrxmpo tdz',
+  'cyunbil.gks',
+  'rmatqwv,zeh',
+]);
+const TEMPLATE_CELL_WIDTH = 72;
+const TEMPLATE_CELL_HEIGHT = 256;
+
+let sharedTemplateMaterial = null;
+function spineTemplateMaterial() {
+  if (sharedTemplateMaterial) return sharedTemplateMaterial;
+  const canvas = document.createElement('canvas');
+  canvas.width = TEMPLATE_CELL_WIDTH * SPINE_TEMPLATES.length;
+  canvas.height = TEMPLATE_CELL_HEIGHT;
+  const context = canvas.getContext('2d');
+  SPINE_TEMPLATES.forEach((label, cell) => {
+    const x = cell * TEMPLATE_CELL_WIDTH;
+    context.save();
+    context.fillStyle = '#262626';
+    context.globalAlpha = 0.88;
+    context.translate(x + TEMPLATE_CELL_WIDTH / 2, TEMPLATE_CELL_HEIGHT / 2);
+    context.rotate(-Math.PI / 2);
+    context.font = '600 19px "Courier New", monospace';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillText(label, 0, 0);
+    context.restore();
+  });
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.generateMipmaps = false;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  sharedTemplateMaterial = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  return sharedTemplateMaterial;
+}
+
+const templateCorner = new THREE.Vector3();
+const templateMatrix = new THREE.Matrix4();
+function addSpineTemplate(labels, cell, x, centreY, frame, roomOffset) {
+  const inset = 2;
+  const u0 = (cell * TEMPLATE_CELL_WIDTH + inset) / (TEMPLATE_CELL_WIDTH * SPINE_TEMPLATES.length);
+  const u1 = ((cell + 1) * TEMPLATE_CELL_WIDTH - inset) / (TEMPLATE_CELL_WIDTH * SPINE_TEMPLATES.length);
+  const halfWidth = SPINE_WIDTH / 2;
+  const halfHeight = SPINE_HEIGHT / 2;
+  templateMatrix.makeRotationY(Math.PI)
+    .setPosition(x, centreY, BOOK_FRONT_Z - 0.015)
+    .premultiply(frame)
+    .premultiply(roomOffset);
+  const base = labels.positions.length / 3;
+  const corners = [
+    [-halfWidth, halfHeight, u0, 1],
+    [halfWidth, halfHeight, u1, 1],
+    [-halfWidth, -halfHeight, u0, 0],
+    [halfWidth, -halfHeight, u1, 0],
+  ];
+  for (const [cornerX, cornerY, u, v] of corners) {
+    templateCorner.set(cornerX, cornerY, 0).applyMatrix4(templateMatrix);
+    labels.positions.push(templateCorner.x, templateCorner.y, templateCorner.z);
+    labels.uvs.push(u, v);
+  }
+  labels.indices.push(base, base + 2, base + 1, base + 2, base + 3, base + 1);
 }
 
 function addDistantDoorWall(batches, index, roomOffset) {
@@ -208,6 +290,7 @@ export function buildVista() {
   const group = new THREE.Group();
   const batches = new Map();
   const outlinePositions = [];
+  const labels = { positions: [], uvs: [], indices: [], colors: [] };
   // A wall index is its own axial direction, so the corridor axis follows
   // straight from which wall carries a doorway.
   const step = axialMapOffset(...WALL_DIRECTIONS[CORRIDOR_DIRECTION]);
@@ -220,7 +303,8 @@ export function buildVista() {
     if (n === 0) continue;
     offsetMatrix.makeTranslation(step.x * n, 0, step.z * n);
     const separateVolumes = Math.abs(n) <= VISTA_DETAIL_DEPTH;
-    for (const index of BOOK_WALL_INDICES) addDistantBookWall(batches, outlinePositions, index, offsetMatrix, separateVolumes);
+    const roomSeed = ((n % SPINE_TEMPLATES.length) + SPINE_TEMPLATES.length) % SPINE_TEMPLATES.length;
+    for (const index of BOOK_WALL_INDICES) addDistantBookWall(batches, outlinePositions, labels, index, offsetMatrix, separateVolumes, roomSeed);
     // Each chamber closes only its far side, so the wall shared with the
     // chamber before it is drawn exactly once and never z-fights.
     const farWall = n > 0 ? CORRIDOR_DIRECTION : (CORRIDOR_DIRECTION + 3) % 6;
@@ -234,6 +318,12 @@ export function buildVista() {
   for (const batch of batches.values()) {
     const mesh = mergedMesh(batch, batch.material);
     // Never picked and never walked into; it exists only to be looked at.
+    mesh.raycast = () => {};
+    group.add(mesh);
+  }
+  if (labels.positions.length) {
+    const mesh = mergedMesh(labels, spineTemplateMaterial());
+    mesh.renderOrder = 3;
     mesh.raycast = () => {};
     group.add(mesh);
   }
