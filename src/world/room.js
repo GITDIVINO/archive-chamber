@@ -244,21 +244,6 @@ const bookMatrix = new THREE.Matrix4();
 const spineMatrix = new THREE.Matrix4();
 const outlineCorner = new THREE.Vector3();
 
-// The carcase is drawn as one body: its parts share a material and carry no
-// edges of their own, and only this silhouette is outlined. Shelves therefore
-// read as recesses cut into a solid block rather than boards stacked together.
-// The carcase stands on the floor and stops short of the ceiling: a case that
-// began at y=0.18 read as hanging in mid-air, and one reaching 4.6 put its top
-// shelf out of arm's length.
-export const CARCASE_HEIGHT = 3.5;
-export const CARCASE_DEPTH = 0.56;
-export const CARCASE_CENTRE_Y = CARCASE_HEIGHT / 2;
-export const CARCASE_CENTRE_Z = -0.15;
-export const CARCASE_FRONT_Z = CARCASE_CENTRE_Z - CARCASE_DEPTH / 2;
-export const RAIL_THICKNESS = 0.12;
-export const CARCASE_BACK_THICKNESS = 0.06;
-export const CARCASE_BACK_Z = CARCASE_CENTRE_Z + CARCASE_DEPTH / 2 - CARCASE_BACK_THICKNESS / 2;
-
 // The shelf reads because its front face is drawn as a band, not because it
 // juts out: a deep overhang hides the volumes on the shelf below whenever the
 // player looks up, and thickening it eats the headroom above the books.
@@ -267,6 +252,32 @@ export const SHELF_DEPTH = 0.5;
 export const SHELF_CENTRE_Z = -0.18;
 export const SHELF_FRONT_Z = SHELF_CENTRE_Z - SHELF_DEPTH / 2;
 export const SHELF_SURFACE_OFFSET = SHELF_THICKNESS / 2;
+
+// The carcase is drawn as one body: its parts share a material and carry no
+// edges of their own, and only this silhouette is outlined. Shelves therefore
+// read as recesses cut into a solid block rather than boards stacked together.
+export const RAIL_THICKNESS = 0.12;
+// Clear air above the topmost row, so the head rail closes the case instead of
+// resting on the books.
+const TOP_HEADROOM = 0.05;
+
+// Measured from the shelves it has to contain rather than chosen: a fixed 3.5
+// left the top row standing 35mm inside the head rail, which is what made that
+// shelf look wrong. Deriving it means changing the pitch, the book height or
+// the board can never quietly push the volumes through the top of the case
+// again.
+export const CARCASE_HEIGHT = SHELF_BASE_Y
+  + (SHELVES_PER_WALL - 1) * SHELF_PITCH
+  + SHELF_SURFACE_OFFSET
+  + BOOK_HEIGHT
+  + TOP_HEADROOM
+  + RAIL_THICKNESS;
+export const CARCASE_DEPTH = 0.56;
+export const CARCASE_CENTRE_Y = CARCASE_HEIGHT / 2;
+export const CARCASE_CENTRE_Z = -0.15;
+export const CARCASE_FRONT_Z = CARCASE_CENTRE_Z - CARCASE_DEPTH / 2;
+export const CARCASE_BACK_THICKNESS = 0.06;
+export const CARCASE_BACK_Z = CARCASE_CENTRE_Z + CARCASE_DEPTH / 2 - CARCASE_BACK_THICKNESS / 2;
 
 // Depth has to be drawn, because the scene is unlit and nothing casts a shadow.
 // Treating the room as the only light source, tone falls away with distance
@@ -290,6 +301,79 @@ export function nicheShade(local) {
 // catches the room, so it takes the darkest tone in the cabinet.
 export function shelfBoardShade(shelfY) {
   return local => (local.y < shelfY ? nicheShade(local) * 0.74 : nicheShade(local));
+}
+
+// Each cabinet carries its canonical wall number on the wall above it. With the
+// chamber tag overhead and the shelf and volume countable by eye, a reader can
+// now read a whole address off the room itself instead of having to open a book
+// to find out where they are standing.
+const WALL_NUMBER_CELL = 256;
+const WALL_NUMBER_SIZE = 0.62;
+const WALL_NUMBER_CLEARANCE = 0.34;
+
+// The four numerals are the same in every chamber, so one texture serves the
+// whole world and is never rebuilt or disposed with a room.
+let sharedWallNumberMaterial = null;
+export function wallNumberMaterial() {
+  if (sharedWallNumberMaterial) return sharedWallNumberMaterial;
+  const canvas = document.createElement('canvas');
+  canvas.width = WALL_NUMBER_CELL * BOOK_WALL_INDICES.length;
+  canvas.height = WALL_NUMBER_CELL;
+  const context = canvas.getContext('2d');
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  for (let wall = 0; wall < BOOK_WALL_INDICES.length; wall++) {
+    const centre = wall * WALL_NUMBER_CELL + WALL_NUMBER_CELL / 2;
+    context.strokeStyle = '#8d8778';
+    context.globalAlpha = 0.75;
+    context.lineWidth = 4;
+    context.beginPath();
+    context.moveTo(centre - 62, 196);
+    context.lineTo(centre + 62, 196);
+    context.stroke();
+    context.globalAlpha = 0.82;
+    context.fillStyle = '#6f6a5e';
+    context.font = '700 132px "Courier New", monospace';
+    context.fillText(String(wall + 1), centre, 108);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.generateMipmaps = false;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  sharedWallNumberMaterial = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  return sharedWallNumberMaterial;
+}
+
+const wallNumberCorner = new THREE.Vector3();
+function addWallNumber(batch, canonicalWall, parentMatrix) {
+  const cell = canonicalWall - 1;
+  const u0 = cell / BOOK_WALL_INDICES.length;
+  const u1 = (cell + 1) / BOOK_WALL_INDICES.length;
+  const half = WALL_NUMBER_SIZE / 2;
+  const centreY = CARCASE_HEIGHT + WALL_NUMBER_CLEARANCE + half;
+  const z = CARCASE_FRONT_Z - 0.02;
+  const base = batch.positions.length / 3;
+  // The cabinet's local -Z faces the room, so the numeral is read from behind
+  // and the horizontal mapping has to be reversed or it comes out mirrored.
+  const corners = [
+    [-half, centreY + half, u1, 1],
+    [half, centreY + half, u0, 1],
+    [-half, centreY - half, u1, 0],
+    [half, centreY - half, u0, 0],
+  ];
+  for (const [x, y, u, v] of corners) {
+    wallNumberCorner.set(x, y, z).applyMatrix4(parentMatrix);
+    batch.positions.push(wallNumberCorner.x, wallNumberCorner.y, wallNumberCorner.z);
+    batch.uvs.push(u, v);
+    batch.colors.push(1, 1, 1);
+  }
+  batch.indices.push(base, base + 2, base + 1, base + 2, base + 3, base + 1);
 }
 
 const framePoint = new THREE.Vector3();
@@ -394,6 +478,7 @@ function collectBookWall(room, index, q, r) {
     carcase,
   );
   addCarcaseOutline(room, frameMatrix);
+  addWallNumber(room.userData.wallNumbers, canonicalWall, frameMatrix);
 
   const { batches, outlinePositions } = room.userData;
   for (let shelfIndex = 0; shelfIndex < SHELVES_PER_WALL; shelfIndex++) {
@@ -468,9 +553,17 @@ function finalizeRoom(room) {
     atlas.positions = atlas.uvs = atlas.indices = null;
   }
 
+  const { wallNumbers } = room.userData;
+  if (wallNumbers.positions.length) {
+    const mesh = mergedMesh(wallNumbers, wallNumberMaterial());
+    mesh.renderOrder = 3;
+    room.add(mesh);
+  }
+
   room.userData.batches = null;
   room.userData.outlinePositions = null;
   room.userData.staticBatches = null;
+  room.userData.wallNumbers = null;
 }
 
 export function makeRoom(q, r, roomTag) {
@@ -482,6 +575,7 @@ export function makeRoom(q, r, roomTag) {
     spineAtlases: [],
     disposableMaterials: [],
     outlinePositions: [],
+    wallNumbers: { positions: [], uvs: [], indices: [], colors: [] },
     staticBatches: new Map(),
     batches: bookMaterials.map(material => ({ material, matrices: [], tints: [], records: [] })),
   };

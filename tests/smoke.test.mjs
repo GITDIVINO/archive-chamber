@@ -183,6 +183,41 @@ assert.ok(Date.now() - started < 2000, 'refusing an oversized address must be im
 
 assert.deepEqual(consoleErrors, [], 'the page must boot without console errors');
 
+// --- the cabinet contains its shelves ----------------------------------------
+// The carcase used to be a fixed height while the shelf pitch was tuned
+// separately, so the top row stood 35mm inside the head rail. Deriving the
+// height fixed it; this keeps the two from drifting apart again.
+const cabinet = await page.evaluate(async () => {
+  const room = await import('./src/world/room.js');
+  const constants = await import('./src/constants.js');
+  const babel = await import('./babel-v3.js');
+  const topShelfY = constants.SHELF_BASE_Y + (babel.SHELVES_PER_WALL - 1) * constants.SHELF_PITCH;
+  return {
+    carcaseHeight: room.CARCASE_HEIGHT,
+    railBottom: room.CARCASE_HEIGHT - room.RAIL_THICKNESS,
+    topBooksReach: topShelfY + room.SHELF_SURFACE_OFFSET + constants.BOOK_HEIGHT,
+    topBookCentre: topShelfY + room.SHELF_SURFACE_OFFSET + constants.BOOK_HEIGHT / 2,
+    shelfPitch: constants.SHELF_PITCH,
+    shelfThickness: room.SHELF_THICKNESS,
+    bookHeight: constants.BOOK_HEIGHT,
+    interaction: constants.INTERACTION_DISTANCE,
+  };
+});
+
+assert.ok(
+  cabinet.topBooksReach <= cabinet.railBottom,
+  `the top row must sit under the head rail: books reach ${cabinet.topBooksReach}, rail starts ${cabinet.railBottom}`,
+);
+assert.ok(
+  cabinet.shelfPitch >= cabinet.shelfThickness + cabinet.bookHeight,
+  'each shelf needs room for its board and a volume, or every row pushes through the one above',
+);
+// Eye height 1.65, standing roughly 0.7 out from the shelf face.
+assert.ok(
+  Math.hypot(0.7, cabinet.topBookCentre - 1.65) < cabinet.interaction,
+  'a volume on the top shelf must still be within reach, or it can be read but never opened',
+);
+
 // --- doorways ----------------------------------------------------------------
 // Driven against the page's own module instances, so this exercises the same
 // camera and room registry the player does rather than a copy.
