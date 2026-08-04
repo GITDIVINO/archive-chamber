@@ -27,7 +27,15 @@ import * as THREE from 'three';
 import {
   ALCOVE_DEPTH,
   ALCOVE_REACH,
+  BOOK_DEPTH,
+  BOOK_HEIGHT,
+  BOOK_STEP,
+  CABINET_POST_WIDTH,
+  CABINET_WIDTH,
   DOOR_HEIGHT,
+  SHELF_BASE_Y,
+  SHELF_PITCH,
+  WALL_HEIGHT,
   HALL_HALF_WIDTH,
   HALL_LENGTH,
   HALL_LINTEL_HEIGHT,
@@ -42,8 +50,20 @@ import {
   STOREY_HEIGHT,
   WALL_THICKNESS,
 } from '../constants.js';
-import { ceilingMaterial, floorMaterial, trimMaterial, wallMaterial } from '../core/materials.js';
+import { SHELVES_PER_WALL, VOLUMES_PER_SHELF } from '../../babel-v3.js';
+import { ceilingMaterial, floorMaterial, shelfMaterial, trimMaterial, wallMaterial } from '../core/materials.js';
 import { appendMergedEdges, appendMergedGeometry, boxGeometryFor } from './geometry.js';
+import {
+  CARCASE_BACK_THICKNESS,
+  CARCASE_CENTRE_Y,
+  CARCASE_DEPTH,
+  CARCASE_HEIGHT,
+  SHELF_DEPTH,
+  SHELF_SURFACE_OFFSET,
+  SHELF_THICKNESS,
+  nicheShade,
+  shelfBoardShade,
+} from './room.js';
 
 const SLAB = 0.12;
 const LIP = 0.004;
@@ -93,9 +113,9 @@ function hallShade(local) {
   return THREE.MathUtils.lerp(1, 0.5, depth) * THREE.MathUtils.lerp(1, 0.42, sideways);
 }
 
-function addBox(batches, outlines, material, size, x, y, z, shade = hallShade, outlined = true) {
+function addBox(batches, outlines, material, size, x, y, z, shade = hallShade, outlined = true, turn = 0) {
   const entry = boxGeometryFor(size[0], size[1], size[2]);
-  localMatrix.makeTranslation(x, y, z);
+  localMatrix.makeRotationY(turn).setPosition(x, y, z);
   worldMatrix.copy(localMatrix).premultiply(hallMatrix);
   appendMergedGeometry(batchFor(batches, material), entry.geometry, worldMatrix, shade, localMatrix);
   if (outlined && outlines) appendMergedEdges(outlines, entry.edges, worldMatrix);
@@ -152,16 +172,18 @@ export function appendHall(batches, outlines, matrix) {
         addBox(batches, outlines, wallMaterial, [ALCOVE_DEPTH, HALL_OPENING_HEIGHT, WALL_THICKNESS],
           bayX, HALL_OPENING_HEIGHT / 2, opening + jamb * (HALL_SIDE_HALF + WALL_THICKNESS / 2));
       }
-      addBox(batches, outlines, wallMaterial,
-        [WALL_THICKNESS, HALL_OPENING_HEIGHT, 2 * HALL_SIDE_HALF + 2 * WALL_THICKNESS],
-        side * (ALCOVE_REACH + WALL_THICKNESS / 2), HALL_OPENING_HEIGHT / 2, opening);
+      if (opening === STAIR_CENTRE) {
+        addBox(batches, outlines, wallMaterial,
+          [WALL_THICKNESS, HALL_OPENING_HEIGHT, 2 * HALL_SIDE_HALF + 2 * WALL_THICKNESS],
+          side * (ALCOVE_REACH + WALL_THICKNESS / 2), HALL_OPENING_HEIGHT / 2, opening);
+      }
 
       if (opening !== STAIR_CENTRE) {
-        // A way out of the plane: floor and ceiling closed, and dark at the back.
         addBox(batches, null, floorMaterial, [ALCOVE_DEPTH, SLAB, 2 * HALL_SIDE_HALF],
           bayX, -SLAB / 2, opening, null, false);
         addBox(batches, null, ceilingMaterial, [ALCOVE_DEPTH, SLAB, 2 * HALL_SIDE_HALF],
           bayX, HALL_OPENING_HEIGHT + SLAB / 2, opening, null, false);
+        addTemplateChamber(batches, outlines, side, opening);
         continue;
       }
       addStair(batches, outlines, side, bayX);
@@ -176,6 +198,81 @@ export function appendHall(batches, outlines, matrix) {
     addBox(batches, outlines, wallMaterial,
       [2 * HALL_HALF_WIDTH, HALL_LINTEL_HEIGHT, HALL_TRANSOM_DEPTH],
       0, HALL_OPENING_HEIGHT + HALL_LINTEL_HEIGHT / 2, end);
+  }
+}
+
+// --- what stands behind a side opening ---------------------------------------
+// Not a wall. A walker facing a turning is about to enter a chamber, and the
+// only honest thing to show them is the chamber. It is a stand-in, in the same
+// spirit as the rooms receding down the corridor: shelves, ledges and bands of
+// volumes, no catalogue consulted and no title read, because every chamber in
+// this world looks alike and the real one is built when they walk in.
+//
+// A box rather than a hexagon. Through an opening 2.4 wide and 2.5 high, from
+// the far side of a corridor, the corners of a hexagon are outside the cone of
+// sight entirely, and three walls of shelving is what a person actually sees.
+const TEMPLATE_DEPTH = 5.4;
+const TEMPLATE_HALF_WIDTH = 3.1;
+const TEMPLATE_START = ALCOVE_REACH + WALL_THICKNESS;
+
+function addTemplateCabinet(batches, outlines, x, z, turn, faceAway) {
+  const shade = local => nicheShade(local) * faceAway;
+  const post = (CABINET_WIDTH - CABINET_POST_WIDTH) / 2;
+  addBox(batches, null, shelfMaterial, [CABINET_WIDTH, CARCASE_HEIGHT, CARCASE_BACK_THICKNESS],
+    x, CARCASE_CENTRE_Y, z, shade, false, turn);
+  for (const side of [-1, 1]) {
+    addBox(batches, null, shelfMaterial, [CABINET_POST_WIDTH, CARCASE_HEIGHT, CARCASE_DEPTH],
+      x + Math.cos(turn) * side * post, CARCASE_CENTRE_Y, z - Math.sin(turn) * side * post,
+      shade, false, turn);
+  }
+  for (let shelf = 0; shelf < SHELVES_PER_WALL; shelf++) {
+    const shelfY = SHELF_BASE_Y + shelf * SHELF_PITCH;
+    addBox(batches, null, shelfMaterial, [CABINET_WIDTH, SHELF_THICKNESS, SHELF_DEPTH],
+      x, shelfY, z, local => shelfBoardShade(shelfY)(local) * faceAway, false, turn);
+    // One filled band rather than thirty-two volumes: through an opening this
+    // far off the gaps between spines are less than a pixel.
+    const bottom = shelfY + SHELF_SURFACE_OFFSET;
+    addBox(batches, null, trimMaterial, [VOLUMES_PER_SHELF * BOOK_STEP, BOOK_HEIGHT, BOOK_DEPTH],
+      x, bottom + BOOK_HEIGHT / 2, z, () => 0.72 * faceAway, false, turn);
+  }
+}
+
+function addTemplateChamber(batches, outlines, side, opening) {
+  const near = side * TEMPLATE_START;
+  const far = side * (TEMPLATE_START + TEMPLATE_DEPTH);
+  const middle = side * (TEMPLATE_START + TEMPLATE_DEPTH / 2);
+  const depth = TEMPLATE_DEPTH;
+
+  addBox(batches, null, floorMaterial, [depth, SLAB, 2 * TEMPLATE_HALF_WIDTH],
+    middle, -SLAB / 2, opening, null, false);
+  addBox(batches, null, ceilingMaterial, [depth, SLAB, 2 * TEMPLATE_HALF_WIDTH],
+    middle, WALL_HEIGHT + SLAB / 2, opening, null, false);
+
+  // The three walls a walker can see through the opening, and the returns
+  // beside it that make the opening read as a doorway into the chamber.
+  addBox(batches, null, wallMaterial, [WALL_THICKNESS, WALL_HEIGHT, 2 * TEMPLATE_HALF_WIDTH],
+    far, WALL_HEIGHT / 2, opening, () => 0.94, false);
+  for (const flank of [-1, 1]) {
+    addBox(batches, null, wallMaterial, [depth, WALL_HEIGHT, WALL_THICKNESS],
+      middle, WALL_HEIGHT / 2, opening + flank * TEMPLATE_HALF_WIDTH, () => 0.86, false);
+    addBox(batches, outlines, wallMaterial,
+      [WALL_THICKNESS, WALL_HEIGHT, TEMPLATE_HALF_WIDTH - HALL_SIDE_HALF],
+      near, WALL_HEIGHT / 2, opening + flank * (TEMPLATE_HALF_WIDTH + HALL_SIDE_HALF) / 2,
+      () => 0.9, true);
+  }
+  // A lintel over the threshold, so the chamber is entered rather than fallen into.
+  addBox(batches, outlines, wallMaterial,
+    [WALL_THICKNESS, WALL_HEIGHT - HALL_OPENING_HEIGHT, 2 * HALL_SIDE_HALF],
+    near, (WALL_HEIGHT + HALL_OPENING_HEIGHT) / 2, opening, () => 0.9, true);
+
+  // Shelving on the far wall and both flanks. The tone drops with the turn away
+  // from the opening, which is the only light this scene has.
+  addTemplateCabinet(batches, outlines, far - side * (CARCASE_DEPTH / 2 + WALL_THICKNESS), opening,
+    side > 0 ? -Math.PI / 2 : Math.PI / 2, 1);
+  for (const flank of [-1, 1]) {
+    addTemplateCabinet(batches, outlines, middle,
+      opening + flank * (TEMPLATE_HALF_WIDTH - CARCASE_DEPTH / 2 - WALL_THICKNESS),
+      flank > 0 ? Math.PI : 0, 0.82);
   }
 }
 

@@ -26,6 +26,7 @@ import * as THREE from 'three';
 import { freeWallsForLevel } from '../../world-engine.js';
 import { roomTagFor } from '../../world-model.js';
 import {
+  ALCOVE_REACH,
   HALL_HALF_WIDTH,
   HALL_LENGTH,
   HALL_LINTEL_HEIGHT,
@@ -42,8 +43,16 @@ import { ordinalFor } from './register.js';
 const PLAQUE_WIDTH = 2.05;
 const PLAQUE_HEIGHT = HALL_LINTEL_HEIGHT * 0.74;
 const PLAQUE_Y = HALL_OPENING_HEIGHT + HALL_LINTEL_HEIGHT / 2;
-// Just clear of the lintel it is painted on, so the two never z-fight.
+// Just clear of the surface it is painted on, so the two never z-fight.
 const PROUD = 0.012;
+// A second copy hung across the threshold of the side opening. The lintel
+// plaque is set for somebody walking past; standing in front of the turning,
+// about to step through, it is edge-on and says nothing. This one faces them.
+// It rides just under the head of the opening so it names the chamber without
+// standing in front of its shelves.
+const BLIND_WIDTH = 1.9;
+const BLIND_HEIGHT = BLIND_WIDTH * (PLAQUE_HEIGHT / PLAQUE_WIDTH);
+const BLIND_Y = HALL_OPENING_HEIGHT - 0.26;
 
 const CELL_WIDTH = 640;
 const CELL_HEIGHT = 128;
@@ -64,9 +73,22 @@ const corner = new THREE.Vector3();
  * angle here is chosen to turn the face back towards somebody in the passage.
  */
 const PLAQUE_PLACES = Object.freeze({
-  ahead: { x: 0, z: HALL_LENGTH - HALL_TRANSOM_DEPTH - PROUD, turn: Math.PI },
-  left: { x: HALL_HALF_WIDTH - PROUD, z: HALL_SIDE_CENTRE, turn: -Math.PI / 2 },
-  right: { x: -(HALL_HALF_WIDTH - PROUD), z: HALL_SIDE_CENTRE, turn: Math.PI / 2 },
+  ahead: [
+    { x: 0, y: PLAQUE_Y, z: HALL_LENGTH - HALL_TRANSOM_DEPTH - PROUD, turn: Math.PI,
+      width: PLAQUE_WIDTH, height: PLAQUE_HEIGHT },
+  ],
+  left: [
+    { x: HALL_HALF_WIDTH - PROUD, y: PLAQUE_Y, z: HALL_SIDE_CENTRE, turn: -Math.PI / 2,
+      width: PLAQUE_WIDTH, height: PLAQUE_HEIGHT },
+    { x: ALCOVE_REACH - PROUD, y: BLIND_Y, z: HALL_SIDE_CENTRE, turn: -Math.PI / 2,
+      width: BLIND_WIDTH, height: BLIND_HEIGHT },
+  ],
+  right: [
+    { x: -(HALL_HALF_WIDTH - PROUD), y: PLAQUE_Y, z: HALL_SIDE_CENTRE, turn: Math.PI / 2,
+      width: PLAQUE_WIDTH, height: PLAQUE_HEIGHT },
+    { x: -(ALCOVE_REACH - PROUD), y: BLIND_Y, z: HALL_SIDE_CENTRE, turn: Math.PI / 2,
+      width: BLIND_WIDTH, height: BLIND_HEIGHT },
+  ],
 });
 
 function legendFor(chamber) {
@@ -76,17 +98,19 @@ function legendFor(chamber) {
     : { text: String(ordinal), scale: ORDINAL_SCALE };
 }
 
+// Both plaques for one way out read the same words, so they share one cell of
+// the atlas: two quads, one piece of lettering.
 function appendPlaque(target, cell, cells, place) {
   placeMatrix.makeRotationY(place.turn)
-    .setPosition(place.x, PLAQUE_Y, place.z)
+    .setPosition(place.x, place.y, place.z)
     .premultiply(hallMatrix);
 
   // The canvas runs top to bottom and the texture bottom to top, so the first
   // cell is the highest strip.
   const top = 1 - cell / cells;
   const bottom = 1 - (cell + 1) / cells;
-  const halfWidth = PLAQUE_WIDTH / 2;
-  const halfHeight = PLAQUE_HEIGHT / 2;
+  const halfWidth = place.width / 2;
+  const halfHeight = place.height / 2;
   const base = target.positions.length / 3;
   for (const [x, y, u, v] of [
     [-halfWidth, halfHeight, 0, top],
@@ -117,7 +141,7 @@ export function buildSigns(room) {
     const basis = wallBasis(wall);
     hallTransform(hallMatrix, basis.nx, basis.nz, 0, 0, HALL_START);
     for (const way of ['ahead', 'left', 'right']) {
-      appendPlaque(target, legends.length, cells, PLAQUE_PLACES[way]);
+      for (const place of PLAQUE_PLACES[way]) appendPlaque(target, legends.length, cells, place);
       legends.push(legendFor(exits[way]));
     }
   }

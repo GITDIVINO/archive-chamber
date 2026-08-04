@@ -1027,14 +1027,25 @@ const signs = await page.evaluate(async () => {
 });
 
 assert.ok(!signs.error, signs.error ?? 'the passages are signed');
-assert.equal(signs.plaques.length, 6, 'two passages, three ways on from each');
+// Ten quads for six pieces of lettering: each side opening carries its name
+// twice — once on the lintel for somebody walking past, once on the blind end
+// of the alcove for somebody standing in front of it about to step through.
+assert.equal(signs.plaques.length, 10, 'two passages: one plaque ahead and two at each side opening');
+assert.equal(signs.legends.length, 6, 'and six ways on between them, each named once');
 for (const [index, plaque] of signs.plaques.entries()) {
   assert.ok(plaque.readsRightward > 0, `plaque ${index}: the lettering must run to the reader's right, not away from it`);
   assert.ok(plaque.firstCornerIsTop > 0, `plaque ${index}: the plaque must not hang upside down`);
   assert.ok(plaque.textureTopIsUp > 0, `plaque ${index}: the top of the label must be at the top of the plaque`);
-  assert.ok(plaque.height > 2.4 && plaque.height < 3.05, `plaque ${index}: a sign belongs on the lintel, not in the doorway`);
+  assert.ok(
+    plaque.height > 2.1 && plaque.height < 3.05,
+    `plaque ${index}: a sign belongs on a lintel or across a threshold, not down in the doorway`,
+  );
 }
 assert.deepEqual(signs.legends, signs.said, 'each plaque names the chamber that opening actually leads to');
+assert.ok(
+  signs.plaques.some(plaque => plaque.height > 2.2 && plaque.height < 2.6),
+  'a copy hangs across the threshold of each side opening, facing whoever stands in front of it',
+);
 assert.ok(
   signs.legends.some(text => /^\d+$/.test(text)),
   'a chamber already entered is signed with the number the walker gave it',

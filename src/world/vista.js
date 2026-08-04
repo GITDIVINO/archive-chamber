@@ -66,12 +66,11 @@ import {
   shelfBoardShade,
 } from './room.js';
 
-// How many chambers are built in each direction. With a passage between each
-// pair the corridor now covers roughly 32 units per chamber rather than 15, so
-// five reaches about the same 158 units as ten did before: inside the camera's
-// far plane, and far enough that the fog has closed completely — the corridor
-// ends out of sight rather than at a visible edge.
-const VISTA_DEPTH = 5;
+// How many chambers are built in each direction. At a density of 0.013 the fog
+// has closed 94% by 126 units, so the fourth and fifth chambers were geometry
+// nobody could see. Three reaches 95 units and pays for the template chambers
+// now standing behind every side opening.
+const VISTA_DEPTH = 3;
 // Chambers this close still show individual volumes; past it a filled band is
 // indistinguishable and far cheaper. One nearer than before, because a chamber
 // two along is now twice as far off as it used to be.
