@@ -81,6 +81,20 @@ function drawMap() {
     mapContext.stroke();
   }
 
+  // The player marker goes under the numbers rather than over them. It sits at
+  // their position in the room, which is the middle of the hex whenever they are
+  // set down rather than walked in — exactly where the number belongs — and the
+  // number is the one thing on the map that has to stay readable.
+  // An open ring wide enough to enclose the number rather than cross it. The
+  // two coincide whenever the walker is set down in a chamber instead of
+  // walking into it, and a filled dot at that size struck the digit out.
+  const playerPoint = rotatePoint(centerX + camera.position.x * screenScale, centerY + camera.position.z * screenScale);
+  mapContext.strokeStyle = '#202020';
+  mapContext.lineWidth = 1.1;
+  mapContext.beginPath();
+  mapContext.arc(playerPoint.x, playerPoint.y, 7.5, 0, Math.PI * 2);
+  mapContext.stroke();
+
   // Only chambers the walker has been in carry a number, so the map fills in as
   // they go rather than presenting a wall of hashes none of which they can
   // read. A chamber nobody has entered is left blank: it has no name yet.
@@ -89,20 +103,8 @@ function drawMap() {
     const label = rotatePoint(x, y);
     mapContext.fillStyle = isCurrent ? '#202020' : '#7d7568';
     mapContext.font = (isCurrent ? '700 12px' : '600 10px') + ' "Courier New", monospace';
-    // The player marker sits at their position in the room, which is the middle
-    // of the hex whenever they are set down rather than walking in — exactly on
-    // top of the one number that matters most. So the current chamber's number
-    // is lifted clear of it.
-    mapContext.fillText(String(cell.ordinal), label.x, isCurrent ? label.y - radius * 0.5 : label.y);
+    mapContext.fillText(String(cell.ordinal), label.x, label.y);
   }
-  const playerPoint = rotatePoint(centerX + camera.position.x * screenScale, centerY + camera.position.z * screenScale);
-  mapContext.fillStyle = '#f4f2ec';
-  mapContext.strokeStyle = '#202020';
-  mapContext.lineWidth = 1.5;
-  mapContext.beginPath();
-  mapContext.arc(playerPoint.x, playerPoint.y, 4, 0, Math.PI * 2);
-  mapContext.fill();
-  mapContext.stroke();
 }
 
 export function syncMap() {
