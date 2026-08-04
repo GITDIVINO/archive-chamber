@@ -22,6 +22,9 @@ import {
   PLAYER_BOUNDARY,
   PLAYER_RADIUS,
   SIDE_EXIT_REACH,
+  STAIR_CENTRE,
+  STAIR_EXIT_REACH,
+  STAIR_HALF,
   DOOR_WALL_THICKNESS,
 } from '../constants.js';
 import { wallBasis } from './geometry.js';
@@ -114,17 +117,26 @@ const HALL_CLEAR_HALF_WIDTH = HALL_HALF_WIDTH - PLAYER_RADIUS;
 const ALCOVE_CLEAR_REACH = ALCOVE_REACH - PLAYER_RADIUS;
 const OPENING_CLEAR_HALF = HALL_SIDE_HALF - PLAYER_RADIUS;
 
+// Which bay a walker is level with, or null for blank wall. The stair is cut
+// into the left side only — left being negative tangent, see hall.js — so the
+// same point opposite it is wall.
+function openingAt(along, tangent, margin) {
+  if (Math.abs(along - HALL_SIDE_CENTRE) <= margin) return HALL_SIDE_CENTRE;
+  if (tangent < 0 && Math.abs(along - STAIR_CENTRE) <= margin) return STAIR_CENTRE;
+  return null;
+}
+
 function constrainToHall(position, hall) {
   const { basis, along, tangent } = hall;
-  const atOpening = Math.abs(along - HALL_SIDE_CENTRE) <= OPENING_CLEAR_HALF;
-  const reach = atOpening ? ALCOVE_CLEAR_REACH : HALL_CLEAR_HALF_WIDTH;
+  const opening = openingAt(along, tangent, OPENING_CLEAR_HALF);
+  const reach = opening === null ? HALL_CLEAR_HALF_WIDTH : ALCOVE_CLEAR_REACH;
   const sideways = Math.min(Math.abs(tangent), reach) * Math.sign(tangent);
 
   if (Math.abs(sideways) > HALL_HALF_WIDTH) {
-    // Inside an alcove: its own jambs now bound how far along the passage the
+    // Inside a bay: its own jambs now bound how far along the passage the
     // player may drift, or they would walk out through the side wall.
     const limit = OPENING_CLEAR_HALF;
-    const offset = along - HALL_SIDE_CENTRE;
+    const offset = along - opening;
     if (Math.abs(offset) > limit) {
       const correction = Math.sign(offset) * limit - offset;
       position.x += basis.nx * correction;
@@ -189,6 +201,14 @@ export function crossedPassageExit(position, level) {
   const hall = hallAt(position, level);
   if (!hall) return null;
   if (hall.along > HALL_LENGTH + 0.05) return { wall: hall.wall, exit: 'ahead' };
+
+  // The stair bay, on the left: the well is the half nearer the mouth of the
+  // passage, the flight the half beyond it. Nobody climbs the flight — stepping
+  // onto it is the transition, exactly as stepping into an alcove is.
+  if (hall.tangent < -STAIR_EXIT_REACH && Math.abs(hall.along - STAIR_CENTRE) <= STAIR_HALF) {
+    return { wall: hall.wall, exit: hall.along < STAIR_CENTRE ? 'down' : 'up' };
+  }
+
   if (Math.abs(hall.along - HALL_SIDE_CENTRE) > HALL_SIDE_HALF) return null;
   // Facing along the passage, +tangent is the walker's right; see hall.js.
   if (hall.tangent > SIDE_EXIT_REACH) return { wall: hall.wall, exit: 'right' };

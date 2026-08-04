@@ -6,6 +6,7 @@
  * limit, not a model one.
  */
 
+import { freeWallsForLevel } from '../../world-engine.js';
 import { catalogueCoordinates, exactWorldRoomAddressFor, roomKey, roomTagFor } from '../../world-model.js';
 import { APOTHEM, CHAMBER_STEP } from '../constants.js';
 import { camera, renderedWorld } from '../core/view.js';
@@ -177,6 +178,28 @@ function stepAside(wall, exit) {
 }
 
 /**
+ * Climbs or descends a storey.
+ *
+ * The stair is in the passage, and the passage belongs to the chamber the
+ * walker entered it from — which is also, per the map, where they still stand.
+ * So it carries them up or down from that chamber, keeping q and r. That makes
+ * it reversible: go up, come back down, and it is the same chamber, even though
+ * the way back is a different passage, because the free walls turn with the
+ * level and the corridor above runs another way.
+ */
+function stepLevel(delta) {
+  const level = world.room.level + BigInt(delta);
+  const basis = wallBasis(freeWallsForLevel(level)[0]);
+  player.yaw = yawFacing(-basis.nx, -basis.nz);
+  player.pitch = 0;
+  camera.position.x = basis.nx * ARRIVAL_DEPTH;
+  camera.position.z = basis.nz * ARRIVAL_DEPTH;
+  world.room = { q: world.room.q, r: world.room.r, level };
+  buildCurrentRoom();
+  return world.room;
+}
+
+/**
  * Called once a frame after movement. Returns the chamber entered, or null.
  *
  * Walking back out of the near end of a passage is not a transition: that end
@@ -185,9 +208,10 @@ function stepAside(wall, exit) {
 export function syncDoorways() {
   const crossing = crossedPassageExit(camera.position, world.room.level);
   if (!crossing) return null;
-  return crossing.exit === 'ahead'
-    ? stepAhead(crossing.wall)
-    : stepAside(crossing.wall, crossing.exit);
+  if (crossing.exit === 'ahead') return stepAhead(crossing.wall);
+  if (crossing.exit === 'up') return stepLevel(1);
+  if (crossing.exit === 'down') return stepLevel(-1);
+  return stepAside(crossing.wall, crossing.exit);
 }
 
 export function currentBookMeshes() {

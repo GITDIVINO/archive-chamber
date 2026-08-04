@@ -41,6 +41,7 @@ import {
   SHELF_PITCH,
   SPINE_HEIGHT,
   SPINE_WIDTH,
+  ROOM_RADIUS,
   WALL_HEIGHT,
   DOOR_WALL_THICKNESS,
   WALL_THICKNESS,
@@ -102,13 +103,15 @@ function addBox(batches, material, size, position, rotation, parentMatrix, roomO
   appendMergedGeometry(batchFor(batches, material), entry.geometry, worldMatrix, shade, localMatrix);
 }
 
-// One slab for the whole corridor rather than a floor per chamber: a plane in
-// every room would overlap its neighbours exactly, and coplanar faces fight for
-// depth. It sits a little below the current room's own floor, so that floor
-// always wins where the two meet.
-function addCorridorSlab(batches, material, size, y, rotationX) {
-  const geometry = new THREE.PlaneGeometry(size, size);
-  worldMatrix.makeRotationX(rotationX).setPosition(0, y, 0);
+// A floor and a ceiling per chamber rather than one slab down the whole
+// corridor. The slab was cheaper, but it was also unbroken, and the stair bays
+// need the floor to be genuinely absent where the well goes down — otherwise a
+// shaft meant to fall away for storeys ends six centimetres below the tread.
+// Each sits a hair below the passage's own floor and above its ceiling, so
+// wherever the two meet the passage wins and nothing is coplanar.
+function addChamberSlab(batches, material, centre, y, rotationX) {
+  const geometry = new THREE.CircleGeometry(ROOM_RADIUS, 6);
+  worldMatrix.makeRotationX(rotationX).setPosition(centre.x, y, centre.z);
   appendMergedGeometry(batchFor(batches, material), geometry, worldMatrix);
   geometry.dispose();
 }
@@ -313,13 +316,12 @@ export function buildVista(level) {
   // the passage, not by the tiling, because chambers no longer share a wall.
   const axis = axialMapOffset(...WALL_DIRECTIONS[corridorDirection]).normalize();
 
-  const corridorLength = 2 * (VISTA_DEPTH + 1) * CHAMBER_STEP;
-  addCorridorSlab(batches, floorMaterial, corridorLength, -0.06, -Math.PI / 2);
-  addCorridorSlab(batches, ceilingMaterial, corridorLength, WALL_HEIGHT + 0.06, Math.PI / 2);
-
   for (let n = -VISTA_DEPTH; n <= VISTA_DEPTH; n++) {
     if (n === 0) continue;
-    offsetMatrix.makeTranslation(axis.x * CHAMBER_STEP * n, 0, axis.z * CHAMBER_STEP * n);
+    const centre = { x: axis.x * CHAMBER_STEP * n, z: axis.z * CHAMBER_STEP * n };
+    addChamberSlab(batches, floorMaterial, centre, -0.02, -Math.PI / 2);
+    addChamberSlab(batches, ceilingMaterial, centre, WALL_HEIGHT + 0.02, Math.PI / 2);
+    offsetMatrix.makeTranslation(centre.x, 0, centre.z);
     const separateVolumes = Math.abs(n) <= VISTA_DETAIL_DEPTH;
     const roomSeed = ((n % SPINE_TEMPLATES.length) + SPINE_TEMPLATES.length) % SPINE_TEMPLATES.length;
     for (const index of shelvedWalls) addDistantBookWall(batches, outlinePositions, labels, index, offsetMatrix, separateVolumes, roomSeed);

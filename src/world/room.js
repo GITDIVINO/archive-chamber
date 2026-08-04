@@ -24,6 +24,7 @@ import {
   CABINET_POST_WIDTH,
   CABINET_WIDTH,
   DOOR_HEIGHT,
+  ROOM_RADIUS,
   DOOR_WIDTH,
   SHELF_BASE_Y,
   SHELF_PITCH,
@@ -626,11 +627,17 @@ export function makeRoom(q, r, level, roomTag) {
     batches: bookMaterials.map(material => ({ material, matrices: [], tints: [], records: [] })),
   };
 
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(32, 32), floorMaterial);
+  // Six-sided, and no larger than the room. As squares of 32 they reached
+  // sixteen units out — past the mouth of both passages — and quietly floored
+  // over the stair wells, so a shaft meant to fall away for storeys ended a
+  // centimetre below its lip. A bounding square is not enough either: the
+  // corridor leaves through a corner of one, which is exactly where a square
+  // overhangs the hexagon it stands for.
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(ROOM_RADIUS, 6), floorMaterial);
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.01;
   room.add(floor);
-  const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(32, 32), ceilingMaterial);
+  const ceiling = new THREE.Mesh(new THREE.CircleGeometry(ROOM_RADIUS, 6), ceilingMaterial);
   ceiling.rotation.x = Math.PI / 2;
   ceiling.position.y = WALL_HEIGHT + 0.01;
   room.add(ceiling);
