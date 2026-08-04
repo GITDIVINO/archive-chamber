@@ -23,7 +23,7 @@
 
 import * as THREE from 'three';
 import { SHELVES_PER_WALL, VOLUMES_PER_SHELF } from '../../babel-v3.js';
-import { bookWallsForLevel, freeWallsForLevel } from '../../world-engine.js';
+import { bookWallsForLevel, canonicalWallForWallIndex, freeWallsForLevel } from '../../world-engine.js';
 import { WALL_DIRECTIONS } from '../../world-model.js';
 import {
   BOOK_DEPTH,
@@ -53,6 +53,11 @@ import { ceilingMaterial, floorMaterial, outlineMaterial, shelfMaterial, trimMat
 import { appendMergedGeometry, axialMapOffset, boxGeometryFor, mergedMesh, pointOnWall, wallBasis } from './geometry.js';
 import { appendHall, hallTransform } from './hall.js';
 import {
+  PLINTH_HEIGHT,
+  addCarcaseOutline,
+  addShelfEdge,
+  addWallNumber,
+  wallNumberMaterial,
   CARCASE_BACK_THICKNESS,
   CARCASE_BACK_Z,
   CARCASE_CENTRE_Y,
@@ -159,9 +164,15 @@ function addDistantVolumes(batches, outlinePositions, labels, seed, shelfY, fram
   }
 }
 
-// One wall of shelving, reduced to what survives the distance: the carcase, the
-// ledges, and its volumes.
-function addDistantBookWall(batches, outlinePositions, labels, index, roomOffset, separateVolumes, roomSeed) {
+// One wall of shelving. Far off it is reduced to what survives the distance:
+// the carcase, the ledges, and a band for its volumes. Near to — the chambers a
+// walker can see through a doorway they are about to cross — it carries the
+// same plinth, arrises, shelf edges and wall numeral the real thing does, so
+// that stepping over the threshold changes nothing that can be seen. The one
+// thing it cannot carry is the true titles: those need 640 catalogue lookups
+// against a room this builder does not know, and at nine units a spine is three
+// pixels wide.
+function addDistantBookWall(batches, outlinePositions, labels, wallNumbers, level, index, roomOffset, detailed, roomSeed) {
   const basis = wallBasis(index);
   const frameOffset = pointOnWall(basis, 0, 0, 0.28);
   const frame = new THREE.Matrix4().makeRotationY(basis.rotation)
@@ -169,8 +180,11 @@ function addDistantBookWall(batches, outlinePositions, labels, index, roomOffset
   const postOffset = (CABINET_WIDTH - CABINET_POST_WIDTH) / 2;
   const postHeight = CARCASE_HEIGHT - 2 * RAIL_THICKNESS;
 
-  addBox(batches, shelfMaterial, [CABINET_WIDTH, RAIL_THICKNESS, CARCASE_DEPTH],
-    new THREE.Vector3(0, RAIL_THICKNESS / 2, CARCASE_CENTRE_Z), 0, frame, roomOffset, nicheShade);
+  // The base runs solid from the floor to the underside of the lowest board,
+  // exactly as it does in a built room: as a thin rail it left a void beneath
+  // that board and the foot of the case read as three stacked pieces.
+  addBox(batches, shelfMaterial, [CABINET_WIDTH, PLINTH_HEIGHT, CARCASE_DEPTH],
+    new THREE.Vector3(0, PLINTH_HEIGHT / 2, CARCASE_CENTRE_Z), 0, frame, roomOffset, nicheShade);
   addBox(batches, shelfMaterial, [CABINET_WIDTH, RAIL_THICKNESS, CARCASE_DEPTH],
     new THREE.Vector3(0, CARCASE_HEIGHT - RAIL_THICKNESS / 2, CARCASE_CENTRE_Z), 0, frame, roomOffset,
     shelfBoardShade(CARCASE_HEIGHT - RAIL_THICKNESS / 2));
@@ -181,12 +195,21 @@ function addDistantBookWall(batches, outlinePositions, labels, index, roomOffset
   addBox(batches, shelfMaterial, [CABINET_WIDTH, CARCASE_HEIGHT, CARCASE_BACK_THICKNESS],
     new THREE.Vector3(0, CARCASE_CENTRE_Y, CARCASE_BACK_Z), 0, frame, roomOffset, nicheShade);
 
+  // The whole cabinet is drawn in one frame, so the outline helpers take the
+  // room's transform folded into the wall's.
+  const drawn = detailed ? new THREE.Matrix4().multiplyMatrices(roomOffset, frame) : null;
+  if (drawn) {
+    addCarcaseOutline(outlinePositions, drawn);
+    addWallNumber(wallNumbers, canonicalWallForWallIndex(level, index), drawn);
+  }
+
   const bandWidth = VOLUMES_PER_SHELF * BOOK_STEP;
   for (let shelfIndex = 0; shelfIndex < SHELVES_PER_WALL; shelfIndex++) {
     const shelfY = SHELF_BASE_Y + shelfIndex * SHELF_PITCH;
     addBox(batches, shelfMaterial, [CABINET_WIDTH, SHELF_THICKNESS, SHELF_DEPTH],
       new THREE.Vector3(0, shelfY, SHELF_CENTRE_Z), 0, frame, roomOffset, shelfBoardShade(shelfY));
-    if (separateVolumes) {
+    if (drawn) {
+      addShelfEdge(outlinePositions, drawn, shelfY);
       addDistantVolumes(batches, outlinePositions, labels, roomSeed + index * 5 + shelfIndex * 2, shelfY, frame, roomOffset);
       continue;
     }
@@ -305,7 +328,7 @@ function addSolidWall(batches, index, roomOffset) {
 // alcove. Its centre is therefore exactly HALL_START from that mouth: the
 // distance from a chamber's centre to the outer face of a doorway built deep.
 const alcoveMatrix = new THREE.Matrix4();
-function addAlcoveChambers(batches, outlinePositions, labels, hallMatrix, doorWalls, shelvedWalls) {
+function addAlcoveChambers(batches, outlinePositions, labels, wallNumbers, level, hallMatrix, doorWalls, shelvedWalls) {
   const wall = doorWalls[0];
   const facing = Math.PI / 6 + wall * Math.PI / 3;
   for (const side of [1, -1]) {
@@ -318,9 +341,27 @@ function addAlcoveChambers(batches, outlinePositions, labels, hallMatrix, doorWa
     addChamberSlab(batches, floorMaterial, alcoveMatrix, -0.02, -Math.PI / 2);
     addChamberSlab(batches, ceilingMaterial, alcoveMatrix, WALL_HEIGHT + 0.02, Math.PI / 2);
     for (const index of shelvedWalls) {
-      addDistantBookWall(batches, outlinePositions, labels, index, alcoveMatrix, true, index);
+      addDistantBookWall(batches, outlinePositions, labels, wallNumbers, level, index, alcoveMatrix, true, index);
     }
     for (const index of doorWalls) addDistantDoorWall(batches, index, alcoveMatrix);
+    addChamberArrises(outlinePositions, alcoveMatrix);
+  }
+}
+
+// The six vertical arrises of a chamber. In a built room these are drawn as
+// lines and they are most of what says "hexagon"; without them a chamber seen
+// through a doorway is a set of shelves floating in a pale field, and stepping
+// over the threshold makes six lines appear at once.
+const arrisPoint = new THREE.Vector3();
+function addChamberArrises(outlinePositions, roomOffset) {
+  for (let corner = 0; corner < 6; corner++) {
+    const angle = corner * Math.PI / 3;
+    const x = Math.cos(angle) * ROOM_RADIUS * 0.975;
+    const z = Math.sin(angle) * ROOM_RADIUS * 0.975;
+    for (const y of [0.02, WALL_HEIGHT]) {
+      arrisPoint.set(x, y, z).applyMatrix4(roomOffset);
+      outlinePositions.push(arrisPoint.x, arrisPoint.y, arrisPoint.z);
+    }
   }
 }
 
@@ -336,6 +377,7 @@ export function buildVista(level) {
   const batches = new Map();
   const outlinePositions = [];
   const labels = { positions: [], uvs: [], indices: [], colors: [] };
+  const wallNumbers = { positions: [], uvs: [], indices: [], colors: [] };
   // A wall index is its own axial direction, so the corridor axis follows
   // straight from which wall carries a doorway.
   const doorWalls = freeWallsForLevel(level);
@@ -352,7 +394,10 @@ export function buildVista(level) {
     addChamberSlab(batches, ceilingMaterial, offsetMatrix, WALL_HEIGHT + 0.02, Math.PI / 2);
     const separateVolumes = Math.abs(n) <= VISTA_DETAIL_DEPTH;
     const roomSeed = ((n % SPINE_TEMPLATES.length) + SPINE_TEMPLATES.length) % SPINE_TEMPLATES.length;
-    for (const index of shelvedWalls) addDistantBookWall(batches, outlinePositions, labels, index, offsetMatrix, separateVolumes, roomSeed);
+    for (const index of shelvedWalls) {
+      addDistantBookWall(batches, outlinePositions, labels, wallNumbers, level, index, offsetMatrix, separateVolumes, roomSeed);
+    }
+    if (separateVolumes) addChamberArrises(outlinePositions, offsetMatrix);
     // Both door walls now, one at each end: with a passage between them the
     // chambers no longer share a wall, so nothing is drawn twice.
     for (const index of doorWalls) addDistantDoorWall(batches, index, offsetMatrix);
@@ -373,7 +418,7 @@ export function buildVista(level) {
     hallTransform(offsetMatrix, axis.x, axis.z, axis.x * base, axis.z * base, HALL_START);
     appendHall(batches, Math.abs(n) <= VISTA_DETAIL_DEPTH ? outlinePositions : null, offsetMatrix, walkable);
     if (walkable) {
-      addAlcoveChambers(batches, outlinePositions, labels, offsetMatrix, doorWalls, shelvedWalls);
+      addAlcoveChambers(batches, outlinePositions, labels, wallNumbers, level, offsetMatrix, doorWalls, shelvedWalls);
     }
   }
 
@@ -385,6 +430,12 @@ export function buildVista(level) {
   }
   if (labels.positions.length) {
     const mesh = mergedMesh(labels, spineTemplateMaterial());
+    mesh.renderOrder = 3;
+    mesh.raycast = () => {};
+    group.add(mesh);
+  }
+  if (wallNumbers.positions.length) {
+    const mesh = mergedMesh(wallNumbers, wallNumberMaterial());
     mesh.renderOrder = 3;
     mesh.raycast = () => {};
     group.add(mesh);

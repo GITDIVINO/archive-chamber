@@ -338,7 +338,7 @@ const WALL_NUMBER_CLEARANCE = 0.42;
 // face lies here in cabinet space. The numeral is painted onto it rather than
 // hung in the air in front of the case.
 // The base runs solid from the floor to the underside of the lowest board.
-const PLINTH_HEIGHT = SHELF_BASE_Y - SHELF_THICKNESS / 2;
+export const PLINTH_HEIGHT = SHELF_BASE_Y - SHELF_THICKNESS / 2;
 const CABINET_WALL_INSET = 0.28;
 const WALL_FACE_Z = CABINET_WALL_INSET - WALL_THICKNESS / 2;
 
@@ -378,7 +378,7 @@ export function wallNumberMaterial() {
 }
 
 const wallNumberCorner = new THREE.Vector3();
-function addWallNumber(batch, canonicalWall, parentMatrix) {
+export function addWallNumber(batch, canonicalWall, parentMatrix) {
   const cell = canonicalWall - 1;
   const u0 = cell / SHELVED_WALLS_PER_ROOM;
   const u1 = (cell + 1) / SHELVED_WALLS_PER_ROOM;
@@ -416,8 +416,7 @@ function pushLine(outlinePositions, parentMatrix, from, to) {
 
 // Only the front of the carcase is drawn. Its back and depth edges sat behind
 // the volumes where they read as stray lines rather than structure.
-function addCarcaseOutline(room, parentMatrix) {
-  const { outlinePositions } = room.userData;
+export function addCarcaseOutline(outlinePositions, parentMatrix) {
   const halfWidth = CABINET_WIDTH / 2;
   const top = CARCASE_HEIGHT;
   const bottom = 0;
@@ -455,7 +454,7 @@ const shelfEdgePoint = new THREE.Vector3();
 // full width with no end caps. That reads as a ledge cut into the carcase and
 // gives the volumes something to visibly stand on, without turning the shelf
 // back into a separate box.
-function addShelfEdge(outlinePositions, parentMatrix, shelfY) {
+export function addShelfEdge(outlinePositions, parentMatrix, shelfY) {
   const halfWidth = CABINET_WIDTH / 2;
   for (const y of [shelfY + SHELF_SURFACE_OFFSET, shelfY - SHELF_SURFACE_OFFSET]) {
     for (const x of [-halfWidth, halfWidth]) {
@@ -529,7 +528,7 @@ function collectBookWall(room, index, q, r, level, disturbed) {
     frameMatrix,
     carcase,
   );
-  addCarcaseOutline(room, frameMatrix);
+  addCarcaseOutline(room.userData.outlinePositions, frameMatrix);
   addWallNumber(room.userData.wallNumbers, canonicalWall, frameMatrix);
 
   const { batches, outlinePositions } = room.userData;
