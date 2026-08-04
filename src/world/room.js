@@ -9,11 +9,13 @@
 
 import * as THREE from 'three';
 import { SHELVES_PER_WALL, VOLUMES_PER_SHELF, isManifestoBookIndex, titleForBookIndex } from '../../babel-v3.js';
+import { tracesFor } from './traces.js';
 import {
   bookWallsForLevel,
   canonicalWallForWallIndex,
   catalogBookIndexFor,
   freeWallsForLevel,
+  worldRoomIndexFor,
 } from '../../world-engine.js';
 import {
   BOOK_DEPTH,
@@ -23,6 +25,7 @@ import {
   BOOK_WIDTH,
   CABINET_POST_WIDTH,
   CABINET_WIDTH,
+  DOOR_HALF_WIDTH,
   DOOR_HEIGHT,
   ROOM_RADIUS,
   DOOR_WIDTH,
@@ -492,7 +495,7 @@ function appendBookOutline(outlinePositions, matrix) {
 // Collects one wall's volumes into the room-wide batches instead of adding a
 // mesh per book.  Shelving itself stays merged too: there are only a handful
 // of carcase pieces per wall, but they share two materials across four walls.
-function collectBookWall(room, index, q, r, level) {
+function collectBookWall(room, index, q, r, level, disturbed) {
   const basis = wallBasis(index);
   // On another level the same canonical wall faces a different way, so the
   // number comes from the placement rather than from a fixed list.
@@ -554,7 +557,18 @@ function collectBookWall(room, index, q, r, level) {
       const y = shelfY + SHELF_SURFACE_OFFSET + BOOK_HEIGHT / 2;
       const bookCenterZ = BOOK_FRONT_Z + BOOK_DEPTH / 2;
 
-      bookMatrix.makeTranslation(x, y, bookCenterZ).premultiply(frameMatrix);
+      // Somebody read this one and put it back badly. It is the same volume it
+      // always was — same address, same text, same title; only its standing has
+      // been disturbed, which is the whole of what a trace is allowed to be.
+      const outOfPlace = disturbed
+        && disturbed.wall === canonicalWall - 1
+        && disturbed.shelf === shelfIndex
+        && disturbed.volume === volumeIndex;
+      // Cabinet space has the room at -z — BOOK_FRONT_Z is the spine face and
+      // it is negative — so standing a volume out means subtracting the reach.
+      bookMatrix.makeRotationY(outOfPlace ? disturbed.lean : 0)
+        .setPosition(x, y, bookCenterZ - (outOfPlace ? disturbed.reach : 0))
+        .premultiply(frameMatrix);
       batch.matrices.push(bookMatrix.clone());
       batch.tints.push(manifesto ? MANIFESTO_TINT : bookTone(bookIndex));
       const title = shortSpineTitle(titleForBookIndex(bookIndex));
@@ -637,6 +651,41 @@ export function paintPendingSpines(room, budgetMs) {
   return true;
 }
 
+// Somebody stood here and counted, exactly as the walker's register counts.
+// Scratched, not drafted: every other marking in this world is in the
+// architect's hand, and these are the only ones that are not.
+const TALLY_HEIGHT = 1.34;
+const TALLY_STROKE = 0.015;
+const TALLY_LENGTH = 0.15;
+const TALLY_GAP = 0.036;
+// A tally is always beside a doorway, and a doorway wall is built deep, so its
+// visible face is half that thickness in from the wall plane — scratching at
+// the plane itself would bury the marks inside the jamb.
+const TALLY_FACE = DOOR_WALL_THICKNESS / 2 + 0.004;
+function addTally(room, tally) {
+  const basis = wallBasis(tally.wall);
+  const shade = () => 0.16;
+  const strokes = tally.count;
+  const groups = Math.ceil(strokes / 5);
+  const start = tally.side * (DOOR_HALF_WIDTH + 0.34);
+  for (let stroke = 0; stroke < strokes; stroke++) {
+    const group = Math.floor(stroke / 5);
+    const within = stroke % 5;
+    const offset = tally.side * (group * (5 * TALLY_GAP + 0.05) + within * TALLY_GAP);
+    addBox(room, trimMaterial, [TALLY_STROKE, TALLY_LENGTH, 0.006],
+      pointOnWall(basis, start + offset, TALLY_HEIGHT, TALLY_FACE), basis.rotation, null,
+      { outlined: false, shade });
+  }
+  // A stroke across each closed group of five, the way anybody tallies.
+  for (let group = 0; group < groups; group++) {
+    if ((group + 1) * 5 > strokes) continue;
+    const centre = tally.side * (group * (5 * TALLY_GAP + 0.05) + 2 * TALLY_GAP);
+    addBox(room, trimMaterial, [5.6 * TALLY_GAP, TALLY_STROKE, 0.006],
+      pointOnWall(basis, start + centre, TALLY_HEIGHT, TALLY_FACE + 0.002), basis.rotation, null,
+      { outlined: false, shade });
+  }
+}
+
 export function makeRoom(q, r, level, roomTag) {
   const room = new THREE.Group();
   room.userData = {
@@ -683,13 +732,19 @@ export function makeRoom(q, r, level, roomTag) {
     room.add(new THREE.Line(line, roomLineMaterial));
   }
 
+  // What this chamber carries of the people who were here before. Derived from
+  // its own index, so a trace is as real as its books: always there, findable
+  // again, and nameable by an exact address.
+  const traces = tracesFor(worldRoomIndexFor(q, r, level), level);
+
   const doorWalls = freeWallsForLevel(level);
   const shelvedWalls = bookWallsForLevel(level);
   for (let index = 0; index < 6; index++) {
     if (doorWalls.includes(index)) addDoorWall(room, index);
     else addSolidWall(room, index);
-    if (shelvedWalls.includes(index)) collectBookWall(room, index, q, r, level);
+    if (shelvedWalls.includes(index)) collectBookWall(room, index, q, r, level, traces.disturbed);
   }
+  if (traces.tally) addTally(room, traces.tally);
   finalizeRoom(room);
   return room;
 }

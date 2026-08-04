@@ -681,6 +681,108 @@ assert.equal(
   'selecting a row walks the player back to that chamber',
 );
 
+// --- traces of librarians ----------------------------------------------------
+// The story is about the people who spent their lives in the building, and
+// every surface here used to be untouched — which made the walker the first
+// creature ever to enter. A trace is derived from the chamber's own index, so
+// it is as real as the books: always there, findable again, nameable exactly.
+const traces = await page.evaluate(async () => {
+  const THREE = await import('three');
+  const { tracesFor } = await import('./src/world/traces.js');
+  const { bookWallsForLevel, catalogBookIndexFor, freeWallsForLevel, worldRoomIndexFor } = await import('./world-engine.js');
+  const { moveToWorldHex } = await import('./src/world/rooms.js');
+  const { renderedWorld } = await import('./src/core/view.js');
+  const doors = await import('./src/world/doors.js');
+
+  const at = q => tracesFor(worldRoomIndexFor(BigInt(q), 3n, 0n), 0n);
+
+  let disturbed = 0, tally = 0, short = 0, long = 0, offFreeWall = 0, outOfRange = 0;
+  const SAMPLE = 12000;
+  for (let q = 0; q < SAMPLE; q++) {
+    const trace = at(q);
+    if (trace.disturbed) disturbed++;
+    if (!trace.tally) continue;
+    tally++;
+    if (trace.tally.count <= 5) short++;
+    if (trace.tally.count > 12) long++;
+    if (!freeWallsForLevel(0n).includes(trace.tally.wall)) offFreeWall++;
+    if (trace.tally.count < 1 || trace.tally.count > 17) outOfRange++;
+  }
+
+  // Nothing is stored: the same chamber gives the same trace, every time. And
+  // the traces that exist are not all the same trace — four chambers in five
+  // carry nothing at all, so this has to be measured on the ones that do.
+  const repeated = JSON.stringify(at(7)) === JSON.stringify(at(7));
+  const marks = new Set();
+  for (let q = 0; q < SAMPLE && marks.size < 60; q++) {
+    const trace = at(q);
+    if (trace.disturbed) marks.add(JSON.stringify(trace.disturbed));
+  }
+  const distinct = marks.size;
+
+  // And a disturbed volume really does stand out of its shelf — by the reach
+  // the trace names, and without its address or its title changing.
+  const shelfMates = [];
+  let target = null, mark = null, home = 0;
+  for (let q = 0; q < 400 && !target; q++) {
+    const trace = tracesFor(worldRoomIndexFor(BigInt(q), 0n, 0n), 0n);
+    if (!trace.disturbed) continue;
+    home = q;
+    mark = trace.disturbed;
+    moveToWorldHex(BigInt(q), 0n, 0n);
+    const room = renderedWorld.children.find(child => child.userData.q !== undefined);
+    const wallIndex = bookWallsForLevel(0n)[mark.wall];
+    const matrix = new THREE.Matrix4(), point = new THREE.Vector3();
+    for (const mesh of room.userData.bookMeshes) {
+      for (let i = 0; i < mesh.count; i++) {
+        const record = mesh.userData.records[i];
+        const where = record.worldLocation;
+        if (where.wall !== mark.wall + 1 || where.shelf !== mark.shelf + 1) continue;
+        mesh.getMatrixAt(i, matrix);
+        point.setFromMatrixPosition(matrix);
+        const normal = doors.wallCoordinates(wallIndex, point.x, point.z).normal;
+        if (where.volume === mark.volume + 1) {
+          target = {
+            normal,
+            addressed: String(record.bookIndex) === String(catalogBookIndexFor(where)),
+            titled: typeof record.volumeTitle === 'string' && record.volumeTitle.length > 0,
+          };
+        } else shelfMates.push(normal);
+      }
+    }
+  }
+
+  return {
+    SAMPLE, disturbed, tally, short, long, offFreeWall, outOfRange, repeated, distinct,
+    home, reach: mark.reach,
+    standsOutBy: Math.min(...shelfMates) - target.normal,
+    shelfSpread: Math.max(...shelfMates) - Math.min(...shelfMates),
+    addressed: target.addressed,
+    titled: target.titled,
+  };
+});
+
+// One chamber in six, one in forty-eight. Loose bounds: the point is the order
+// of magnitude, not the constant.
+const disturbedRate = traces.disturbed / traces.SAMPLE;
+const tallyRate = traces.tally / traces.SAMPLE;
+assert.ok(disturbedRate > 0.12 && disturbedRate < 0.22, `a volume out of place should be common but not the rule, measured ${(disturbedRate * 100).toFixed(1)}%`);
+assert.ok(tallyRate > 0.012 && tallyRate < 0.032, `a tally should be scarce enough that meeting one is an event, measured ${(tallyRate * 100).toFixed(2)}%`);
+assert.ok(traces.short > traces.long * 2, 'short tallies must outnumber long ones: most people who start counting do not get far');
+assert.equal(traces.offFreeWall, 0, 'a tally is scratched beside a doorway, never on a bookcase');
+assert.equal(traces.outOfRange, 0, 'and never longer than a person would keep up');
+
+assert.equal(traces.repeated, true, 'a trace is derived, never stored: the same chamber gives the same answer');
+assert.ok(traces.distinct >= 55, `and different chambers carry different ones, ${traces.distinct} distinct in the first sixty found`);
+
+assert.ok(
+  Math.abs(traces.standsOutBy - traces.reach) < 1e-6,
+  `the disturbed volume must stand out by exactly the reach recorded, ${traces.standsOutBy} against ${traces.reach}`,
+);
+assert.ok(traces.shelfSpread < 1e-6, 'and it must be the only one on its shelf that is out');
+assert.equal(traces.addressed, true, 'it is the same volume it always was: same address');
+assert.equal(traces.titled, true, 'and the same title — only its standing has been disturbed');
+
 // --- the small print can be read ---------------------------------------------
 // The status line and the map carry the chamber number and both buttons, and
 // they are the smallest type in the game. They were also the only text the
