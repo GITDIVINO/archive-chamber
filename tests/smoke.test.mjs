@@ -107,6 +107,49 @@ assert.ok(
   `a room should cost at most ${MAX_DRAW_CALLS_PER_FRAME} draw calls per frame, measured ${perFrame}`,
 );
 
+// --- the interface is on top of the canvas -----------------------------------
+// The status bar is the only thing a player can click without first entering
+// the chamber, and it sits over a full-screen canvas. If the stacking ever
+// goes the other way the buttons become unreachable — which is a failure a
+// click times out on thirty seconds later, saying nothing useful.
+const reachable = await page.evaluate(() => {
+  const report = {};
+  for (const id of ['open-search', 'open-register', 'cell']) {
+    const element = document.querySelector('#' + id);
+    const box = element.getBoundingClientRect();
+    const x = box.left + box.width / 2;
+    const y = box.top + box.height / 2;
+    const hit = document.elementFromPoint(x, y);
+    report[id] = {
+      box: [Math.round(box.left), Math.round(box.top), Math.round(box.width), Math.round(box.height)],
+      onScreen: box.width > 0 && box.height > 0 && y >= 0 && y <= innerHeight && x >= 0 && x <= innerWidth,
+      hit: hit ? hit.tagName.toLowerCase() + (hit.id ? '#' + hit.id : '') : 'nothing',
+      pointerEvents: getComputedStyle(element).pointerEvents,
+    };
+  }
+  const canvas = document.querySelector('canvas');
+  report.layers = {
+    viewport: [innerWidth, innerHeight],
+    uiZ: getComputedStyle(document.querySelector('#ui')).zIndex,
+    uiPosition: getComputedStyle(document.querySelector('#ui')).position,
+    canvasZ: getComputedStyle(canvas).zIndex,
+    canvasPosition: getComputedStyle(canvas).position,
+    canvasFilter: getComputedStyle(canvas).filter,
+    statusHeight: Math.round(document.querySelector('#status').getBoundingClientRect().height),
+    bodyOrder: [...document.body.children].map(child => child.tagName.toLowerCase() + (child.id ? '#' + child.id : '')),
+  };
+  return report;
+});
+
+for (const id of ['open-search', 'open-register', 'cell']) {
+  assert.equal(
+    reachable[id].hit,
+    'button#' + id,
+    `#${id} must be the topmost element at its own centre, found ${reachable[id].hit}. `
+      + JSON.stringify({ ...reachable[id], layers: reachable.layers }),
+  );
+}
+
 // --- the physical manifesto opens on its fixed page --------------------------
 // The reader covers the status bar, so it has to be dismissed the way a player
 // would before the catalogue can be reached again.
