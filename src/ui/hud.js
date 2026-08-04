@@ -22,9 +22,20 @@ export function showNotice(text) {
  * gesture away — the tag in the register, the record in the clipboard.
  */
 export function setChamberLabel(ordinal, tag, address) {
-  cellElement.textContent = 'chamber ' + ordinal;
   cellElement.title = tag + ' — click to copy the exact record';
   cellElement.dataset.fullAddress = address;
+}
+
+/**
+ * Where the walker is standing.
+ *
+ * In a chamber that is its number; in a passage it is the two chambers the
+ * passage runs between. The record the button copies stays the chamber's
+ * either way — a passage has no place in the plane, which is exactly why the
+ * map leaves the walker standing at their doorway while they are in one.
+ */
+export function setPlaceLabel(label) {
+  cellElement.textContent = label;
 }
 
 export async function copyExactRecord(element, copiedText) {

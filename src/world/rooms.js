@@ -11,9 +11,9 @@ import { catalogueCoordinates, exactWorldRoomAddressFor, roomKey, roomTagFor } f
 import { APOTHEM, CHAMBER_STEP } from '../constants.js';
 import { camera, renderedWorld } from '../core/view.js';
 import { player } from '../player.js';
-import { crossedPassageExit } from './doors.js';
+import { crossedPassageExit, passageWallAt } from './doors.js';
 import { wallBasis } from './geometry.js';
-import { arrivalWallFor, passageExits } from './passage.js';
+import { arrivalWallFor, passageEnds, passageExits } from './passage.js';
 import { noteChamber, ordinalFor } from './register.js';
 import { buildSigns, disposeSigns } from './signs.js';
 import { disposeRoom, makeRoom } from './room.js';
@@ -29,6 +29,14 @@ export const world = {
   ordinal: 1,
   address: '',
   mapCells: [],
+  // Where the walker is standing, which is not always a chamber. A passage is
+  // a junction of four, and saying "chamber 1" while somebody stands in the
+  // middle of one is the only place this interface has been untrue.
+  place: 'chamber',
+  placeLabel: '',
+  // True when the walker got here by turning aside in a passage, which cannot
+  // be retraced. Set by the transition and read once, by the notice.
+  arrivedIndirectly: false,
 };
 
 let roomChangeListener = null;
@@ -113,6 +121,7 @@ export function buildCurrentRoom() {
 
 /** Selects a different chamber outright; catalogue lookups never call this. */
 export function moveToWorldHex(q, r, level = 0n) {
+  world.arrivedIndirectly = false;
   world.room = { q: BigInt(q), r: BigInt(r), level: BigInt(level) };
   camera.position.set(0, 1.65, 0);
   player.yaw = 0;
@@ -136,6 +145,7 @@ function yawFacing(dx, dz) {
  * jump, and the corridor behind them does not move.
  */
 function stepAhead(wall) {
+  world.arrivedIndirectly = false;
   const there = passageExits(world.room, wall).ahead;
   const basis = wallBasis(wall);
   camera.position.x -= basis.nx * CHAMBER_STEP;
@@ -160,6 +170,7 @@ const ARRIVAL_DEPTH = APOTHEM - 1.7;
  * walking the way a left turn points.
  */
 function stepAside(wall, exit) {
+  world.arrivedIndirectly = true;
   const from = world.room;
   const there = passageExits(from, wall)[exit];
   const arrival = arrivalWallFor(there, from, from.level);
@@ -188,6 +199,7 @@ function stepAside(wall, exit) {
  * level and the corridor above runs another way.
  */
 function stepLevel(delta) {
+  world.arrivedIndirectly = false;
   const level = world.room.level + BigInt(delta);
   const basis = wallBasis(freeWallsForLevel(level)[0]);
   player.yaw = yawFacing(-basis.nx, -basis.nz);
@@ -197,6 +209,30 @@ function stepLevel(delta) {
   world.room = { q: world.room.q, r: world.room.r, level };
   buildCurrentRoom();
   return world.room;
+}
+
+// A passage is named by its two ends, in the order passageIdFor fixes, so the
+// same corridor reads the same walking either way. An end nobody has entered
+// has no number, because nobody has given it one.
+function passageLabelFor(wall) {
+  const ends = passageEnds(world.room, wall).map(end => ordinalFor(end) ?? '?');
+  return 'passage ' + ends[0] + ' – ' + ends[1];
+}
+
+/**
+ * Keeps world.place in step with where the walker actually is.
+ *
+ * Returns true when it changed, so the status line is rewritten on crossing a
+ * threshold rather than every frame.
+ */
+export function syncPlace() {
+  const wall = passageWallAt(camera.position, world.room.level);
+  const place = wall === null ? 'chamber' : 'passage';
+  const label = wall === null ? 'chamber ' + world.ordinal : passageLabelFor(wall);
+  if (place === world.place && label === world.placeLabel) return false;
+  world.place = place;
+  world.placeLabel = label;
+  return true;
 }
 
 /**

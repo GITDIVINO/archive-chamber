@@ -681,6 +681,63 @@ assert.equal(
   'selecting a row walks the player back to that chamber',
 );
 
+// --- the passage is a place, and says so --------------------------------------
+// Standing in the middle of a junction of four chambers, the status line used
+// to read "chamber 1". That was the one thing in this interface that was not
+// true, and the whole discipline of the project is that a place has one name.
+const place = await page.evaluate(async () => {
+  const { camera } = await import('./src/core/view.js');
+  const { moveToWorldHex, syncDoorways, syncPlace, world } = await import('./src/world/rooms.js');
+  const { freeWallsForLevel } = await import('./world-engine.js');
+  const doors = await import('./src/world/doors.js');
+  const c = await import('./src/constants.js');
+
+  const standAt = (wall, normal, tangent = 0) => {
+    const { basis } = doors.wallCoordinates(wall, 0, 0);
+    camera.position.x = basis.nx * normal + basis.tx * tangent;
+    camera.position.z = basis.nz * normal + basis.tz * tangent;
+    syncPlace();
+    return { place: world.place, label: world.placeLabel };
+  };
+
+  moveToWorldHex(0n, 0n, 0n);
+  const [near, far] = freeWallsForLevel(0n);
+  const inChamber = standAt(near, 2);
+  const inPassage = standAt(near, c.HALL_START + 4);
+  // The same corridor, entered from its other end, must read the same: a
+  // passage belongs to the edge, not to the direction of travel.
+  const fromNearEnd = inPassage.label;
+  moveToWorldHex(...Object.values(await (async () => {
+    const { passageExits } = await import('./src/world/passage.js');
+    const there = passageExits({ q: 0n, r: 0n, level: 0n }, near).ahead;
+    return [there.q, there.r, there.level];
+  })()));
+  const fromFarEnd = standAt(far, c.HALL_START + 4).label;
+
+  // And turning aside marks the arrival as one that cannot be retraced.
+  moveToWorldHex(0n, 0n, 0n);
+  standAt(near, c.HALL_START + c.HALL_SIDE_CENTRE, -(c.SIDE_EXIT_REACH + 0.1));
+  syncDoorways();
+  const afterTurning = world.arrivedIndirectly;
+  moveToWorldHex(0n, 0n, 0n);
+  standAt(near, c.HALL_END + 0.2);
+  syncDoorways();
+  const afterWalkingThrough = world.arrivedIndirectly;
+
+  return { inChamber, inPassage, fromNearEnd, fromFarEnd, afterTurning, afterWalkingThrough };
+});
+
+assert.equal(place.inChamber.place, 'chamber');
+assert.equal(place.inChamber.label, 'chamber 1', 'in a chamber the status line is its number');
+assert.equal(place.inPassage.place, 'passage', 'a walker in a corridor is not in a chamber');
+assert.match(place.inPassage.label, /^passage \S+ – \S+$/, 'a passage is named by the two chambers it runs between');
+assert.equal(
+  place.fromFarEnd, place.fromNearEnd,
+  'and by the same name from either end, because a passage belongs to the edge',
+);
+assert.equal(place.afterTurning, true, 'turning aside is marked: it cannot be retraced');
+assert.equal(place.afterWalkingThrough, false, 'walking straight through can be, and is not marked');
+
 // --- the signs over a passage's ways out ------------------------------------
 // A junction offers three identical openings onto three identical chambers, so
 // each carries a plaque. Lettering in this project has been built mirrored

@@ -107,6 +107,19 @@ export function arrivalWallFor(hex, from, level) {
   return best;
 }
 
+/**
+ * The two chambers a passage runs between, in an order that does not depend on
+ * which end somebody entered from.
+ *
+ * A passage is a property of the edge, so its name must read the same walking
+ * either way — otherwise the same corridor would be called two things, and this
+ * world's whole discipline is that a place has one name.
+ */
+export function passageEnds(hex, wall) {
+  const id = passageIdFor(hex, wall);
+  return [{ q: id.q, r: id.r, level: id.level }, neighbour(id, id.wall)];
+}
+
 /** Every chamber a passage touches: its two ends and the two that flank it. */
 export function passageChambers(hex, wall) {
   const exits = passageExits(hex, wall);

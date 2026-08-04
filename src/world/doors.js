@@ -150,6 +150,11 @@ function constrainToHall(position, hall) {
   }
 }
 
+/** The free wall whose passage the walker is inside, or null for a chamber. */
+export function passageWallAt(position, level) {
+  return hallAt(position, level)?.wall ?? null;
+}
+
 /**
  * Keeps the player inside whichever space they are actually in.
  *

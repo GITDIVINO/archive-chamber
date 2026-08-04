@@ -10,7 +10,7 @@
 import { camera, render, renderer, resizeView } from './core/view.js';
 import { isEngaged, keys, player } from './player.js';
 import { startAudio, toggleAudio } from './audio.js';
-import { buildCurrentRoom, onRoomChange, syncDoorways, world } from './world/rooms.js';
+import { buildCurrentRoom, onRoomChange, syncDoorways, syncPlace, world } from './world/rooms.js';
 import {
   applyLook,
   clearTarget,
@@ -45,7 +45,7 @@ import {
   searchSubmit,
   startButton,
 } from './ui/dom.js';
-import { copyExactRecord, setChamberLabel, setStartupState, showNotice } from './ui/hud.js';
+import { copyExactRecord, setChamberLabel, setPlaceLabel, setStartupState, showNotice } from './ui/hud.js';
 import { invalidateMap, resizeMapCanvas, syncMap } from './ui/map.js';
 import { closeBook, isReaderOpen, renderPage, setReaderCallbacks, showCatalogueVolume, turnPage } from './ui/reader.js';
 import {
@@ -77,10 +77,22 @@ setRegisterCallbacks({ open: suspendChamber, close: resumeChamber });
 
 onRoomChange(() => {
   setChamberLabel(world.ordinal, world.tag, world.address);
+  syncPlace();
+  setPlaceLabel(world.placeLabel);
   // The old room's volumes are gone; drop any aim held over from it.
   clearTarget();
   invalidateMap();
 });
+
+// Turning aside in a passage cannot be retraced: the flanking chamber has no
+// wall facing the passage, so the walker comes out of one of its own doorways,
+// and behind that is a different corridor. They can always get back, but not
+// the way they came, and nothing else in the game would ever tell them.
+function noticeForArrival() {
+  return world.arrivedIndirectly
+    ? 'chamber ' + world.ordinal + ' · the way back is not the way you came'
+    : 'chamber ' + world.ordinal;
+}
 
 function openBook() {
   const hit = targetedOrAimedVolume();
@@ -228,7 +240,11 @@ function animate(now) {
     movePlayer(delta, forward, strafe, keyboard.running || Boolean(pad?.running));
     // Stepping over a threshold swaps the room under the player without
     // moving them: the neighbour is built and the old one released.
-    if (syncDoorways()) showNotice('chamber ' + world.ordinal);
+    const entered = syncDoorways();
+    if (entered) showNotice(noticeForArrival());
+    // Walking into or out of a passage is not a change of chamber, but it is a
+    // change of place, and the status line has to say so.
+    if (syncPlace()) setPlaceLabel(world.placeLabel);
     // Stick look is an angular velocity, so the frame time is the scale.
     if (pad) applyLook(pad.lookX, pad.lookY, delta);
     if (isTouchDevice) {
