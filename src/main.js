@@ -10,7 +10,7 @@
 import { camera, render, renderer, resizeView } from './core/view.js';
 import { isEngaged, keys, player } from './player.js';
 import { startAudio, toggleAudio } from './audio.js';
-import { buildCurrentRoom, onRoomChange, syncDoorways, syncPlace, world } from './world/rooms.js';
+import { buildCurrentRoom, onRoomChange, paintRoomLabels, syncDoorways, syncPlace, world } from './world/rooms.js';
 import {
   applyLook,
   clearTarget,
@@ -252,6 +252,9 @@ function animate(now) {
       applyLook(look.x, look.y, player.lookSensitivity * 1.6);
     }
   }
+  // The room the walker just entered still owes its spine lettering. A slice a
+  // frame keeps it off the frame that built the room, where it would show.
+  paintRoomLabels(3);
   refreshTargetedVolume();
   camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
   syncMap();

@@ -16,7 +16,7 @@ import { wallBasis } from './geometry.js';
 import { arrivalWallFor, passageEnds, passageExits } from './passage.js';
 import { noteChamber, ordinalFor } from './register.js';
 import { buildSigns, disposeSigns } from './signs.js';
-import { disposeRoom, makeRoom } from './room.js';
+import { disposeRoom, makeRoom, paintPendingSpines } from './room.js';
 import { buildVista } from './vista.js';
 
 const roomRegistry = new Map();
@@ -248,6 +248,19 @@ export function syncDoorways() {
   if (crossing.exit === 'up') return stepLevel(1);
   if (crossing.exit === 'down') return stepLevel(-1);
   return stepAside(crossing.wall, crossing.exit);
+}
+
+/**
+ * Paints a slice of the current room's spine labels.
+ *
+ * Called once a frame from the loop. A room is built without its lettering so
+ * that crossing a threshold costs geometry only; the labels follow over the
+ * next frame or two, in slices small enough that none of them shows.
+ */
+export function paintRoomLabels(budgetMs) {
+  const { q, r, level } = world.room;
+  const room = roomRegistry.get(roomKey(q, r, level));
+  if (room) paintPendingSpines(room, budgetMs);
 }
 
 export function currentBookMeshes() {

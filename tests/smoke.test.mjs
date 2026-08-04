@@ -681,6 +681,47 @@ assert.equal(
   'selecting a row walks the player back to that chamber',
 );
 
+// --- entering a chamber is cheap ---------------------------------------------
+// Building a room used to cost 18.5 ms, over half of it painting 640 rotated
+// spine labels onto three 2048 canvases. None of that has to happen in the
+// frame a walker crosses a threshold, so the lettering is queued and painted
+// in slices afterwards. The structural half of this check is the one that
+// matters; the time is a ceiling against gross regressions, not a benchmark,
+// because CI runs on shared machines with a software rasteriser.
+const cost = await page.evaluate(async () => {
+  const { moveToWorldHex, paintRoomLabels } = await import('./src/world/rooms.js');
+  const { renderedWorld } = await import('./src/core/view.js');
+  const roomOf = () => renderedWorld.children.find(child => child.userData.q !== undefined);
+
+  const builds = [];
+  for (let index = 1; index <= 9; index++) {
+    const start = performance.now();
+    moveToWorldHex(BigInt(index * 13), 5n, 0n);
+    builds.push(performance.now() - start);
+    // Drain this room's lettering before timing the next, or the queue of one
+    // room would be paid for by the next room's slices.
+    for (let slice = 0; slice < 60 && roomOf().userData.pendingSpines.length; slice++) paintRoomLabels(4);
+  }
+  builds.sort((a, b) => a - b);
+
+  moveToWorldHex(7n, 7n, 0n);
+  const queuedOnBuild = roomOf().userData.pendingSpines.length;
+  let slices = 0;
+  while (roomOf().userData.pendingSpines.length && slices < 60) {
+    paintRoomLabels(4);
+    slices++;
+  }
+  return { median: builds[4], queuedOnBuild, slices, drained: roomOf().userData.pendingSpines.length };
+});
+
+assert.ok(cost.queuedOnBuild > 600, `a room's 640 spine labels must be queued, not painted on the spot (${cost.queuedOnBuild})`);
+assert.ok(cost.slices >= 1, 'and painted afterwards rather than never');
+assert.equal(cost.drained, 0, 'the queue must empty: a room left half-lettered would stay that way');
+assert.ok(
+  cost.median < 40,
+  `building a chamber should stay well inside a couple of frames, measured ${cost.median.toFixed(1)} ms`,
+);
+
 // --- the passage is a place, and says so --------------------------------------
 // Standing in the middle of a junction of four chambers, the status line used
 // to read "chamber 1". That was the one thing in this interface that was not

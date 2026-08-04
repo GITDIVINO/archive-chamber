@@ -165,7 +165,11 @@ function appendSpine(room, label, matrix) {
   const cell = atlas.next++;
   const column = cell % SPINE_ATLAS_COLUMNS;
   const row = Math.floor(cell / SPINE_ATLAS_COLUMNS);
-  paintSpineLabel(atlas.context, column, row, label);
+  // Queued rather than painted. Six hundred and forty rotated labels across
+  // three 2048 canvases measured 7.6 ms of the 14 that building a room cost,
+  // and none of it has to happen in the frame a walker crosses a threshold:
+  // they arrive at the far doorway, where a spine is a smudge anyway.
+  room.userData.pendingSpines.push({ atlas, column, row, label });
   const inset = 2;
   const u0 = (column * SPINE_CELL_WIDTH + inset) / SPINE_ATLAS_SIZE;
   const u1 = ((column + 1) * SPINE_CELL_WIDTH - inset) / SPINE_ATLAS_SIZE;
@@ -592,7 +596,6 @@ function finalizeRoom(room) {
   }
 
   for (const atlas of room.userData.spineAtlases) {
-    atlas.material.map.needsUpdate = true;
     const mesh = mergedMesh(atlas, atlas.material);
     mesh.renderOrder = 3;
     room.add(mesh);
@@ -612,6 +615,28 @@ function finalizeRoom(room) {
   room.userData.wallNumbers = null;
 }
 
+/**
+ * Paints as many of a room's queued spine labels as the budget allows.
+ *
+ * Returns true once the room has none left. The texture is uploaded only when
+ * the last one is painted: each atlas is sixteen megabytes, and flagging it
+ * per chunk would trade a little painting for a great deal of upload.
+ */
+export function paintPendingSpines(room, budgetMs) {
+  const pending = room.userData.pendingSpines;
+  if (!pending || pending.length === 0) return true;
+  const deadline = performance.now() + budgetMs;
+  let painted = 0;
+  while (painted < pending.length && performance.now() < deadline) {
+    const { atlas, column, row, label } = pending[painted++];
+    paintSpineLabel(atlas.context, column, row, label);
+  }
+  pending.splice(0, painted);
+  if (pending.length) return false;
+  for (const atlas of room.userData.spineAtlases) atlas.material.map.needsUpdate = true;
+  return true;
+}
+
 export function makeRoom(q, r, level, roomTag) {
   const room = new THREE.Group();
   room.userData = {
@@ -620,6 +645,7 @@ export function makeRoom(q, r, level, roomTag) {
     level,
     bookMeshes: [],
     spineAtlases: [],
+    pendingSpines: [],
     disposableMaterials: [],
     outlinePositions: [],
     wallNumbers: { positions: [], uvs: [], indices: [], colors: [] },
