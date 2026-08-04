@@ -878,27 +878,30 @@ assert.equal(
 assert.equal(place.afterTurning, true, 'turning aside is marked: it cannot be retraced');
 assert.equal(place.afterWalkingThrough, false, 'walking straight through can be, and is not marked');
 
-// --- the signs over a passage's ways out ------------------------------------
-// A junction offers three identical openings onto three identical chambers, so
-// each carries a plaque. Lettering in this project has been built mirrored
-// before — the cabinet numerals were, once — and an oblique view of a plaque is
-// no way to tell, so the winding and the texture coordinates are checked
-// against where a reader would actually stand.
+// --- every way out is named on the ceiling it leads to ------------------------
+// A junction offers three identical openings onto three identical chambers.
+// What tells them apart is the marking overhead in each — the same one a built
+// room paints on its own ceiling — so a walker reads where a way leads by
+// looking into it. The chambers drawn beyond a doorway cannot paint it: that
+// builder is position-independent and does not know which chamber it stands in
+// for. Lettering has been built mirrored in this project before, and a flat
+// marking read from below is no easier to judge from a screenshot, so the
+// winding and the texture coordinates are checked directly.
 const signs = await page.evaluate(async () => {
   const { moveToWorldHex, world } = await import('./src/world/rooms.js');
   const { renderedWorld } = await import('./src/core/view.js');
   const { passageExits } = await import('./src/world/passage.js');
   const { freeWallsForLevel } = await import('./world-engine.js');
-  const { ordinalFor } = await import('./src/world/register.js');
   const { roomTagFor } = await import('./world-model.js');
+  const { WALL_HEIGHT } = await import('./src/constants.js');
 
   moveToWorldHex(0n, 0n, 0n);
   const mesh = renderedWorld.children.find(child => child.isMesh && child.userData.plaques);
-  if (!mesh) return { error: 'no signs were built' };
+  if (!mesh) return { error: 'no markings were built' };
 
   const position = mesh.geometry.getAttribute('position');
   const uv = mesh.geometry.getAttribute('uv');
-  const plaques = [];
+  const marks = [];
   for (let quad = 0; quad < position.count / 4; quad++) {
     const at = index => ({
       x: position.getX(quad * 4 + index),
@@ -909,79 +912,46 @@ const signs = await page.evaluate(async () => {
     const origin = at(0);
     const acrossTop = at(1);
     const belowOrigin = at(2);
-    // The face normal as the winding declares it, so this fails if the quad is
-    // ever wound the other way and the plaque faces into the wall.
-    const down = { x: belowOrigin.x - origin.x, y: belowOrigin.y - origin.y, z: belowOrigin.z - origin.z };
+    // The face normal as the winding declares it: a marking that faced up would
+    // be invisible from the floor and perfectly correct seen from above.
+    const down = { x: belowOrigin.x - origin.x, z: belowOrigin.z - origin.z };
     const across = { x: acrossTop.x - origin.x, y: acrossTop.y - origin.y, z: acrossTop.z - origin.z };
-    const normal = {
-      x: down.y * across.z - down.z * across.y,
-      z: down.x * across.y - down.y * across.x,
-    };
-    // A reader faces the plaque, so they look along -normal, and their right
-    // hand points forward x up. The lettering must run that way.
-    const right = { x: normal.z, z: -normal.x };
-    plaques.push({
-      readsRightward: across.x * right.x + across.z * right.z,
-      firstCornerIsTop: origin.y - belowOrigin.y,
+    marks.push({
+      facesDown: down.z * across.x - down.x * across.z,
       textureTopIsUp: origin.v - belowOrigin.v,
+      lies: Math.abs(origin.y - belowOrigin.y),
       height: origin.y,
+      width: Math.hypot(across.x, across.y, across.z),
     });
   }
 
-  // And what each sign says, in the order they were built: for every way on, a
-  // plaque naming where it leads and the tag laid on that chamber's ceiling.
   const said = [];
   for (const wall of freeWallsForLevel(world.room.level)) {
     const exits = passageExits(world.room, wall);
     for (const way of ['ahead', 'left', 'right']) {
       const there = exits[way];
-      const ordinal = ordinalFor(there);
-      const tag = roomTagFor(there.q, there.r, there.level);
-      said.push(ordinal === null ? tag : String(ordinal));
-      said.push(tag);
+      said.push(roomTagFor(there.q, there.r, there.level));
     }
   }
-  return { plaques, said, legends: mesh.userData.plaques };
+  return { marks, said, tags: mesh.userData.plaques, ceiling: WALL_HEIGHT };
 });
 
-assert.ok(!signs.error, signs.error ?? 'the passages are signed');
-// Sixteen quads for twelve pieces of lettering. Each side opening carries its
-// name twice — once on the lintel for somebody walking past, once across the
-// threshold for somebody standing in front of it — and every one of the six
-// ways on also has the tag of the chamber beyond it laid on that chamber's
-// ceiling, exactly as a built room paints its own.
-assert.equal(signs.plaques.length, 16, 'a plaque at every way out, two at each side opening, and a mark on each ceiling');
-assert.equal(signs.legends.length, 12, 'six ways on, each with a plaque and a ceiling tag');
-for (const [index, plaque] of signs.plaques.entries()) {
-  // A ceiling mark lies flat, so "upright" and "rightward" mean nothing for it;
-  // only the wall-hung plaques are checked for a mirrored or inverted build.
-  const flat = plaque.height > 4.5;
-  if (!flat) {
-    assert.ok(plaque.readsRightward > 0, `plaque ${index}: the lettering must run to the reader's right, not away from it`);
-    assert.ok(plaque.firstCornerIsTop > 0, `plaque ${index}: the plaque must not hang upside down`);
-  }
-  assert.ok(plaque.textureTopIsUp > 0, `plaque ${index}: the top of the label must be at the top of its cell`);
+assert.ok(!signs.error, signs.error ?? 'the ways out are named');
+assert.equal(signs.marks.length, 6, 'two passages, three ways on from each');
+for (const [index, mark] of signs.marks.entries()) {
+  assert.ok(mark.facesDown !== 0, `marking ${index}: must lie flat with a face, not edge-on`);
+  assert.ok(mark.textureTopIsUp > 0, `marking ${index}: the top of the label must be at the top of its cell`);
+  assert.ok(mark.lies < 1e-6, `marking ${index}: a ceiling marking lies flat`);
   assert.ok(
-    flat || (plaque.height > 2.1 && plaque.height < 3.05),
-    `plaque ${index}: a sign belongs on a lintel, across a threshold or on a ceiling, not down in the doorway`,
+    Math.abs(mark.height - signs.ceiling) < 1e-6,
+    `marking ${index}: it belongs on the ceiling, found at ${mark.height}`,
   );
+  assert.ok(Math.abs(mark.width - 7.4) < 1e-6, `marking ${index}: the same plane a built room uses`);
 }
-assert.deepEqual(signs.legends, signs.said, 'each plaque names the chamber that opening actually leads to');
+assert.deepEqual(signs.tags, signs.said, 'each marking names the chamber its way out actually leads to');
 assert.ok(
-  signs.plaques.some(plaque => plaque.height > 2.2 && plaque.height < 2.6),
-  'a copy hangs across the threshold of each side opening, facing whoever stands in front of it',
-);
-assert.equal(
-  signs.plaques.filter(plaque => plaque.height > 4.5).length, 6,
-  'and every way on has the tag of the chamber beyond it on that chamber\'s ceiling',
-);
-assert.ok(
-  signs.legends.some(text => /^\d+$/.test(text)),
-  'a chamber already entered is signed with the number the walker gave it',
-);
-assert.ok(
-  signs.legends.some(text => text.startsWith('h-')),
-  'a chamber never entered is signed with the only name it has, its own',
+  signs.tags.every(tag => tag.startsWith('h-')),
+  'a ceiling carries the world\'s own name for a chamber, never the walker\'s number',
 );
 
 // --- touch devices -----------------------------------------------------------
