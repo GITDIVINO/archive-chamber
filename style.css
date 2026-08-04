@@ -36,7 +36,7 @@ canvas { display: block; filter: grayscale(.16) contrast(1.16); }
 #ui { position: fixed; inset: 0; z-index: 1; pointer-events: none; }
 #ui::before { content: ''; position: absolute; inset: 0; pointer-events: none; opacity: .08; mix-blend-mode: multiply; background-image: repeating-linear-gradient(8deg, transparent 0 4px, rgba(0, 0, 0, .09) 4px 5px); }
 
-.panel, #search-panel, #book-panel { background: var(--panel); border: 1px solid var(--line); box-shadow: 0 24px 90px #0002; backdrop-filter: blur(2px); }
+.panel, #search-panel, #register-panel, #book-panel { background: var(--panel); border: 1px solid var(--line); box-shadow: 0 24px 90px #0002; backdrop-filter: blur(2px); }
 .panel { position: absolute; width: min(480px, calc(100vw - 42px)); left: 50%; top: 50%; padding: 34px 36px 30px; text-align: center; transform: translate(-50%, -50%); transition: opacity 220ms var(--ease-out), transform 220ms var(--ease-out); pointer-events: auto; font-family: "Courier New", monospace; }
 .panel.gone { opacity: 0; transform: translate(-50%, -47%); pointer-events: none; }
 .eyebrow { margin: 0 0 16px; color: #555; font: 700 10px/1.25 "Courier New", monospace; letter-spacing: .16em; }
@@ -60,18 +60,20 @@ button:focus-visible, .location-record:focus-visible { outline: 1px solid var(--
 #cell { position: absolute; left: 24px; width: 174px; border: 0; background: transparent; color: inherit; padding: 0; font: inherit; letter-spacing: inherit; text-align: center; }
 #cell:hover, #cell:focus:not(:focus-visible) { background: transparent; color: inherit; outline: none; }
 #cell:active:not(:disabled) { transform: none; }
-#sound { position: absolute; right: 132px; }
-#open-search { position: absolute; right: 28px; bottom: -7px; border: 0; background: transparent; color: #857d6f; padding: 0; font: 600 10px "Courier New", monospace; pointer-events: auto; }
-#open-search:hover { background: transparent; color: #857d6f; }
+#sound { position: absolute; right: 216px; }
+#open-search, #open-register { position: absolute; bottom: -7px; border: 0; background: transparent; color: #857d6f; padding: 0; font: 600 10px "Courier New", monospace; pointer-events: auto; }
+#open-search { right: 28px; }
+#open-register { right: 92px; }
+#open-search:hover, #open-register:hover { background: transparent; color: #857d6f; }
 #notice { position: absolute; bottom: 54px; left: 50%; max-width: calc(100vw - 48px); color: #6d614e; font: 11px "Courier New", monospace; letter-spacing: .04em; opacity: 0; transform: translate(-50%, 4px); transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out); white-space: nowrap; }
 #notice.visible { opacity: 1; transform: translate(-50%, 0); }
 
-#search-panel { display: none; position: absolute; width: min(560px, calc(100vw - 42px)); left: 50%; top: 50%; padding: 28px; pointer-events: auto; transform: translate(-50%, -50%); }
-#search-panel.visible { display: block; }
+#search-panel, #register-panel { display: none; position: absolute; width: min(560px, calc(100vw - 42px)); left: 50%; top: 50%; padding: 28px; pointer-events: auto; transform: translate(-50%, -50%); }
+#search-panel.visible, #register-panel.visible { display: block; }
 .overlay-header { display: flex; align-items: center; justify-content: space-between; }
 .overlay-header .eyebrow { margin: 0; }
 .overlay-close { border: 0; background: transparent; color: var(--muted); padding: 0; font: 600 11px "Courier New", monospace; }
-#search-panel h2 { margin: 22px 0 8px; font: 600 23px/1.15 "Courier New", monospace; letter-spacing: -.04em; }
+#search-panel h2, #register-panel h2 { margin: 22px 0 8px; font: 600 23px/1.15 "Courier New", monospace; letter-spacing: -.04em; }
 .overlay-copy { margin: 0 0 20px; color: var(--muted); font: 11px/1.55 "Courier New", monospace; }
 #search-panel label { display: block; margin-bottom: 8px; color: var(--muted); font: 600 10px "Courier New", monospace; }
 #search-input, #address-input { display: block; width: 100%; border: 1px solid var(--line); outline: none; background: #fbfaf6; color: var(--ink); font: 13px/1.45 "Courier New", monospace; padding: 12px; }
@@ -79,6 +81,21 @@ button:focus-visible, .location-record:focus-visible { outline: 1px solid var(--
 #address-input:focus, #search-input:focus { border-color: #7b715f; box-shadow: 0 0 0 3px rgba(123, 113, 95, .1); }
 #search-submit, #address-submit { margin-top: 14px; font-family: "Courier New", monospace; }
 .catalogue-divider { margin: 22px 0 12px; color: var(--muted); font: 10px/1.4 "Courier New", monospace; }
+/* The register lists the walker's own numbering against the world's names, so
+   the three columns are the three ways to say where a chamber is: the number
+   they can hold, the hash the world uses, and the record that is exact. */
+.register-count { margin: 0 0 10px; color: var(--muted); font: 600 10px "Courier New", monospace; letter-spacing: .06em; }
+.register-body { max-height: min(46vh, 380px); overflow-y: auto; border: 1px solid var(--line); background: #fbfaf6; }
+.register-row { display: grid; grid-template-columns: 44px 118px 1fr; align-items: baseline; gap: 10px; width: 100%; border: 0; border-bottom: 1px solid #e6e2d6; background: transparent; color: var(--ink); padding: 8px 12px; font: 11px/1.35 "Courier New", monospace; text-align: left; }
+.register-row:last-child { border-bottom: 0; }
+.register-row:hover { background: #f1eee4; }
+.register-row.current { background: #ebe6d6; }
+.register-row.current .register-ordinal { color: var(--ink); }
+.register-ordinal { font-weight: 700; font-size: 13px; letter-spacing: .04em; }
+.register-tag { color: var(--muted); }
+.register-address { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.register-note { margin: 12px 0 0; color: var(--muted); font: 10px/1.45 "Courier New", monospace; }
+
 .search-result { min-height: 20px; margin: 14px 0 0; overflow-wrap: anywhere; color: var(--muted); font: 10px/1.45 "Courier New", monospace; }
 
 #book-panel { display: none; position: absolute; width: min(900px, calc(100vw - 48px)); height: min(900px, calc(100vh - 48px)); left: 50%; top: 50%; padding: clamp(20px, 4.5vh, 42px) clamp(18px, 3.9vw, 38px) clamp(20px, 5vh, 48px); pointer-events: auto; transform: translate(-50%, -50%); }
@@ -109,12 +126,12 @@ button:focus-visible, .location-record:focus-visible { outline: 1px solid var(--
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  .panel, #search-panel, #book-panel { background: #f8f7f3; backdrop-filter: none; }
+  .panel, #search-panel, #register-panel, #book-panel { background: #f8f7f3; backdrop-filter: none; }
 }
 
 @media (prefers-contrast: more) {
   :root { --muted: #514e48; --line: #202020; }
-  .panel, #search-panel, #book-panel { box-shadow: none; }
+  .panel, #search-panel, #register-panel, #book-panel { box-shadow: none; }
 }
 
 @media (max-width: 780px) {
@@ -139,9 +156,12 @@ button:focus-visible, .location-record:focus-visible { outline: 1px solid var(--
 @media (max-width: 520px) {
   #hex-map { left: 14px; bottom: 48px; width: 140px; height: 140px; }
   #cell { left: 14px; width: 140px; }
-  #sound { right: 92px; }
+  #sound { display: none; }
   #open-search { right: 16px; }
-  #search-panel { width: calc(100vw - 24px); padding: 20px; }
+  #open-register { right: 74px; }
+  #search-panel, #register-panel { width: calc(100vw - 24px); padding: 20px; }
+  .register-row { grid-template-columns: 34px 1fr; }
+  .register-address { display: none; }
 }
 
 /* Virtual stick, created only on touch devices. It follows the finger that

@@ -13,6 +13,7 @@ import { player } from '../player.js';
 import { crossedPassageExit } from './doors.js';
 import { wallBasis } from './geometry.js';
 import { arrivalWallFor, passageExits } from './passage.js';
+import { noteChamber, ordinalFor } from './register.js';
 import { disposeRoom, makeRoom } from './room.js';
 import { buildVista } from './vista.js';
 
@@ -21,6 +22,9 @@ const roomRegistry = new Map();
 export const world = {
   room: { q: 0n, r: 0n, level: 0n },
   tag: '',
+  // The walker's own number for this chamber. The tag above is the world's
+  // name for it and is not one a person can carry; see world/register.js.
+  ordinal: 1,
   address: '',
   mapCells: [],
 };
@@ -33,10 +37,14 @@ export function onRoomChange(listener) {
 function refreshRoomRecord() {
   const { q, r, level } = world.room;
   world.tag = roomTagFor(q, r, level);
+  world.ordinal = noteChamber(world.room);
   world.address = exactWorldRoomAddressFor(q, r, level);
+  // Neighbours carry the number only if the walker has been in them. A chamber
+  // nobody has entered has no number, because nobody has given it one.
   world.mapCells = catalogueCoordinates(world.room).map(cell => ({
     ...cell,
     tag: roomTagFor(cell.q, cell.r, cell.level),
+    ordinal: ordinalFor(cell),
   }));
 }
 

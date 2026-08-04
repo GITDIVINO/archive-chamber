@@ -20,6 +20,13 @@ export const addressSubmit = find('#address-submit');
 export const searchResult = find('#search-result');
 export const closeSearchButton = find('#close-search');
 
+export const registerButton = find('#open-register');
+export const registerPanel = find('#register-panel');
+export const registerBody = find('#register-body');
+export const registerCount = find('#register-count');
+export const registerNote = find('#register-note');
+export const closeRegisterButton = find('#close-register');
+
 export const bookPanel = find('#book-panel');
 export const bookTitle = find('#book-title');
 export const bookAddress = find('#book-address');

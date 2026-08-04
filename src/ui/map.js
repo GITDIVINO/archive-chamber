@@ -81,10 +81,19 @@ function drawMap() {
     mapContext.stroke();
   }
 
-  mapContext.fillStyle = '#202020';
-  for (const { cell, x, y } of placed) {
+  // Only chambers the walker has been in carry a number, so the map fills in as
+  // they go rather than presenting a wall of hashes none of which they can
+  // read. A chamber nobody has entered is left blank: it has no name yet.
+  for (const { cell, x, y, isCurrent } of placed) {
+    if (cell.ordinal === null) continue;
     const label = rotatePoint(x, y);
-    mapContext.fillText(cell.tag, label.x, label.y);
+    mapContext.fillStyle = isCurrent ? '#202020' : '#7d7568';
+    mapContext.font = (isCurrent ? '700 12px' : '600 10px') + ' "Courier New", monospace';
+    // The player marker sits at their position in the room, which is the middle
+    // of the hex whenever they are set down rather than walking in — exactly on
+    // top of the one number that matters most. So the current chamber's number
+    // is lifted clear of it.
+    mapContext.fillText(String(cell.ordinal), label.x, isCurrent ? label.y - radius * 0.5 : label.y);
   }
   const playerPoint = rotatePoint(centerX + camera.position.x * screenScale, centerY + camera.position.z * screenScale);
   mapContext.fillStyle = '#f4f2ec';

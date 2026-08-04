@@ -16,9 +16,14 @@ export function showNotice(text) {
   noticeTimer = setTimeout(() => noticeElement.classList.remove('visible'), 1700);
 }
 
-/** The short h-tag is decorative; the copyable value is the exact w1 address. */
-export function setChamberLabel(tag, address) {
-  cellElement.textContent = 'chamber ' + tag;
+/**
+ * The status line carries the walker's own number, because that is the one a
+ * person can hold. The world's h-tag and the exact w2 record are each one
+ * gesture away — the tag in the register, the record in the clipboard.
+ */
+export function setChamberLabel(ordinal, tag, address) {
+  cellElement.textContent = 'chamber ' + ordinal;
+  cellElement.title = tag + ' — click to copy the exact record';
   cellElement.dataset.fullAddress = address;
 }
 

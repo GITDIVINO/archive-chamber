@@ -31,7 +31,10 @@ import {
   closeBookButton,
   closeSearchButton,
   cellElement,
+  closeRegisterButton,
   intro,
+  registerButton,
+  registerPanel,
   locationRecord,
   nextPage,
   previousPage,
@@ -53,6 +56,12 @@ import {
   runSearch,
   setCatalogueCallbacks,
 } from './ui/catalogue.js';
+import {
+  closeRegister,
+  isRegisterOpen,
+  setRegisterCallbacks,
+  toggleRegister,
+} from './ui/register.js';
 
 // Opening a panel hands control back to the cursor; closing it returns to the
 // chamber. On touch that means suspending the virtual stick instead.
@@ -64,9 +73,10 @@ const resumeChamber = () => (isTouchDevice ? enterChamber() : requestPointerLock
 
 setReaderCallbacks({ open: suspendChamber, close: resumeChamber });
 setCatalogueCallbacks({ open: suspendChamber, close: resumeChamber });
+setRegisterCallbacks({ open: suspendChamber, close: resumeChamber });
 
 onRoomChange(() => {
-  setChamberLabel(world.tag, world.address);
+  setChamberLabel(world.ordinal, world.tag, world.address);
   // The old room's volumes are gone; drop any aim held over from it.
   clearTarget();
   invalidateMap();
@@ -110,7 +120,7 @@ setupTouchControls(renderer.domElement, { onReadTap: () => openBook() });
 
 document.addEventListener('pointerlockchange', () => {
   player.locked = document.pointerLockElement === renderer.domElement;
-  intro.classList.toggle('gone', player.locked || bookPanel.classList.contains('visible') || searchPanel.classList.contains('visible'));
+  intro.classList.toggle('gone', player.locked || bookPanel.classList.contains('visible') || searchPanel.classList.contains('visible') || registerPanel.classList.contains('visible'));
   reticle.style.display = player.locked ? 'block' : 'none';
   if (!player.locked) clearTarget();
   if (player.locked) startAudio();
@@ -119,7 +129,7 @@ document.addEventListener('pointerlockchange', () => {
 document.addEventListener('pointerlockerror', () => {
   player.locked = false;
   reticle.style.display = 'none';
-  if (!bookPanel.classList.contains('visible') && !searchPanel.classList.contains('visible')) intro.classList.remove('gone');
+  if (!bookPanel.classList.contains('visible') && !searchPanel.classList.contains('visible') && !registerPanel.classList.contains('visible')) intro.classList.remove('gone');
 });
 
 document.addEventListener('mousemove', event => {
@@ -128,12 +138,17 @@ document.addEventListener('mousemove', event => {
 });
 
 addEventListener('keydown', event => {
+  if (event.code === 'Escape' && isRegisterOpen()) {
+    closeRegister();
+    return;
+  }
   if (event.code === 'Escape' && isCatalogueOpen()) {
     closeSearch();
     return;
   }
   if (event.code === 'KeyE' && player.locked) openBook();
   if (event.code === 'KeyF' && player.locked) openSearch();
+  if (event.code === 'KeyR' && (player.locked || isRegisterOpen())) toggleRegister();
   if (event.code === 'KeyM') toggleAudio();
   keys[event.code] = true;
 });
@@ -146,6 +161,8 @@ function clearPointerFocus(event) {
 }
 
 searchButton.addEventListener('click', openSearch);
+registerButton.addEventListener('click', toggleRegister);
+closeRegisterButton.addEventListener('click', closeRegister);
 closeSearchButton.addEventListener('click', closeSearch);
 searchSubmit.addEventListener('click', runSearch);
 searchInput.addEventListener('keydown', event => { if (event.key === 'Enter') runSearch(); });
@@ -199,6 +216,7 @@ function animate(now) {
     if (pad.back) {
       if (isReaderOpen()) closeBook();
       else if (isCatalogueOpen()) closeSearch();
+      else if (isRegisterOpen()) closeRegister();
     }
   }
 
@@ -210,7 +228,7 @@ function animate(now) {
     movePlayer(delta, forward, strafe, keyboard.running || Boolean(pad?.running));
     // Stepping over a threshold swaps the room under the player without
     // moving them: the neighbour is built and the old one released.
-    if (syncDoorways()) showNotice('chamber ' + world.tag);
+    if (syncDoorways()) showNotice('chamber ' + world.ordinal);
     // Stick look is an angular velocity, so the frame time is the scale.
     if (pad) applyLook(pad.lookX, pad.lookY, delta);
     if (isTouchDevice) {

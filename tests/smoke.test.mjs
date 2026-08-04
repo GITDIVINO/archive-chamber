@@ -82,8 +82,21 @@ await page.goto(origin, { waitUntil: 'load' });
 await page.waitForFunction(() => document.querySelector('#startup-state').textContent === 'ready', null, { timeout: 30000 });
 assert.equal(await page.locator('#start').isDisabled(), false, 'the chamber must be enterable once ready');
 
+// The status bar carries the walker's own number, not the world's hash: the
+// hash is thirteen characters nobody can hold. The tag stays reachable as the
+// button's title, and the exact record as the value it copies.
 const roomTag = await page.locator('#cell').textContent();
-assert.match(roomTag, /^chamber h-/, 'the status bar shows the decorative room tag');
+assert.equal(roomTag, 'chamber 1', 'the chamber the walker wakes in is their first');
+assert.match(
+  await page.locator('#cell').getAttribute('title'),
+  /^h-/,
+  'the world\'s own name for the chamber is still one hover away',
+);
+assert.match(
+  await page.locator('#cell').getAttribute('data-full-address'),
+  /^w2;/,
+  'and the exact record is still what the button copies',
+);
 
 // --- the room is drawn, and drawn cheaply ------------------------------------
 await page.waitForFunction(() => window.__draw.frames > 4, null, { timeout: 15000 });
@@ -453,6 +466,79 @@ const vista = await page.evaluate(async () => {
 assert.equal(vista.groups, 1, 'exactly one corridor group stands beside the built room');
 assert.ok(vista.before.meshes > 0 && vista.before.vertices > 1000, 'the corridor carries real geometry');
 assert.deepEqual(vista.after, vista.before, 'the corridor is never rebuilt as the player moves');
+
+// --- the register ------------------------------------------------------------
+// A chamber's name in the world is a thirteen-character hash. The walker
+// numbers them instead, in the order they first walk in, and the register is
+// the one place the two can be set against each other. Several chambers have
+// already been entered by the tests above, so this measures against that.
+const register = await page.evaluate(async () => {
+  const { moveToWorldHex, world } = await import('./src/world/rooms.js');
+  const { registerEntries, registerSize } = await import('./src/world/register.js');
+
+  moveToWorldHex(0n, 0n, 0n);
+  const home = { ordinal: world.ordinal, tag: world.tag, address: world.address };
+
+  const before = registerSize();
+  const fresh = { q: 4104n, r: -7013n, level: 0n };
+  moveToWorldHex(fresh.q, fresh.r, fresh.level);
+  const freshOrdinal = world.ordinal;
+  const mapOrdinals = world.mapCells.map(cell => cell.ordinal);
+
+  moveToWorldHex(0n, 0n, 0n);
+  const backHome = world.ordinal;
+  moveToWorldHex(fresh.q, fresh.r, fresh.level);
+  const backFresh = world.ordinal;
+
+  return {
+    home,
+    before,
+    freshOrdinal,
+    backHome,
+    backFresh,
+    mapOrdinals,
+    size: registerSize(),
+    newest: registerEntries()[0],
+    oldest: registerEntries().at(-1),
+  };
+});
+
+assert.equal(register.home.ordinal, 1, 'the chamber the walker wakes in is chamber 1');
+assert.match(register.home.tag, /^h-/, 'the world still has its own name for it');
+assert.equal(register.freshOrdinal, register.before + 1, 'a chamber never entered takes the next number');
+assert.equal(register.size, register.before + 1, 'and only one row is added for it');
+assert.equal(register.backHome, 1, 'returning to a chamber returns its number, never a new one');
+assert.equal(register.backFresh, register.freshOrdinal, 'and the same holds walking back again');
+assert.equal(register.newest.ordinal, register.freshOrdinal, 'the notebook reads newest first: the way back is what is wanted most');
+assert.equal(register.oldest.ordinal, 1, 'and the first chamber is at the bottom of it');
+assert.match(register.newest.address, /^w2;/, 'every row carries the exact record beside the number');
+assert.ok(
+  register.mapOrdinals.some(ordinal => ordinal === null),
+  'the map leaves a chamber blank until it has been walked into, because until then nobody has named it',
+);
+
+// The panel decodes a number back into a place, and walks the player to it.
+await page.locator('#open-register').click();
+await page.waitForSelector('#register-panel.visible');
+const rows = page.locator('.register-row');
+assert.equal(await rows.count(), register.size, 'the register lists every chamber entered');
+assert.equal(
+  (await rows.first().locator('.register-ordinal').textContent()).trim(),
+  String(register.freshOrdinal),
+  'the newest chamber is at the top',
+);
+assert.match(
+  await rows.last().locator('.register-tag').textContent(),
+  /^h-/,
+  'each row sets the number the walker gave against the name the world uses',
+);
+await rows.last().click();
+await page.waitForFunction(() => !document.querySelector('#register-panel').classList.contains('visible'));
+assert.equal(
+  await page.locator('#cell').textContent(),
+  'chamber 1',
+  'selecting a row walks the player back to that chamber',
+);
 
 // --- touch devices -----------------------------------------------------------
 // Phones have no pointer lock, so entering the chamber is a mode switch driven
