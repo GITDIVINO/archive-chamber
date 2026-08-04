@@ -71,25 +71,6 @@ export const ALCOVE_REACH = HALL_HALF_WIDTH + ALCOVE_DEPTH;
 // A step into the alcove rather than a brush against its mouth, and comfortably
 // short of its blind end so a walker who means to turn always gets there.
 export const SIDE_EXIT_REACH = HALL_HALF_WIDTH + 0.55;
-// --- the stair --------------------------------------------------------------
-// «una escalera espiral, que se abisma y se eleva hacia lo remoto» — and it is
-// in the hallway, not in the gallery. That is also the only place it can go
-// without cost: a passage is already outside the plane, so a bay off it takes
-// no wall from any chamber and no cell from the map. An earlier attempt put the
-// stair inside the hex and it had to come out again.
-//
-// One bay, one shaft, two halves. The well descends from the half nearer the
-// mouth, the treads rise from the half beyond it.
-export const STAIR_CENTRE = 3.6;
-export const STAIR_HALF = DOOR_HALF_WIDTH;
-export const SHAFT_REACH = HALL_HALF_WIDTH + ALCOVE_DEPTH;
-// A step into the bay rather than a brush against its mouth.
-export const STAIR_EXIT_REACH = HALL_HALF_WIDTH + 0.55;
-// What the shaft shows above and below: one floor after another, receding. The
-// spacing is a chamber and its slab; six is where the tone has gone to nothing.
-export const STOREY_HEIGHT = WALL_HEIGHT + 0.5;
-export const SHAFT_STOREYS = 6;
-
 // Both ends of a passage carry their own doorway rather than sharing one, so
 // two chambers on the corridor axis stand this far apart when drawn. Only when
 // drawn: on the map and in the placement they are still exactly neighbours.

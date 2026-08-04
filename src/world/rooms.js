@@ -6,7 +6,6 @@
  * limit, not a model one.
  */
 
-import { freeWallsForLevel } from '../../world-engine.js';
 import { catalogueCoordinates, exactWorldRoomAddressFor, roomKey, roomTagFor } from '../../world-model.js';
 import { APOTHEM, CHAMBER_STEP } from '../constants.js';
 import { camera, renderedWorld } from '../core/view.js';
@@ -188,29 +187,6 @@ function stepAside(wall, exit) {
   return world.room;
 }
 
-/**
- * Climbs or descends a storey.
- *
- * The stair is in the passage, and the passage belongs to the chamber the
- * walker entered it from — which is also, per the map, where they still stand.
- * So it carries them up or down from that chamber, keeping q and r. That makes
- * it reversible: go up, come back down, and it is the same chamber, even though
- * the way back is a different passage, because the free walls turn with the
- * level and the corridor above runs another way.
- */
-function stepLevel(delta) {
-  world.arrivedIndirectly = false;
-  const level = world.room.level + BigInt(delta);
-  const basis = wallBasis(freeWallsForLevel(level)[0]);
-  player.yaw = yawFacing(-basis.nx, -basis.nz);
-  player.pitch = 0;
-  camera.position.x = basis.nx * ARRIVAL_DEPTH;
-  camera.position.z = basis.nz * ARRIVAL_DEPTH;
-  world.room = { q: world.room.q, r: world.room.r, level };
-  buildCurrentRoom();
-  return world.room;
-}
-
 // A passage is named by its two ends, in the order passageIdFor fixes, so the
 // same corridor reads the same walking either way. An end nobody has entered
 // has no number, because nobody has given it one.
@@ -244,10 +220,9 @@ export function syncPlace() {
 export function syncDoorways() {
   const crossing = crossedPassageExit(camera.position, world.room.level);
   if (!crossing) return null;
-  if (crossing.exit === 'ahead') return stepAhead(crossing.wall);
-  if (crossing.exit === 'up') return stepLevel(1);
-  if (crossing.exit === 'down') return stepLevel(-1);
-  return stepAside(crossing.wall, crossing.exit);
+  return crossing.exit === 'ahead'
+    ? stepAhead(crossing.wall)
+    : stepAside(crossing.wall, crossing.exit);
 }
 
 /**
