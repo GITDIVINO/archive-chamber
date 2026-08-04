@@ -540,6 +540,87 @@ assert.equal(
   'selecting a row walks the player back to that chamber',
 );
 
+// --- the signs over a passage's ways out ------------------------------------
+// A junction offers three identical openings onto three identical chambers, so
+// each carries a plaque. Lettering in this project has been built mirrored
+// before — the cabinet numerals were, once — and an oblique view of a plaque is
+// no way to tell, so the winding and the texture coordinates are checked
+// against where a reader would actually stand.
+const signs = await page.evaluate(async () => {
+  const { moveToWorldHex, world } = await import('./src/world/rooms.js');
+  const { renderedWorld } = await import('./src/core/view.js');
+  const { passageExits } = await import('./src/world/passage.js');
+  const { freeWallsForLevel } = await import('./world-engine.js');
+  const { ordinalFor } = await import('./src/world/register.js');
+  const { roomTagFor } = await import('./world-model.js');
+
+  moveToWorldHex(0n, 0n, 0n);
+  const mesh = renderedWorld.children.find(child => child.isMesh && child.userData.plaques);
+  if (!mesh) return { error: 'no signs were built' };
+
+  const position = mesh.geometry.getAttribute('position');
+  const uv = mesh.geometry.getAttribute('uv');
+  const plaques = [];
+  for (let quad = 0; quad < position.count / 4; quad++) {
+    const at = index => ({
+      x: position.getX(quad * 4 + index),
+      y: position.getY(quad * 4 + index),
+      z: position.getZ(quad * 4 + index),
+      v: uv.getY(quad * 4 + index),
+    });
+    const origin = at(0);
+    const acrossTop = at(1);
+    const belowOrigin = at(2);
+    // The face normal as the winding declares it, so this fails if the quad is
+    // ever wound the other way and the plaque faces into the wall.
+    const down = { x: belowOrigin.x - origin.x, y: belowOrigin.y - origin.y, z: belowOrigin.z - origin.z };
+    const across = { x: acrossTop.x - origin.x, y: acrossTop.y - origin.y, z: acrossTop.z - origin.z };
+    const normal = {
+      x: down.y * across.z - down.z * across.y,
+      z: down.x * across.y - down.y * across.x,
+    };
+    // A reader faces the plaque, so they look along -normal, and their right
+    // hand points forward x up. The lettering must run that way.
+    const right = { x: normal.z, z: -normal.x };
+    plaques.push({
+      readsRightward: across.x * right.x + across.z * right.z,
+      firstCornerIsTop: origin.y - belowOrigin.y,
+      textureTopIsUp: origin.v - belowOrigin.v,
+      height: origin.y,
+    });
+  }
+
+  // And what each plaque says, in the order they were built.
+  const said = [];
+  for (const wall of freeWallsForLevel(world.room.level)) {
+    const exits = passageExits(world.room, wall);
+    for (const way of ['ahead', 'left', 'right']) {
+      const there = exits[way];
+      const ordinal = ordinalFor(there);
+      said.push(ordinal === null ? roomTagFor(there.q, there.r, there.level) : String(ordinal));
+    }
+  }
+  return { plaques, said, legends: mesh.userData.plaques };
+});
+
+assert.ok(!signs.error, signs.error ?? 'the passages are signed');
+assert.equal(signs.plaques.length, 6, 'two passages, three ways on from each');
+for (const [index, plaque] of signs.plaques.entries()) {
+  assert.ok(plaque.readsRightward > 0, `plaque ${index}: the lettering must run to the reader's right, not away from it`);
+  assert.ok(plaque.firstCornerIsTop > 0, `plaque ${index}: the plaque must not hang upside down`);
+  assert.ok(plaque.textureTopIsUp > 0, `plaque ${index}: the top of the label must be at the top of the plaque`);
+  assert.ok(plaque.height > 2.4 && plaque.height < 3.05, `plaque ${index}: a sign belongs on the lintel, not in the doorway`);
+}
+assert.deepEqual(signs.legends, signs.said, 'each plaque names the chamber that opening actually leads to');
+assert.ok(
+  signs.legends.some(text => /^\d+$/.test(text)),
+  'a chamber already entered is signed with the number the walker gave it',
+);
+assert.ok(
+  signs.legends.some(text => text.startsWith('h-')),
+  'a chamber never entered is signed with the only name it has, its own',
+);
+
 // --- touch devices -----------------------------------------------------------
 // Phones have no pointer lock, so entering the chamber is a mode switch driven
 // by a virtual stick. Real touch events are dispatched through CDP so the

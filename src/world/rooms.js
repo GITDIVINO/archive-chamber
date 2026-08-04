@@ -14,6 +14,7 @@ import { crossedPassageExit } from './doors.js';
 import { wallBasis } from './geometry.js';
 import { arrivalWallFor, passageExits } from './passage.js';
 import { noteChamber, ordinalFor } from './register.js';
+import { buildSigns, disposeSigns } from './signs.js';
 import { disposeRoom, makeRoom } from './room.js';
 import { buildVista } from './vista.js';
 
@@ -86,10 +87,26 @@ function refreshVista() {
   renderedWorld.add(vista);
 }
 
+// The signs over the ways out of the two passages. Unlike the corridor these
+// cannot be shared: they name particular chambers, and half of what they say
+// depends on where the walker has already been. So they are rebuilt with the
+// room — which is also when the answer can have changed.
+let signs = null;
+
+function refreshSigns() {
+  if (signs) {
+    renderedWorld.remove(signs);
+    disposeSigns(signs);
+  }
+  signs = buildSigns(world.room);
+  renderedWorld.add(signs);
+}
+
 export function buildCurrentRoom() {
   refreshRoomRecord();
   refreshScene();
   refreshVista();
+  refreshSigns();
   roomChangeListener?.();
 }
 

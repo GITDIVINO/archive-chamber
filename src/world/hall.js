@@ -30,8 +30,11 @@ import {
   DOOR_HEIGHT,
   HALL_HALF_WIDTH,
   HALL_LENGTH,
+  HALL_LINTEL_HEIGHT,
+  HALL_OPENING_HEIGHT,
   HALL_SIDE_CENTRE,
   HALL_SIDE_HALF,
+  HALL_TRANSOM_DEPTH,
   WALL_THICKNESS,
 } from '../constants.js';
 import { ceilingMaterial, floorMaterial, trimMaterial, wallMaterial } from '../core/materials.js';
@@ -99,29 +102,43 @@ export function appendHall(batches, outlines, matrix) {
         wallX, DOOR_HEIGHT / 2, segmentCentre);
     }
 
+    // The opening is cut lower than the passage, leaving a lintel to write on.
+    addBox(batches, outlines, wallMaterial, [WALL_THICKNESS, HALL_LINTEL_HEIGHT, 2 * HALL_SIDE_HALF],
+      wallX, HALL_OPENING_HEIGHT + HALL_LINTEL_HEIGHT / 2, HALL_SIDE_CENTRE);
+
     // The alcove behind the opening: floor, ceiling, two jamb returns and the
     // blind end. Without it the opening is a hole onto nothing.
     const alcoveX = side * ALCOVE_CENTRE;
     addBox(batches, null, floorMaterial, [ALCOVE_DEPTH, SLAB, 2 * HALL_SIDE_HALF],
       alcoveX, -SLAB / 2, HALL_SIDE_CENTRE, null, false);
     addBox(batches, null, ceilingMaterial, [ALCOVE_DEPTH, SLAB, 2 * HALL_SIDE_HALF],
-      alcoveX, DOOR_HEIGHT + SLAB / 2, HALL_SIDE_CENTRE, null, false);
+      alcoveX, HALL_OPENING_HEIGHT + SLAB / 2, HALL_SIDE_CENTRE, null, false);
     for (const jamb of [-1, 1]) {
-      addBox(batches, outlines, wallMaterial, [ALCOVE_DEPTH, DOOR_HEIGHT, WALL_THICKNESS],
-        alcoveX, DOOR_HEIGHT / 2, HALL_SIDE_CENTRE + jamb * (HALL_SIDE_HALF + WALL_THICKNESS / 2));
+      addBox(batches, outlines, wallMaterial, [ALCOVE_DEPTH, HALL_OPENING_HEIGHT, WALL_THICKNESS],
+        alcoveX, HALL_OPENING_HEIGHT / 2, HALL_SIDE_CENTRE + jamb * (HALL_SIDE_HALF + WALL_THICKNESS / 2));
     }
     addBox(batches, outlines, wallMaterial,
-      [WALL_THICKNESS, DOOR_HEIGHT, 2 * HALL_SIDE_HALF + 2 * WALL_THICKNESS],
-      side * (ALCOVE_REACH + WALL_THICKNESS / 2), DOOR_HEIGHT / 2, HALL_SIDE_CENTRE);
+      [WALL_THICKNESS, HALL_OPENING_HEIGHT, 2 * HALL_SIDE_HALF + 2 * WALL_THICKNESS],
+      side * (ALCOVE_REACH + WALL_THICKNESS / 2), HALL_OPENING_HEIGHT / 2, HALL_SIDE_CENTRE);
 
-    // A sill on the floor and a band overhead, framing the mouth of the alcove.
-    // Fifteen metres of bare wall carries nothing else, so without a drawn
-    // frame a walker is level with the turning before they notice it — and the
-    // turning is the whole reason the passage is long enough to have a middle.
+    // A sill on the floor and a band under the lintel, framing the mouth of the
+    // alcove. Fifteen metres of bare wall carries nothing else, so without a
+    // drawn frame a walker is level with the turning before they notice it —
+    // and the turning is the whole reason a passage has a middle at all.
     addBox(batches, outlines, trimMaterial, [0.1, 0.05, 2 * HALL_SIDE_HALF],
       side * HALL_HALF_WIDTH, 0.025, HALL_SIDE_CENTRE, () => 0.5);
-    addBox(batches, outlines, trimMaterial, [0.14, 0.09, 2 * HALL_SIDE_HALF + 0.28],
-      side * HALL_HALF_WIDTH, DOOR_HEIGHT - 0.045, HALL_SIDE_CENTRE, () => 0.45);
+    addBox(batches, outlines, trimMaterial, [0.14, 0.07, 2 * HALL_SIDE_HALF + 0.28],
+      side * HALL_HALF_WIDTH, HALL_OPENING_HEIGHT - 0.035, HALL_SIDE_CENTRE, () => 0.45);
+  }
+
+  // A beam across each end, at the height of the side lintels. The far end has
+  // no wall that could be lowered — it is the next chamber's doorway, and the
+  // two meet flush — so the sign there needs a surface of its own. Both ends
+  // carry one because a passage is the same passage from either side.
+  for (const end of [HALL_TRANSOM_DEPTH / 2, HALL_LENGTH - HALL_TRANSOM_DEPTH / 2]) {
+    addBox(batches, outlines, wallMaterial,
+      [2 * HALL_HALF_WIDTH, HALL_LINTEL_HEIGHT, HALL_TRANSOM_DEPTH],
+      0, HALL_OPENING_HEIGHT + HALL_LINTEL_HEIGHT / 2, end);
   }
 }
 

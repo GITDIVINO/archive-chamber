@@ -59,6 +59,14 @@ export const HALL_SIDE_HALF = DOOR_HALF_WIDTH;
 // hole: a walker must see somewhere to step into, and the alcove gives them
 // depth to read before the turn takes them out of this space entirely.
 export const ALCOVE_DEPTH = 2.3;
+// Every way out of a passage is cut lower than the passage itself, so that each
+// carries a lintel. That band is the only surface in a passage wide enough and
+// square enough to write on, and a walker standing at the junction needs to be
+// told which chamber each of the three onward ways leads to. See world/signs.js.
+export const HALL_OPENING_HEIGHT = 2.5;
+export const HALL_LINTEL_HEIGHT = DOOR_HEIGHT - HALL_OPENING_HEIGHT;
+// The far end has no wall to lower, so it gets a beam across it instead.
+export const HALL_TRANSOM_DEPTH = 0.18;
 export const ALCOVE_REACH = HALL_HALF_WIDTH + ALCOVE_DEPTH;
 // A step into the alcove rather than a brush against its mouth, and comfortably
 // short of its blind end so a walker who means to turn always gets there.

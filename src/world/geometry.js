@@ -70,7 +70,7 @@ export const DRAFTED_INK = '#69717b';
  * cannot drift into different lettering. Proportions are given as fractions of
  * the box, so the same treatment scales from a long hex tag to a single digit.
  */
-export function drawDraftedLabel(context, box, text) {
+export function drawDraftedLabel(context, box, text, fontScale = 0.344) {
   const { x, y, width, height } = box;
   const inset = width * 0.083;
   const tick = width * 0.112;
@@ -92,7 +92,7 @@ export function drawDraftedLabel(context, box, text) {
     context.moveTo(tickX, ruleBottom - tickReach); context.lineTo(tickX, ruleBottom + tickReach);
     context.stroke();
   }
-  context.font = '700 ' + Math.round(height * 0.344) + 'px "Courier New", monospace';
+  context.font = '700 ' + Math.round(height * fontScale) + 'px "Courier New", monospace';
   context.textAlign = 'center';
   context.textBaseline = 'middle';
   context.fillText(text, x + width / 2, y + height / 2);
