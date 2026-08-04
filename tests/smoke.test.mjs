@@ -329,6 +329,55 @@ assert.ok(
   'a walker must be able to step into the alcove at all, or the turning is unreachable',
 );
 
+// On the map a passage has no length, because in the plane it has none. A
+// walker who steps into one leaves their chamber by a doorway and stops dead
+// against it, and stays there however far down the corridor they go.
+const inThePlane = await page.evaluate(async () => {
+  const doors = await import('./src/world/doors.js');
+  const c = await import('./src/constants.js');
+  const { basis } = doors.wallCoordinates(2, 0, 0);
+  const at = (normal, tangent = 0) => {
+    const point = {
+      x: basis.nx * normal + basis.tx * tangent,
+      y: 1.65,
+      z: basis.nz * normal + basis.tz * tangent,
+    };
+    const stood = doors.planePosition(point, 0n);
+    let furthest = -Infinity;
+    for (let wall = 0; wall < 6; wall++) {
+      furthest = Math.max(furthest, doors.wallCoordinates(wall, stood.x, stood.z).normal);
+    }
+    return { stood: [stood.x, stood.z], furthest };
+  };
+  return {
+    inRoom: at(3),
+    mouth: at(c.HALL_START + 0.5),
+    middle: at(c.HALL_START + c.HALL_SIDE_CENTRE),
+    farEnd: at(c.HALL_END - 0.2),
+    inAlcove: at(c.HALL_START + c.HALL_SIDE_CENTRE, c.ALCOVE_REACH - 0.4),
+    apothem: c.APOTHEM,
+    doorHalf: c.DOOR_HALF_WIDTH,
+  };
+});
+
+assert.ok(inThePlane.inRoom.furthest < inThePlane.apothem, 'inside the chamber a walker moves on the map as they move');
+for (const where of ['mouth', 'middle', 'farEnd', 'inAlcove']) {
+  assert.ok(
+    inThePlane[where].furthest <= inThePlane.apothem + 1e-9,
+    `${where}: a walker in a passage must never be drawn outside their chamber`,
+  );
+}
+assert.deepEqual(
+  inThePlane.farEnd.stood.map(value => value.toFixed(4)),
+  inThePlane.mouth.stood.map(value => value.toFixed(4)),
+  'fifteen units of corridor move a walker nowhere at all in the plane',
+);
+assert.notDeepEqual(
+  inThePlane.inAlcove.stood.map(value => value.toFixed(4)),
+  inThePlane.middle.stood.map(value => value.toFixed(4)),
+  'stepping into an alcove does slide them along the wall, to the edge of the opening',
+);
+
 // Walking into a corner must not fling the player sideways into a doorway.
 // Every corner of the room lies exactly the player boundary away from both
 // walls that meet there, which is also the depth the jamb-slide used to test

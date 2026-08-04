@@ -152,6 +152,34 @@ export function constrainToPlace(position, level) {
 }
 
 /**
+ * Where a walker stands as the hex plane sees it.
+ *
+ * A passage is not in the plane: it has no length there, and the two chambers
+ * it joins are exactly as adjacent as they were. So walking fifteen units down
+ * one moves nobody at all — on the map a walker leaves their chamber by a
+ * doorway and stops dead against it, and stays there however far they go, until
+ * they come out somewhere else entirely.
+ *
+ * Only the free walls can be passed at all, and they face each other, so at
+ * most one of them can be the one a walker has gone through.
+ */
+export function planePosition(position, level) {
+  let x = position.x;
+  let z = position.z;
+  for (const wall of freeWallsForLevel(level)) {
+    const { basis, normal, tangent } = wallCoordinates(wall, x, z);
+    if (normal <= APOTHEM) continue;
+    const inward = APOTHEM - normal;
+    // Sideways too: an alcove reaches past the width of the doorway, and in the
+    // plane there is no doorway that wide.
+    const limit = Math.min(Math.abs(tangent), DOOR_HALF_WIDTH) * Math.sign(tangent);
+    x += basis.nx * inward + basis.tx * (limit - tangent);
+    z += basis.nz * inward + basis.tz * (limit - tangent);
+  }
+  return { x, z };
+}
+
+/**
  * The exit a player has stepped through, or null.
  *
  * `back` is not reported: walking out of the near end of a passage is walking

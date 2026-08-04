@@ -8,6 +8,7 @@
 import { ROOM_RADIUS } from '../constants.js';
 import { camera } from '../core/view.js';
 import { player } from '../player.js';
+import { planePosition } from '../world/doors.js';
 import { axialMapOffset } from '../world/geometry.js';
 import { world } from '../world/rooms.js';
 import { mapCanvas } from './dom.js';
@@ -88,7 +89,10 @@ function drawMap() {
   // An open ring wide enough to enclose the number rather than cross it. The
   // two coincide whenever the walker is set down in a chamber instead of
   // walking into it, and a filled dot at that size struck the digit out.
-  const playerPoint = rotatePoint(centerX + camera.position.x * screenScale, centerY + camera.position.z * screenScale);
+  // Their place in the plane, not in the passage: fifteen units of corridor are
+  // no distance here, so the marker stops against the doorway and waits there.
+  const stood = planePosition(camera.position, world.room.level);
+  const playerPoint = rotatePoint(centerX + stood.x * screenScale, centerY + stood.z * screenScale);
   mapContext.strokeStyle = '#202020';
   mapContext.lineWidth = 1.1;
   mapContext.beginPath();
@@ -108,13 +112,16 @@ function drawMap() {
 }
 
 export function syncMap() {
+  // Keyed on the place in the plane rather than the camera, so a walker in a
+  // passage — who is not moving here at all — costs no repaints either.
+  const stood = planePosition(camera.position, world.room.level);
   if (!needsRedraw
     && Math.abs(player.yaw - lastYaw) < 0.004
-    && Math.abs(camera.position.x - lastX) < 0.01
-    && Math.abs(camera.position.z - lastZ) < 0.01) return;
+    && Math.abs(stood.x - lastX) < 0.01
+    && Math.abs(stood.z - lastZ) < 0.01) return;
   needsRedraw = false;
   lastYaw = player.yaw;
-  lastX = camera.position.x;
-  lastZ = camera.position.z;
+  lastX = stood.x;
+  lastZ = stood.z;
   drawMap();
 }
