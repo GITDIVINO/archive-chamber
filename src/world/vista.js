@@ -344,6 +344,9 @@ function addAlcoveChambers(batches, outlinePositions, labels, wallNumbers, level
       addDistantBookWall(batches, outlinePositions, labels, wallNumbers, level, index, alcoveMatrix, true, index);
     }
     for (const index of doorWalls) addDistantDoorWall(batches, index, alcoveMatrix);
+    for (let index = 0; index < 6; index++) {
+      if (!doorWalls.includes(index)) addSolidWall(batches, index, alcoveMatrix);
+    }
     addChamberArrises(outlinePositions, alcoveMatrix);
   }
 }
@@ -401,9 +404,12 @@ export function buildVista(level) {
     // Both door walls now, one at each end: with a passage between them the
     // chambers no longer share a wall, so nothing is drawn twice.
     for (const index of doorWalls) addDistantDoorWall(batches, index, offsetMatrix);
+    // Every wall that is not a doorway, shelved or not. A cabinet stands in
+    // front of its wall rather than instead of it: without one behind them the
+    // shelved walls left a bright gap above the case, and the numeral painted
+    // on that wall had nothing to be painted on.
     for (let index = 0; index < 6; index++) {
-      if (doorWalls.includes(index) || shelvedWalls.includes(index)) continue;
-      addSolidWall(batches, index, offsetMatrix);
+      if (!doorWalls.includes(index)) addSolidWall(batches, index, offsetMatrix);
     }
   }
 
