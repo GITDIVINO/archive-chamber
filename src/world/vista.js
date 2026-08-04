@@ -50,7 +50,7 @@ import {
   WALL_WIDTH,
 } from '../constants.js';
 import { ceilingMaterial, floorMaterial, outlineMaterial, shelfMaterial, trimMaterial, wallMaterial } from '../core/materials.js';
-import { appendMergedGeometry, axialMapOffset, boxGeometryFor, mergedMesh, pointOnWall, wallBasis } from './geometry.js';
+import { appendMergedEdges, appendMergedGeometry, axialMapOffset, boxGeometryFor, mergedMesh, pointOnWall, wallBasis } from './geometry.js';
 import { appendHall, hallTransform } from './hall.js';
 import {
   PLINTH_HEIGHT,
@@ -100,13 +100,17 @@ function batchFor(batches, material) {
   return batch;
 }
 
-function addBox(batches, material, size, position, rotation, parentMatrix, roomOffset, shade) {
+function addBox(batches, material, size, position, rotation, parentMatrix, roomOffset, shade, outlines = null) {
   const entry = boxGeometryFor(size[0], size[1], size[2]);
   localMatrix.makeRotationY(rotation).setPosition(position.x, position.y, position.z);
   worldMatrix.copy(localMatrix);
   if (parentMatrix) worldMatrix.premultiply(parentMatrix);
   worldMatrix.premultiply(roomOffset);
   appendMergedGeometry(batchFor(batches, material), entry.geometry, worldMatrix, shade, localMatrix);
+  // A wall's arrises are where it meets the ceiling and the floor, and in a
+  // drawing that line is the wall. Without them a chamber seen through a
+  // doorway had no corners until the walker stepped into it.
+  if (outlines) appendMergedEdges(outlines, entry.edges, worldMatrix);
 }
 
 // A floor and a ceiling per chamber rather than one slab down the whole
@@ -300,23 +304,23 @@ function addSpineTemplate(labels, cell, x, centreY, frame, roomOffset) {
   labels.indices.push(base, base + 2, base + 1, base + 2, base + 3, base + 1);
 }
 
-function addDistantDoorWall(batches, index, roomOffset) {
+function addDistantDoorWall(batches, index, roomOffset, outlines = null) {
   const basis = wallBasis(index);
   const jambWidth = (WALL_WIDTH - DOOR_WIDTH) / 2;
   const jambOffset = (DOOR_WIDTH + jambWidth) / 2;
   const lintelHeight = WALL_HEIGHT - DOOR_HEIGHT;
   for (const side of [-1, 1]) {
     addBox(batches, wallMaterial, [jambWidth, WALL_HEIGHT, DOOR_WALL_THICKNESS],
-      pointOnWall(basis, side * jambOffset, WALL_HEIGHT / 2), basis.rotation, null, roomOffset, null);
+      pointOnWall(basis, side * jambOffset, WALL_HEIGHT / 2), basis.rotation, null, roomOffset, null, outlines);
   }
   addBox(batches, wallMaterial, [DOOR_WIDTH, lintelHeight, DOOR_WALL_THICKNESS],
-    pointOnWall(basis, 0, DOOR_HEIGHT + lintelHeight / 2), basis.rotation, null, roomOffset, null);
+    pointOnWall(basis, 0, DOOR_HEIGHT + lintelHeight / 2), basis.rotation, null, roomOffset, null, outlines);
 }
 
-function addSolidWall(batches, index, roomOffset) {
+function addSolidWall(batches, index, roomOffset, outlines = null) {
   const basis = wallBasis(index);
   addBox(batches, wallMaterial, [WALL_WIDTH, WALL_HEIGHT, WALL_THICKNESS],
-    pointOnWall(basis, 0, WALL_HEIGHT / 2), basis.rotation, null, roomOffset, null);
+    pointOnWall(basis, 0, WALL_HEIGHT / 2), basis.rotation, null, roomOffset, null, outlines);
 }
 
 // What a walker sees through a side opening of a passage: a chamber, and a
@@ -327,25 +331,35 @@ function addSolidWall(batches, index, roomOffset) {
 // The chamber is placed so that one of its own doorways meets the mouth of the
 // alcove. Its centre is therefore exactly HALL_START from that mouth: the
 // distance from a chamber's centre to the outer face of a doorway built deep.
+/**
+ * Where the chamber behind a side opening stands, in the passage's own frame.
+ *
+ * Exported so that the signs — which are rebuilt with the room and therefore
+ * know which chamber it is — can lay that chamber's tag on its ceiling at the
+ * same orientation this builder gave it. Otherwise the marking would turn as
+ * the walker stepped through.
+ */
+export function alcoveChamberMatrix(target, level, side) {
+  const facing = Math.PI / 6 + freeWallsForLevel(level)[0] * Math.PI / 3;
+  return target.makeRotationY(side > 0 ? facing - Math.PI : facing)
+    .setPosition(side * (ALCOVE_REACH + HALL_START), 0, HALL_SIDE_CENTRE);
+}
+
 const alcoveMatrix = new THREE.Matrix4();
 function addAlcoveChambers(batches, outlinePositions, labels, wallNumbers, level, hallMatrix, doorWalls, shelvedWalls) {
-  const wall = doorWalls[0];
-  const facing = Math.PI / 6 + wall * Math.PI / 3;
   for (const side of [1, -1]) {
     // Rotating by θ sends a wall normal at angle a to a − θ, and the doorway
     // has to end up pointing back down the alcove — at −x on the left side of
     // the passage, at +x on the right.
-    alcoveMatrix.makeRotationY(side > 0 ? facing - Math.PI : facing)
-      .setPosition(side * (ALCOVE_REACH + HALL_START), 0, HALL_SIDE_CENTRE)
-      .premultiply(hallMatrix);
+    alcoveChamberMatrix(alcoveMatrix, level, side).premultiply(hallMatrix);
     addChamberSlab(batches, floorMaterial, alcoveMatrix, -0.02, -Math.PI / 2);
     addChamberSlab(batches, ceilingMaterial, alcoveMatrix, WALL_HEIGHT + 0.02, Math.PI / 2);
     for (const index of shelvedWalls) {
       addDistantBookWall(batches, outlinePositions, labels, wallNumbers, level, index, alcoveMatrix, true, index);
     }
-    for (const index of doorWalls) addDistantDoorWall(batches, index, alcoveMatrix);
+    for (const index of doorWalls) addDistantDoorWall(batches, index, alcoveMatrix, outlinePositions);
     for (let index = 0; index < 6; index++) {
-      if (!doorWalls.includes(index)) addSolidWall(batches, index, alcoveMatrix);
+      if (!doorWalls.includes(index)) addSolidWall(batches, index, alcoveMatrix, outlinePositions);
     }
     addChamberArrises(outlinePositions, alcoveMatrix);
   }
@@ -403,13 +417,14 @@ export function buildVista(level) {
     if (separateVolumes) addChamberArrises(outlinePositions, offsetMatrix);
     // Both door walls now, one at each end: with a passage between them the
     // chambers no longer share a wall, so nothing is drawn twice.
-    for (const index of doorWalls) addDistantDoorWall(batches, index, offsetMatrix);
+    const drawn = separateVolumes ? outlinePositions : null;
+    for (const index of doorWalls) addDistantDoorWall(batches, index, offsetMatrix, drawn);
     // Every wall that is not a doorway, shelved or not. A cabinet stands in
     // front of its wall rather than instead of it: without one behind them the
     // shelved walls left a bright gap above the case, and the numeral painted
     // on that wall had nothing to be painted on.
     for (let index = 0; index < 6; index++) {
-      if (!doorWalls.includes(index)) addSolidWall(batches, index, offsetMatrix);
+      if (!doorWalls.includes(index)) addSolidWall(batches, index, offsetMatrix, drawn);
     }
   }
 

@@ -928,38 +928,52 @@ const signs = await page.evaluate(async () => {
     });
   }
 
-  // And what each plaque says, in the order they were built.
+  // And what each sign says, in the order they were built: for every way on, a
+  // plaque naming where it leads and the tag laid on that chamber's ceiling.
   const said = [];
   for (const wall of freeWallsForLevel(world.room.level)) {
     const exits = passageExits(world.room, wall);
     for (const way of ['ahead', 'left', 'right']) {
       const there = exits[way];
       const ordinal = ordinalFor(there);
-      said.push(ordinal === null ? roomTagFor(there.q, there.r, there.level) : String(ordinal));
+      const tag = roomTagFor(there.q, there.r, there.level);
+      said.push(ordinal === null ? tag : String(ordinal));
+      said.push(tag);
     }
   }
   return { plaques, said, legends: mesh.userData.plaques };
 });
 
 assert.ok(!signs.error, signs.error ?? 'the passages are signed');
-// Ten quads for six pieces of lettering: each side opening carries its name
-// twice — once on the lintel for somebody walking past, once on the blind end
-// of the alcove for somebody standing in front of it about to step through.
-assert.equal(signs.plaques.length, 10, 'two passages: one plaque ahead and two at each side opening');
-assert.equal(signs.legends.length, 6, 'and six ways on between them, each named once');
+// Sixteen quads for twelve pieces of lettering. Each side opening carries its
+// name twice — once on the lintel for somebody walking past, once across the
+// threshold for somebody standing in front of it — and every one of the six
+// ways on also has the tag of the chamber beyond it laid on that chamber's
+// ceiling, exactly as a built room paints its own.
+assert.equal(signs.plaques.length, 16, 'a plaque at every way out, two at each side opening, and a mark on each ceiling');
+assert.equal(signs.legends.length, 12, 'six ways on, each with a plaque and a ceiling tag');
 for (const [index, plaque] of signs.plaques.entries()) {
-  assert.ok(plaque.readsRightward > 0, `plaque ${index}: the lettering must run to the reader's right, not away from it`);
-  assert.ok(plaque.firstCornerIsTop > 0, `plaque ${index}: the plaque must not hang upside down`);
-  assert.ok(plaque.textureTopIsUp > 0, `plaque ${index}: the top of the label must be at the top of the plaque`);
+  // A ceiling mark lies flat, so "upright" and "rightward" mean nothing for it;
+  // only the wall-hung plaques are checked for a mirrored or inverted build.
+  const flat = plaque.height > 4.5;
+  if (!flat) {
+    assert.ok(plaque.readsRightward > 0, `plaque ${index}: the lettering must run to the reader's right, not away from it`);
+    assert.ok(plaque.firstCornerIsTop > 0, `plaque ${index}: the plaque must not hang upside down`);
+  }
+  assert.ok(plaque.textureTopIsUp > 0, `plaque ${index}: the top of the label must be at the top of its cell`);
   assert.ok(
-    plaque.height > 2.1 && plaque.height < 3.05,
-    `plaque ${index}: a sign belongs on a lintel or across a threshold, not down in the doorway`,
+    flat || (plaque.height > 2.1 && plaque.height < 3.05),
+    `plaque ${index}: a sign belongs on a lintel, across a threshold or on a ceiling, not down in the doorway`,
   );
 }
 assert.deepEqual(signs.legends, signs.said, 'each plaque names the chamber that opening actually leads to');
 assert.ok(
   signs.plaques.some(plaque => plaque.height > 2.2 && plaque.height < 2.6),
   'a copy hangs across the threshold of each side opening, facing whoever stands in front of it',
+);
+assert.equal(
+  signs.plaques.filter(plaque => plaque.height > 4.5).length, 6,
+  'and every way on has the tag of the chamber beyond it on that chamber\'s ceiling',
 );
 assert.ok(
   signs.legends.some(text => /^\d+$/.test(text)),
