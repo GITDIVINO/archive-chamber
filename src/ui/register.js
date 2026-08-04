@@ -16,6 +16,7 @@ import {
   registerNote,
 } from './dom.js';
 import { copyExactRecord, showNotice } from './hud.js';
+import { scaleLine } from './scale.js';
 
 let callbacks = { open: () => {}, close: () => {} };
 export function setRegisterCallbacks(next) {
@@ -68,9 +69,10 @@ function rowFor(entry, isCurrent) {
 
 function renderRegister() {
   const entries = registerEntries();
-  registerCount.textContent = entries.length === 1
-    ? '1 chamber entered'
-    : entries.length + ' chambers entered';
+  // Not "47 of 47". The world has no total — it is unbounded — so the only
+  // honest measure is how far a walker would have to go before the books
+  // started again, and that number is too long to print. Its length is not.
+  registerCount.textContent = scaleLine(entries.length);
   registerBody.replaceChildren();
   for (const entry of entries.slice(0, LISTED)) {
     registerBody.append(rowFor(entry, entry.ordinal === world.ordinal));

@@ -661,6 +661,13 @@ assert.equal(
   String(register.freshOrdinal),
   'the newest chamber is at the top',
 );
+// The scale, said where the walker can read it. The count of chambers before
+// the catalogue repeats has 1 918 664 digits, and the number itself cannot be
+// shown — only its length, which is the point.
+const scale = await page.locator('#register-count').textContent();
+assert.match(scale, /^\d+ chambers? of a number with 1 918 664 digits/, 'the register says how big the library is');
+assert.match(scale, /the world does not/, 'and that the world, unlike the catalogue, does not begin again');
+
 assert.match(
   await rows.last().locator('.register-tag').textContent(),
   /^h-/,
