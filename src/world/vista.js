@@ -33,8 +33,10 @@ import {
   BOOK_WIDTH,
   CABINET_POST_WIDTH,
   CABINET_WIDTH,
+  ALCOVE_REACH,
   CHAMBER_STEP,
   DOOR_HEIGHT,
+  HALL_SIDE_CENTRE,
   HALL_START,
   DOOR_WIDTH,
   SHELF_BASE_Y,
@@ -108,9 +110,9 @@ function addBox(batches, material, size, position, rotation, parentMatrix, roomO
 // shaft meant to fall away for storeys ends six centimetres below the tread.
 // Each sits a hair below the passage's own floor and above its ceiling, so
 // wherever the two meet the passage wins and nothing is coplanar.
-function addChamberSlab(batches, material, centre, y, rotationX) {
+function addChamberSlab(batches, material, roomOffset, y, rotationX) {
   const geometry = new THREE.CircleGeometry(ROOM_RADIUS, 6);
-  worldMatrix.makeRotationX(rotationX).setPosition(centre.x, y, centre.z);
+  worldMatrix.makeRotationX(rotationX).setPosition(0, y, 0).premultiply(roomOffset);
   appendMergedGeometry(batchFor(batches, material), geometry, worldMatrix);
   geometry.dispose();
 }
@@ -294,6 +296,34 @@ function addSolidWall(batches, index, roomOffset) {
     pointOnWall(basis, 0, WALL_HEIGHT / 2), basis.rotation, null, roomOffset, null);
 }
 
+// What a walker sees through a side opening of a passage: a chamber, and a
+// real one — the same hexagon, the same four walls of shelving, the same two
+// doorways as any other. A box would have been cheaper and it read as a
+// closet; a gallery is what stands there, so a gallery is what is drawn.
+//
+// The chamber is placed so that one of its own doorways meets the mouth of the
+// alcove. Its centre is therefore exactly HALL_START from that mouth: the
+// distance from a chamber's centre to the outer face of a doorway built deep.
+const alcoveMatrix = new THREE.Matrix4();
+function addAlcoveChambers(batches, outlinePositions, labels, hallMatrix, doorWalls, shelvedWalls) {
+  const wall = doorWalls[0];
+  const facing = Math.PI / 6 + wall * Math.PI / 3;
+  for (const side of [1, -1]) {
+    // Rotating by θ sends a wall normal at angle a to a − θ, and the doorway
+    // has to end up pointing back down the alcove — at −x on the left side of
+    // the passage, at +x on the right.
+    alcoveMatrix.makeRotationY(side > 0 ? facing - Math.PI : facing)
+      .setPosition(side * (ALCOVE_REACH + HALL_START), 0, HALL_SIDE_CENTRE)
+      .premultiply(hallMatrix);
+    addChamberSlab(batches, floorMaterial, alcoveMatrix, -0.02, -Math.PI / 2);
+    addChamberSlab(batches, ceilingMaterial, alcoveMatrix, WALL_HEIGHT + 0.02, Math.PI / 2);
+    for (const index of shelvedWalls) {
+      addDistantBookWall(batches, outlinePositions, labels, index, alcoveMatrix, true, index);
+    }
+    for (const index of doorWalls) addDistantDoorWall(batches, index, alcoveMatrix);
+  }
+}
+
 /**
  * Builds the corridor once.
  *
@@ -317,10 +347,9 @@ export function buildVista(level) {
 
   for (let n = -VISTA_DEPTH; n <= VISTA_DEPTH; n++) {
     if (n === 0) continue;
-    const centre = { x: axis.x * CHAMBER_STEP * n, z: axis.z * CHAMBER_STEP * n };
-    addChamberSlab(batches, floorMaterial, centre, -0.02, -Math.PI / 2);
-    addChamberSlab(batches, ceilingMaterial, centre, WALL_HEIGHT + 0.02, Math.PI / 2);
-    offsetMatrix.makeTranslation(centre.x, 0, centre.z);
+    offsetMatrix.makeTranslation(axis.x * CHAMBER_STEP * n, 0, axis.z * CHAMBER_STEP * n);
+    addChamberSlab(batches, floorMaterial, offsetMatrix, -0.02, -Math.PI / 2);
+    addChamberSlab(batches, ceilingMaterial, offsetMatrix, WALL_HEIGHT + 0.02, Math.PI / 2);
     const separateVolumes = Math.abs(n) <= VISTA_DETAIL_DEPTH;
     const roomSeed = ((n % SPINE_TEMPLATES.length) + SPINE_TEMPLATES.length) % SPINE_TEMPLATES.length;
     for (const index of shelvedWalls) addDistantBookWall(batches, outlinePositions, labels, index, offsetMatrix, separateVolumes, roomSeed);
@@ -334,11 +363,18 @@ export function buildVista(level) {
   }
 
   // A passage in every gap, including the two the player can walk into. Their
-  // arrises are worth drawing only while the alcoves are still legible.
+  // arrises are worth drawing only while the alcoves are still legible, and
+  // only those two get a chamber built behind each side opening: a walker can
+  // reach no others, and four full hexagons is already the price of the whole
+  // corridor again.
   for (let n = -VISTA_DEPTH; n < VISTA_DEPTH; n++) {
     const base = CHAMBER_STEP * n;
+    const walkable = n === 0 || n === -1;
     hallTransform(offsetMatrix, axis.x, axis.z, axis.x * base, axis.z * base, HALL_START);
-    appendHall(batches, Math.abs(n) <= VISTA_DETAIL_DEPTH ? outlinePositions : null, offsetMatrix);
+    appendHall(batches, Math.abs(n) <= VISTA_DETAIL_DEPTH ? outlinePositions : null, offsetMatrix, walkable);
+    if (walkable) {
+      addAlcoveChambers(batches, outlinePositions, labels, offsetMatrix, doorWalls, shelvedWalls);
+    }
   }
 
   for (const batch of batches.values()) {
