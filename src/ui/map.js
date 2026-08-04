@@ -15,6 +15,16 @@ import { mapCanvas } from './dom.js';
 
 const mapContext = mapCanvas.getContext('2d');
 
+// A canvas cannot inherit a custom property, so the two ink colours are read
+// from the document each time the map is drawn. That is also what carries
+// prefers-contrast onto it: before this the map was the one surface the
+// high-contrast preference could not reach, and it is the surface with the
+// smallest lettering on it.
+function ink(name, fallback) {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return value || fallback;
+}
+
 let needsRedraw = true;
 let lastYaw = Number.NaN;
 let lastX = Number.NaN;
@@ -34,6 +44,8 @@ export function resizeMapCanvas() {
 }
 
 function drawMap() {
+  const currentInk = ink('--ink', '#202020');
+  const mutedInk = ink('--muted', '#6f6b63');
   const rect = mapCanvas.getBoundingClientRect();
   const width = rect.width;
   const height = rect.height;
@@ -82,18 +94,15 @@ function drawMap() {
     mapContext.stroke();
   }
 
-  // The player marker goes under the numbers rather than over them. It sits at
-  // their position in the room, which is the middle of the hex whenever they are
-  // set down rather than walked in — exactly where the number belongs — and the
-  // number is the one thing on the map that has to stay readable.
-  // An open ring wide enough to enclose the number rather than cross it. The
-  // two coincide whenever the walker is set down in a chamber instead of
-  // walking into it, and a filled dot at that size struck the digit out.
-  // Their place in the plane, not in the passage: fifteen units of corridor are
-  // no distance here, so the marker stops against the doorway and waits there.
+  // The walker's place in the plane, not in the passage: fifteen units of
+  // corridor are no distance here, so the marker stops against the doorway and
+  // waits there. It is drawn under the numbers rather than over them, as an
+  // open ring wide enough to enclose one — a filled dot at this size struck the
+  // digit out, and the two coincide whenever somebody is set down in a chamber
+  // rather than walking into it.
   const stood = planePosition(camera.position, world.room.level);
   const playerPoint = rotatePoint(centerX + stood.x * screenScale, centerY + stood.z * screenScale);
-  mapContext.strokeStyle = '#202020';
+  mapContext.strokeStyle = currentInk;
   mapContext.lineWidth = 1.1;
   mapContext.beginPath();
   mapContext.arc(playerPoint.x, playerPoint.y, 7.5, 0, Math.PI * 2);
@@ -105,7 +114,7 @@ function drawMap() {
   for (const { cell, x, y, isCurrent } of placed) {
     if (cell.ordinal === null) continue;
     const label = rotatePoint(x, y);
-    mapContext.fillStyle = isCurrent ? '#202020' : '#7d7568';
+    mapContext.fillStyle = isCurrent ? currentInk : mutedInk;
     mapContext.font = (isCurrent ? '700 12px' : '600 10px') + ' "Courier New", monospace';
     mapContext.fillText(String(cell.ordinal), label.x, label.y);
   }

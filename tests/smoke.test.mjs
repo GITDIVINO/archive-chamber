@@ -681,6 +681,45 @@ assert.equal(
   'selecting a row walks the player back to that chamber',
 );
 
+// --- the small print can be read ---------------------------------------------
+// The status line and the map carry the chamber number and both buttons, and
+// they are the smallest type in the game. They were also the only text the
+// high-contrast preference could not reach, because both were keyed off
+// hard-coded values rather than the variable.
+const contrast = await page.evaluate(() => {
+  const channel = value => {
+    const v = value / 255;
+    return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  };
+  const luminance = colour => {
+    const [r, g, b] = colour.match(/\d+/g).map(Number);
+    return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+  };
+  const ratio = (front, back) => {
+    const [a, b] = [luminance(front), luminance(back)].sort((x, y) => y - x);
+    return (a + 0.05) / (b + 0.05);
+  };
+  const root = getComputedStyle(document.documentElement);
+  const paper = root.getPropertyValue('--paper').trim();
+  const toRgb = hex => {
+    const value = parseInt(hex.replace('#', ''), 16);
+    return `rgb(${(value >> 16) & 255},${(value >> 8) & 255},${value & 255})`;
+  };
+  return {
+    status: ratio(getComputedStyle(document.querySelector('#status')).color, toRgb(paper)),
+    searchButton: ratio(getComputedStyle(document.querySelector('#open-search')).color, toRgb(paper)),
+    registerButton: ratio(getComputedStyle(document.querySelector('#open-register')).color, toRgb(paper)),
+    muted: ratio(toRgb(root.getPropertyValue('--muted').trim()), toRgb(paper)),
+  };
+});
+
+for (const [name, value] of Object.entries(contrast)) {
+  assert.ok(
+    value >= 4.5,
+    `${name} is ten-pixel type and must clear WCAG AA on the paper, measured ${value.toFixed(2)}:1`,
+  );
+}
+
 // --- entering a chamber is cheap ---------------------------------------------
 // Building a room used to cost 18.5 ms, over half of it painting 640 rotated
 // spine labels onto three 2048 canvases. None of that has to happen in the

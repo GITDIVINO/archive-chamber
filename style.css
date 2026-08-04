@@ -21,7 +21,10 @@
   --paper: #f4f2ec;
   --panel: rgba(248, 247, 243, 0.96);
   --ink: #202020;
-  --muted: #77736b;
+  /* 4.74:1 on the paper. At #77736b it was 4.22 and failed AA at the ten-pixel
+     sizes the status line and the map use — and those two are the only text a
+     walker reads constantly. */
+  --muted: #6f6b63;
   --line: rgba(20, 20, 20, 0.72);
   --accent: #b17822;
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -56,15 +59,15 @@ button:focus-visible, .location-record:focus-visible { outline: 1px solid var(--
 #reticle { position: absolute; left: 50%; top: 50%; display: none; color: #d8ceb8b0; font-size: 18px; transform: translate(-50%, -50%); }
 #reticle.target { color: var(--accent); }
 #hex-map { position: absolute; left: 24px; bottom: 54px; width: 174px; height: 174px; opacity: .96; pointer-events: none; }
-#status { position: absolute; right: 0; bottom: 24px; left: 0; color: #857d6f; font: 10px "Courier New", monospace; letter-spacing: .08em; pointer-events: auto; }
+#status { position: absolute; right: 0; bottom: 24px; left: 0; color: var(--muted); font: 10px "Courier New", monospace; letter-spacing: .08em; pointer-events: auto; }
 #cell { position: absolute; left: 24px; width: 174px; border: 0; background: transparent; color: inherit; padding: 0; font: inherit; letter-spacing: inherit; text-align: center; }
 #cell:hover, #cell:focus:not(:focus-visible) { background: transparent; color: inherit; outline: none; }
 #cell:active:not(:disabled) { transform: none; }
 #sound { position: absolute; right: 216px; }
-#open-search, #open-register { position: absolute; bottom: -7px; border: 0; background: transparent; color: #857d6f; padding: 0; font: 600 10px "Courier New", monospace; pointer-events: auto; }
+#open-search, #open-register { position: absolute; bottom: -7px; border: 0; background: transparent; color: var(--muted); padding: 0; font: 600 10px "Courier New", monospace; pointer-events: auto; }
 #open-search { right: 28px; }
 #open-register { right: 92px; }
-#open-search:hover, #open-register:hover { background: transparent; color: #857d6f; }
+#open-search:hover, #open-register:hover { background: transparent; color: var(--ink); }
 #notice { position: absolute; bottom: 54px; left: 50%; max-width: calc(100vw - 48px); color: #6d614e; font: 11px "Courier New", monospace; letter-spacing: .04em; opacity: 0; transform: translate(-50%, 4px); transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out); white-space: nowrap; }
 #notice.visible { opacity: 1; transform: translate(-50%, 0); }
 
