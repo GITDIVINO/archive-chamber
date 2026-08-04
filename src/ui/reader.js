@@ -2,7 +2,7 @@
  * The reader panel.
  *
  * A volume is always identified by its catalogue book index.  When it was
- * opened from a shelf it also carries the w1 location it was found at, so the
+ * opened from a shelf it also carries the w2 location it was found at, so the
  * panel can offer both the physical record and the catalogue record.
  */
 

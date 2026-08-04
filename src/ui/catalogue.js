@@ -2,7 +2,7 @@
  * The catalogue panel: fragment search and exact address entry.
  *
  * Search and v3 addresses open a catalogue record and deliberately leave the
- * player where they are.  Only an explicit w1 address selects another physical
+ * player where they are.  Only an explicit w2 address, or a row of the register, selects another physical
  * chamber.
  */
 
