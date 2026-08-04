@@ -42,6 +42,32 @@ export const WALL_THICKNESS = 0.2;
 // in a corner from one standing in a threshold. At 1.2 the margin is 0.38.
 export const DOOR_WALL_THICKNESS = 1.2;
 
+// --- the passage -------------------------------------------------------------
+// Behind each doorway is a passage, and a passage is not in the hex plane: its
+// length moves no chamber and takes no room on the map. That is why it may be
+// this long while the hexes stay exactly as adjacent as they were, and it is
+// what makes room for the two side openings that reach the flanking chambers.
+// See src/world/passage.js for the topology this geometry serves.
+export const HALL_LENGTH = 15;
+export const HALL_HALF_WIDTH = DOOR_HALF_WIDTH;
+// The mouth of the passage: where the chamber's own deep doorway ends.
+export const HALL_START = APOTHEM + DOOR_WALL_THICKNESS / 2;
+export const HALL_END = HALL_START + HALL_LENGTH;
+export const HALL_SIDE_CENTRE = HALL_LENGTH / 2;
+export const HALL_SIDE_HALF = DOOR_HALF_WIDTH;
+// The side openings are backed by a short blind recess rather than left as a
+// hole: a walker must see somewhere to step into, and the alcove gives them
+// depth to read before the turn takes them out of this space entirely.
+export const ALCOVE_DEPTH = 2.3;
+export const ALCOVE_REACH = HALL_HALF_WIDTH + ALCOVE_DEPTH;
+// A step into the alcove rather than a brush against its mouth, and comfortably
+// short of its blind end so a walker who means to turn always gets there.
+export const SIDE_EXIT_REACH = HALL_HALF_WIDTH + 0.55;
+// Both ends of a passage carry their own doorway rather than sharing one, so
+// two chambers on the corridor axis stand this far apart when drawn. Only when
+// drawn: on the map and in the placement they are still exactly neighbours.
+export const CHAMBER_STEP = 2 * APOTHEM + HALL_LENGTH + DOOR_WALL_THICKNESS;
+
 // Sized so that a cabinet of five shelves stands on the floor and still ends
 // below the player's reach: at the old height the top shelf sat 2.63 away from
 // the eye, past INTERACTION_DISTANCE, and could never be opened.

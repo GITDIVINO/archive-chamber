@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import { INTERACTION_DISTANCE } from '../constants.js';
 import { camera, renderer } from '../core/view.js';
 import { isEngaged, keys, player } from '../player.js';
-import { constrainToRoom } from '../world/doors.js';
+import { constrainToPlace } from '../world/doors.js';
 import { currentBookMeshes, world } from '../world/rooms.js';
 import { reticle } from '../ui/dom.js';
 
@@ -50,7 +50,7 @@ export function movePlayer(delta, forwardAxis, strafeAxis, running) {
   rightVector.set(Math.cos(player.yaw), 0, -Math.sin(player.yaw));
   camera.position.addScaledVector(forwardVector, forwardAxis * speed);
   camera.position.addScaledVector(rightVector, strafeAxis * speed);
-  constrainToRoom(camera.position, world.room.level);
+  constrainToPlace(camera.position, world.room.level);
 }
 
 export function keyboardAxes() {

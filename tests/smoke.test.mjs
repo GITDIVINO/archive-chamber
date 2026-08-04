@@ -228,35 +228,93 @@ await page.waitForFunction(() => document.querySelector('#search-result').textCo
 
 const doorGeometry = await page.evaluate(async () => {
   const doors = await import('./src/world/doors.js');
-  const { APOTHEM } = await import('./src/constants.js');
-  const beyond = doors.DOOR_CROSSING_DISTANCE + 0.1;
-  const at = (index, normal, tangent) => {
-    const { basis } = doors.wallCoordinates(index, 0, 0);
-    return {
-      x: basis.nx * normal + basis.tx * tangent,
-      z: basis.nz * normal + basis.tz * tangent,
-    };
-  };
-  const centred = at(2, beyond, 0);
-  const offCentre = at(2, beyond, 1.9);
-  const bookWall = at(0, beyond, 0);
+  const { APOTHEM, HALL_START } = await import('./src/constants.js');
+  const { basis } = doors.wallCoordinates(2, 0, 0);
+  const on = (normal, tangent) => [
+    basis.nx * normal + basis.tx * tangent,
+    basis.nz * normal + basis.tz * tangent,
+  ];
   return {
     apothem: APOTHEM,
+    hallStart: HALL_START,
     opposite: [doors.oppositeWall(2), doors.oppositeWall(5)],
     doorWalls: [0, 1, 2, 3, 4, 5].filter(index => doors.isDoorWall(index, 0n)),
-    crossingCentred: doors.crossedDoorway(centred.x, centred.z, 0n),
-    crossingOffCentre: doors.crossedDoorway(offCentre.x, offCentre.z, 0n),
-    crossingThroughBookWall: doors.crossedDoorway(bookWall.x, bookWall.z, 0n),
-    crossingWhileBlocked: doors.crossedDoorway(centred.x, centred.z, 0n, 2),
+    centredInOpening: doors.isWithinDoorway(2, 0n, ...on(APOTHEM, 0)),
+    besideOpening: doors.isWithinDoorway(2, 0n, ...on(APOTHEM, 1.9)),
+    throughBookWall: doors.isWithinDoorway(0, 0n, ...on(APOTHEM, 0)),
   };
 });
 
 assert.deepEqual(doorGeometry.doorWalls, [2, 5], 'only the two shelf-free walls carry doorways');
 assert.deepEqual(doorGeometry.opposite, [5, 2], 'the doorways face each other');
-assert.equal(doorGeometry.crossingCentred, 2, 'walking through the opening crosses');
-assert.equal(doorGeometry.crossingOffCentre, null, 'the jambs block a crossing beside the opening');
-assert.equal(doorGeometry.crossingThroughBookWall, null, 'a shelved wall is never a doorway');
-assert.equal(doorGeometry.crossingWhileBlocked, null, 'the wall just entered by stays inert');
+assert.equal(doorGeometry.centredInOpening, true, 'the middle of a free wall is the opening');
+assert.equal(doorGeometry.besideOpening, false, 'beside the opening is jamb, not doorway');
+assert.equal(doorGeometry.throughBookWall, false, 'a shelved wall is never a doorway');
+assert.ok(
+  doorGeometry.hallStart > doorGeometry.apothem,
+  'a passage starts beyond the wall plane, never inside the chamber',
+);
+
+// --- the passage -------------------------------------------------------------
+// A doorway no longer opens into the neighbour: it opens onto a corridor that
+// is not in the hex plane at all, with four ways out. See src/world/passage.js.
+const passage = await page.evaluate(async () => {
+  const doors = await import('./src/world/doors.js');
+  const c = await import('./src/constants.js');
+  const place = (index, normal, tangent) => {
+    const { basis } = doors.wallCoordinates(index, 0, 0);
+    return {
+      x: basis.nx * normal + basis.tx * tangent,
+      y: 1.65,
+      z: basis.nz * normal + basis.tz * tangent,
+    };
+  };
+  const exitAt = (normal, tangent) => doors.crossedPassageExit(place(2, normal, tangent), 0n);
+  const held = (normal, tangent) => {
+    const point = place(2, normal, tangent);
+    doors.constrainToPlace(point, 0n);
+    return doors.wallCoordinates(2, point.x, point.z);
+  };
+  const middle = c.HALL_START + c.HALL_SIDE_CENTRE;
+  return {
+    // Inside the chamber and inside the passage are different spaces.
+    insideRoom: exitAt(c.APOTHEM - 1, 0),
+    partway: exitAt(c.HALL_START + 2, 0),
+    farEnd: exitAt(c.HALL_END + 0.2, 0),
+    // The side openings, and the blank wall on either side of them.
+    rightExit: exitAt(middle, c.SIDE_EXIT_REACH + 0.1),
+    leftExit: exitAt(middle, -(c.SIDE_EXIT_REACH + 0.1)),
+    noExitBefore: exitAt(c.HALL_START + 1, c.SIDE_EXIT_REACH + 0.1),
+    noExitAfter: exitAt(c.HALL_END - 1, -(c.SIDE_EXIT_REACH + 0.1)),
+    // Walls: the passage holds a walker in, except where it opens.
+    heldAgainstSide: held(c.HALL_START + 2, 5).tangent,
+    heldInAlcove: held(middle, 9).tangent,
+    // A shelved wall has no passage behind it at all.
+    throughBookWall: doors.crossedPassageExit(place(0, c.HALL_START + 2, 0), 0n),
+    limits: { half: c.HALL_HALF_WIDTH, reach: c.ALCOVE_REACH, radius: c.PLAYER_RADIUS },
+  };
+});
+
+assert.equal(passage.insideRoom, null, 'standing in the chamber is not standing in a passage');
+assert.equal(passage.partway, null, 'walking down a passage is not yet leaving it');
+assert.deepEqual(passage.farEnd, { wall: 2, exit: 'ahead' }, 'the far end leads to the chamber ahead');
+assert.deepEqual(passage.rightExit, { wall: 2, exit: 'right' }, 'the opening on the right is the right exit');
+assert.deepEqual(passage.leftExit, { wall: 2, exit: 'left' }, 'the opening on the left is the left exit');
+assert.equal(passage.noExitBefore, null, 'there is only one opening a side, halfway along');
+assert.equal(passage.noExitAfter, null, 'the wall past the opening is solid again');
+assert.equal(passage.throughBookWall, null, 'a shelved wall has no passage behind it');
+assert.ok(
+  Math.abs(passage.heldAgainstSide) <= passage.limits.half - passage.limits.radius + 1e-6,
+  `the passage wall must stop a walker, not let them through at ${passage.heldAgainstSide}`,
+);
+assert.ok(
+  Math.abs(passage.heldInAlcove) <= passage.limits.reach - passage.limits.radius + 1e-6,
+  'an alcove is blind: its back wall stops a walker',
+);
+assert.ok(
+  Math.abs(passage.heldInAlcove) > passage.limits.half,
+  'a walker must be able to step into the alcove at all, or the turning is unreachable',
+);
 
 // Walking into a corner must not fling the player sideways into a doorway.
 // Every corner of the room lies exactly the player boundary away from both
@@ -274,7 +332,7 @@ const corners = await page.evaluate(async () => {
     const reach = PLAYER_BOUNDARY / Math.cos(Math.PI / 6) + 0.25;
     const start = { x: Math.cos(angle) * reach, y: 0, z: Math.sin(angle) * reach };
     const moved = { ...start };
-    doors.constrainToRoom(moved, 0n);
+    doors.constrainToPlace(moved, 0n);
     results.push({
       corner,
       shift: Math.hypot(moved.x - start.x, moved.z - start.z),
@@ -292,59 +350,90 @@ for (const { corner, shift, insideRoom } of corners) {
   );
 }
 
-// A real crossing: place the player in the threshold and let the world react.
+// A real walk: down the passage and out of each of its three far exits, driven
+// against the page's own camera and room registry.
 const walk = await page.evaluate(async () => {
   const { camera } = await import('./src/core/view.js');
-  const { syncDoorways, world } = await import('./src/world/rooms.js');
+  const { moveToWorldHex, syncDoorways, world } = await import('./src/world/rooms.js');
   const doors = await import('./src/world/doors.js');
-  const step = (index, normal) => {
+  const c = await import('./src/constants.js');
+
+  const step = (index, normal, tangent = 0) => {
     const { basis } = doors.wallCoordinates(index, 0, 0);
-    camera.position.x = basis.nx * normal;
-    camera.position.z = basis.nz * normal;
+    camera.position.x = basis.nx * normal + basis.tx * tangent;
+    camera.position.z = basis.nz * normal + basis.tz * tangent;
   };
   const record = () => ({
     q: String(world.room.q),
     r: String(world.room.r),
     tag: world.tag,
-    x: Number(camera.position.x.toFixed(3)),
-    z: Number(camera.position.z.toFixed(3)),
+    depth: Number(Math.hypot(camera.position.x, camera.position.z).toFixed(3)),
   });
+  const leaveBy = (normal, tangent) => {
+    moveToWorldHex(0n, 0n, 0n);
+    step(2, normal, tangent);
+    const entered = Boolean(syncDoorways());
+    return { entered, ...record() };
+  };
 
-  const before = record();
-  step(2, doors.DOOR_CROSSING_DISTANCE + 0.1);
-  const enteredForward = Boolean(syncDoorways());
-  const afterForward = record();
+  moveToWorldHex(0n, 0n, 0n);
+  const home = record();
 
-  // Arriving must not immediately bounce back out of the opposite doorway.
+  // Standing in the passage changes nothing until an exit is crossed.
+  step(2, c.HALL_START + 3);
+  const walking = { entered: Boolean(syncDoorways()), ...record() };
+
+  const ahead = leaveBy(c.HALL_END + 0.2, 0);
+  // Arriving must not immediately count as leaving again.
   const bouncedStraightBack = Boolean(syncDoorways());
+  const right = leaveBy(c.HALL_START + c.HALL_SIDE_CENTRE, c.SIDE_EXIT_REACH + 0.1);
+  const left = leaveBy(c.HALL_START + c.HALL_SIDE_CENTRE, -(c.SIDE_EXIT_REACH + 0.1));
 
-  // Step inside to re-arm, then walk back the way we came.
-  step(5, 4);
-  syncDoorways();
-  step(5, doors.DOOR_CROSSING_DISTANCE + 0.1);
-  const enteredBack = Boolean(syncDoorways());
-  const afterBack = record();
+  // And home again from the chamber ahead, by its own passage.
+  moveToWorldHex(-1n, 1n, 0n);
+  step(5, c.HALL_END + 0.2);
+  const back = { entered: Boolean(syncDoorways()), ...record() };
 
-  return { before, enteredForward, afterForward, bouncedStraightBack, enteredBack, afterBack };
+  return { home, walking, ahead, right, left, back, bouncedStraightBack, radius: c.ROOM_RADIUS };
 });
 
-assert.equal(walk.enteredForward, true, 'crossing the threshold enters the neighbour');
-assert.deepEqual(
-  [walk.afterForward.q, walk.afterForward.r],
-  ['-1', '1'],
-  'wall 2 leads to the axial neighbour [-1,+1]',
-);
-assert.notEqual(walk.afterForward.tag, walk.before.tag, 'the new chamber has its own tag');
+assert.equal(walk.walking.entered, false, 'walking down a passage does not change chamber');
+assert.equal(walk.walking.q, '0', 'the chamber is still the one the passage was entered from');
+
+assert.equal(walk.ahead.entered, true, 'the far end of a passage enters the chamber ahead');
+assert.deepEqual([walk.ahead.q, walk.ahead.r], ['-1', '1'], 'wall 2 leads to the axial neighbour [-1,+1]');
+assert.notEqual(walk.ahead.tag, walk.home.tag, 'the new chamber has its own tag');
 assert.equal(walk.bouncedStraightBack, false, 'arriving does not immediately count as leaving');
-assert.equal(walk.enteredBack, true, 'the opposite doorway leads home');
-assert.deepEqual([walk.afterBack.q, walk.afterBack.r], ['0', '0'], 'walking back returns to w2;0');
+assert.ok(
+  walk.ahead.depth > 5,
+  'walking straight through must be seamless: the player emerges in the far doorway, not at the centre',
+);
+
+// The side exits are the whole reason a passage is longer than a wall is thick:
+// two doorways would otherwise reach two neighbours, and these reach four more.
+assert.equal(walk.right.entered, true, 'the right-hand opening leads somewhere');
+assert.deepEqual([walk.right.q, walk.right.r], ['-1', '0'], 'turning right out of wall 2 reaches the chamber at dir 3');
+assert.equal(walk.left.entered, true, 'the left-hand opening leads somewhere');
+assert.deepEqual([walk.left.q, walk.left.r], ['0', '1'], 'turning left out of wall 2 reaches the chamber at dir 1');
+for (const turn of ['right', 'left']) {
+  assert.ok(
+    walk[turn].depth < walk.radius,
+    `turning ${turn} must leave the player inside the chamber, not in its doorway`,
+  );
+}
+
+assert.deepEqual([walk.back.q, walk.back.r], ['0', '0'], 'the passage the other way leads home');
 
 // The corridor seen through the doorways is built once and left alone: walking
 // a threshold must not rebuild or move it, or the repetition would visibly
-// restart instead of continuing.
+// restart instead of continuing. The passages the player walks through are part
+// of it, so this also proves they are not rebuilt per room.
 const vista = await page.evaluate(async () => {
   const { renderedWorld } = await import('./src/core/view.js');
+  const { camera } = await import('./src/core/view.js');
   const { syncDoorways } = await import('./src/world/rooms.js');
+  const doors = await import('./src/world/doors.js');
+  const { HALL_END } = await import('./src/constants.js');
   const groups = renderedWorld.children.filter(child => child.type === 'Group' && child.userData.q === undefined);
   const measure = () => {
     const group = renderedWorld.children.filter(c => c.type === 'Group' && c.userData.q === undefined)[0];
@@ -354,6 +443,9 @@ const vista = await page.evaluate(async () => {
     return { meshes: group.children.length, vertices, id: group.id };
   };
   const before = measure();
+  const { basis } = doors.wallCoordinates(2, 0, 0);
+  camera.position.x = basis.nx * (HALL_END + 0.2);
+  camera.position.z = basis.nz * (HALL_END + 0.2);
   syncDoorways();
   return { groups: groups.length, before, after: measure() };
 });
@@ -361,12 +453,6 @@ const vista = await page.evaluate(async () => {
 assert.equal(vista.groups, 1, 'exactly one corridor group stands beside the built room');
 assert.ok(vista.before.meshes > 0 && vista.before.vertices > 1000, 'the corridor carries real geometry');
 assert.deepEqual(vista.after, vista.before, 'the corridor is never rebuilt as the player moves');
-
-// Position carries across the threshold instead of snapping to the centre.
-assert.ok(
-  Math.hypot(walk.afterForward.x, walk.afterForward.z) > 5,
-  'the player emerges at the doorway, not teleported to the middle of the room',
-);
 
 // --- touch devices -----------------------------------------------------------
 // Phones have no pointer lock, so entering the chamber is a mode switch driven

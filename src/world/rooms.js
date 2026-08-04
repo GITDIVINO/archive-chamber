@@ -6,11 +6,13 @@
  * limit, not a model one.
  */
 
-import { WALL_DIRECTIONS, catalogueCoordinates, exactWorldRoomAddressFor, roomKey, roomTagFor } from '../../world-model.js';
+import { catalogueCoordinates, exactWorldRoomAddressFor, roomKey, roomTagFor } from '../../world-model.js';
+import { APOTHEM, CHAMBER_STEP } from '../constants.js';
 import { camera, renderedWorld } from '../core/view.js';
 import { player } from '../player.js';
-import { crossedDoorway, hasClearedDoorway, oppositeWall } from './doors.js';
-import { axialMapOffset } from './geometry.js';
+import { crossedPassageExit } from './doors.js';
+import { wallBasis } from './geometry.js';
+import { arrivalWallFor, passageExits } from './passage.js';
 import { disposeRoom, makeRoom } from './room.js';
 import { buildVista } from './vista.js';
 
@@ -89,44 +91,78 @@ export function moveToWorldHex(q, r, level = 0n) {
   camera.position.set(0, 1.65, 0);
   player.yaw = 0;
   player.pitch = 0;
-  entryWall = null;
   buildCurrentRoom();
 }
 
-// The doorway the player arrived through, held inert until they step clear of
-// it so that arriving does not immediately count as leaving again.
-let entryWall = null;
+// Three's yaw convention: at yaw 0 the camera looks down -z, so forward is
+// (-sin yaw, -cos yaw). Inverting that gives the heading for a direction.
+function yawFacing(dx, dz) {
+  return Math.atan2(-dx, -dz);
+}
 
 /**
- * Walks the player into the neighbour behind a doorway.
+ * Leaves a passage by its far end.
  *
- * Because hexes tile exactly, subtracting the centre-to-centre offset leaves
- * the player at the very same point in space, now measured from the new room's
- * centre. Position, heading and sideways offset in the threshold all carry over
- * without a jump.
+ * The corridor is drawn straight, so the chamber ahead stands exactly
+ * CHAMBER_STEP away along the wall normal. Subtracting that leaves the player
+ * at the very same point in space, now measured from the new chamber's centre:
+ * position, heading and sideways offset in the threshold all carry over with no
+ * jump, and the corridor behind them does not move.
  */
-function stepThroughDoorway(wall) {
-  const [dq, dr] = WALL_DIRECTIONS[wall];
-  world.room = { q: world.room.q + dq, r: world.room.r + dr, level: world.room.level };
-  const offset = axialMapOffset(dq, dr);
-  camera.position.x -= offset.x;
-  camera.position.z -= offset.z;
-  entryWall = oppositeWall(wall);
+function stepAhead(wall) {
+  const there = passageExits(world.room, wall).ahead;
+  const basis = wallBasis(wall);
+  camera.position.x -= basis.nx * CHAMBER_STEP;
+  camera.position.z -= basis.nz * CHAMBER_STEP;
+  world.room = there;
+  buildCurrentRoom();
+  return world.room;
+}
+
+// A walker who arrives this far in stands inside the chamber rather than in the
+// mouth of its doorway, which is where the passage they turned out of would be.
+const ARRIVAL_DEPTH = APOTHEM - 1.7;
+
+/**
+ * Leaves a passage by one of its side openings.
+ *
+ * This cannot be continuous, and is not meant to be: the flanking chamber has
+ * no wall facing the passage, because a passage is not in the plane at all. The
+ * walker emerges from one of that chamber's own doorways — see arrivalWallFor —
+ * so the pose is rebuilt rather than carried over. Their heading relative to
+ * the way they were walking is preserved, so turning left still leaves them
+ * walking the way a left turn points.
+ */
+function stepAside(wall, exit) {
+  const from = world.room;
+  const there = passageExits(from, wall)[exit];
+  const arrival = arrivalWallFor(there, from, from.level);
+  const exitBasis = wallBasis(wall);
+  const arrivalBasis = wallBasis(arrival);
+
+  const side = exit === 'right' ? 1 : -1;
+  player.yaw += yawFacing(-arrivalBasis.nx, -arrivalBasis.nz)
+    - yawFacing(side * exitBasis.tx, side * exitBasis.tz);
+
+  camera.position.x = arrivalBasis.nx * ARRIVAL_DEPTH;
+  camera.position.z = arrivalBasis.nz * ARRIVAL_DEPTH;
+  world.room = there;
   buildCurrentRoom();
   return world.room;
 }
 
 /**
- * Called once a frame after movement. Returns the room entered, or null.
+ * Called once a frame after movement. Returns the chamber entered, or null.
+ *
+ * Walking back out of the near end of a passage is not a transition: that end
+ * belongs to the chamber the player is already in.
  */
 export function syncDoorways() {
-  const { x, z } = camera.position;
-  const level = world.room.level;
-  if (entryWall !== null && hasClearedDoorway(entryWall, x, z)) {
-    entryWall = null;
-  }
-  const wall = crossedDoorway(x, z, level, entryWall);
-  return wall === null ? null : stepThroughDoorway(wall);
+  const crossing = crossedPassageExit(camera.position, world.room.level);
+  if (!crossing) return null;
+  return crossing.exit === 'ahead'
+    ? stepAhead(crossing.wall)
+    : stepAside(crossing.wall, crossing.exit);
 }
 
 export function currentBookMeshes() {

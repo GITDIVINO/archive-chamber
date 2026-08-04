@@ -1,18 +1,24 @@
 /**
- * The view through the doorways.
+ * The view through the doorways, and the passages themselves.
  *
  * Only the player's own hex is ever built in full. What lies beyond a doorway
- * is this: the same chamber repeated down the corridor axis, stripped to the
- * shapes that still read at distance — carcase, shelf ledges, and volumes.
- * Nothing here is looked up in the catalogue: spines carry stand-in markings
- * from a fixed set, not titles, because a title is a smudge by the second room
- * and these chambers exist only to be seen through a doorway. The books a
- * player can actually open are built when they walk in.
+ * is this: passage, chamber, passage, chamber, repeated down the corridor axis
+ * and stripped to the shapes that still read at distance — carcase, shelf
+ * ledges, and volumes. Nothing here is looked up in the catalogue: spines carry
+ * stand-in markings from a fixed set, not titles, because a title is a smudge
+ * by the second room and these chambers exist only to be seen through a
+ * doorway. The books a player can actually open are built when they walk in.
  *
- * Walls 2 and 5 face each other, so the passages line up and the repetition
- * runs straight to the fog. The horror is meant to be that it is not a trick:
- * those rooms genuinely exist, hold their own 640 volumes, and can be walked
- * to one threshold at a time.
+ * The passages the player walks through are these same passages. A chamber's
+ * two free walls face each other, so both of its passages lie on this axis and
+ * are already drawn here — there is nothing extra to build when somebody steps
+ * into one, and crossing a threshold leaves the view untouched, which is the
+ * whole point. Their side openings lead off the axis and so are not drawn
+ * beyond the alcove behind each one.
+ *
+ * The horror is meant to be that it is not a trick: those rooms genuinely
+ * exist, hold their own 640 volumes, and can be walked to one threshold at a
+ * time.
  */
 
 import * as THREE from 'three';
@@ -27,7 +33,9 @@ import {
   BOOK_WIDTH,
   CABINET_POST_WIDTH,
   CABINET_WIDTH,
+  CHAMBER_STEP,
   DOOR_HEIGHT,
+  HALL_START,
   DOOR_WIDTH,
   SHELF_BASE_Y,
   SHELF_PITCH,
@@ -40,6 +48,7 @@ import {
 } from '../constants.js';
 import { ceilingMaterial, floorMaterial, outlineMaterial, shelfMaterial, trimMaterial, wallMaterial } from '../core/materials.js';
 import { appendMergedGeometry, axialMapOffset, boxGeometryFor, mergedMesh, pointOnWall, wallBasis } from './geometry.js';
+import { appendHall, hallTransform } from './hall.js';
 import {
   CARCASE_BACK_THICKNESS,
   CARCASE_BACK_Z,
@@ -56,13 +65,16 @@ import {
   shelfBoardShade,
 } from './room.js';
 
-// How many chambers are built in each direction. Ten reaches roughly 154
-// units, inside the camera's far plane, by which point the fog has closed
-// completely: the corridor ends out of sight rather than at a visible edge.
-const VISTA_DEPTH = 10;
+// How many chambers are built in each direction. With a passage between each
+// pair the corridor now covers roughly 32 units per chamber rather than 15, so
+// five reaches about the same 158 units as ten did before: inside the camera's
+// far plane, and far enough that the fog has closed completely — the corridor
+// ends out of sight rather than at a visible edge.
+const VISTA_DEPTH = 5;
 // Chambers this close still show individual volumes; past it a filled band is
-// indistinguishable and far cheaper.
-const VISTA_DETAIL_DEPTH = 3;
+// indistinguishable and far cheaper. One nearer than before, because a chamber
+// two along is now twice as far off as it used to be.
+const VISTA_DETAIL_DEPTH = 2;
 // The corridor runs along the axis shared by the two doorways, and that axis
 // turns with the level: what shows through a doorway on the floor above runs a
 // different way, which is the whole reason a stair is worth climbing.
@@ -297,26 +309,35 @@ export function buildVista(level) {
   const doorWalls = freeWallsForLevel(level);
   const shelvedWalls = bookWallsForLevel(level);
   const corridorDirection = doorWalls[0];
-  const step = axialMapOffset(...WALL_DIRECTIONS[corridorDirection]);
+  // The axial offset gives the direction; the spacing along it is now set by
+  // the passage, not by the tiling, because chambers no longer share a wall.
+  const axis = axialMapOffset(...WALL_DIRECTIONS[corridorDirection]).normalize();
 
-  const corridorLength = 2 * (VISTA_DEPTH + 1) * Math.hypot(step.x, step.z);
+  const corridorLength = 2 * (VISTA_DEPTH + 1) * CHAMBER_STEP;
   addCorridorSlab(batches, floorMaterial, corridorLength, -0.06, -Math.PI / 2);
   addCorridorSlab(batches, ceilingMaterial, corridorLength, WALL_HEIGHT + 0.06, Math.PI / 2);
 
   for (let n = -VISTA_DEPTH; n <= VISTA_DEPTH; n++) {
     if (n === 0) continue;
-    offsetMatrix.makeTranslation(step.x * n, 0, step.z * n);
+    offsetMatrix.makeTranslation(axis.x * CHAMBER_STEP * n, 0, axis.z * CHAMBER_STEP * n);
     const separateVolumes = Math.abs(n) <= VISTA_DETAIL_DEPTH;
     const roomSeed = ((n % SPINE_TEMPLATES.length) + SPINE_TEMPLATES.length) % SPINE_TEMPLATES.length;
     for (const index of shelvedWalls) addDistantBookWall(batches, outlinePositions, labels, index, offsetMatrix, separateVolumes, roomSeed);
-    // Each chamber closes only its far side, so the wall shared with the
-    // chamber before it is drawn exactly once and never z-fights.
-    const farWall = n > 0 ? corridorDirection : (corridorDirection + 3) % 6;
-    addDistantDoorWall(batches, farWall, offsetMatrix);
+    // Both door walls now, one at each end: with a passage between them the
+    // chambers no longer share a wall, so nothing is drawn twice.
+    for (const index of doorWalls) addDistantDoorWall(batches, index, offsetMatrix);
     for (let index = 0; index < 6; index++) {
       if (doorWalls.includes(index) || shelvedWalls.includes(index)) continue;
       addSolidWall(batches, index, offsetMatrix);
     }
+  }
+
+  // A passage in every gap, including the two the player can walk into. Their
+  // arrises are worth drawing only while the alcoves are still legible.
+  for (let n = -VISTA_DEPTH; n < VISTA_DEPTH; n++) {
+    const base = CHAMBER_STEP * n;
+    hallTransform(offsetMatrix, axis.x, axis.z, axis.x * base, axis.z * base, HALL_START);
+    appendHall(batches, Math.abs(n) <= VISTA_DETAIL_DEPTH ? outlinePositions : null, offsetMatrix);
   }
 
   for (const batch of batches.values()) {
