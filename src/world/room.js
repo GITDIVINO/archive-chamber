@@ -223,14 +223,41 @@ function addSolidWall(room, index) {
   addBox(room, wallMaterial, [WALL_WIDTH, WALL_HEIGHT, WALL_THICKNESS], pointOnWall(basis, 0, WALL_HEIGHT / 2), basis.rotation);
 }
 
+// The face of a wall, in room space, so a line can be drawn on it.
+const wallFacePoint = new THREE.Vector3();
+function faceOf(basis, tangent, height, inward) {
+  const point = pointOnWall(basis, tangent, height, inward);
+  return [point.x, point.y, point.z];
+}
+function drawOnWall(outlinePositions, basis, inward, edges) {
+  for (const [fromT, fromY, toT, toY] of edges) {
+    for (const [t, y] of [[fromT, fromY], [toT, toY]]) {
+      const [x, height, z] = faceOf(basis, t, y, inward);
+      wallFacePoint.set(x, height, z);
+      outlinePositions.push(wallFacePoint.x, wallFacePoint.y, wallFacePoint.z);
+    }
+  }
+}
+
 // A doorway wall is the same surface with a hole in it: two jambs and a lintel.
 // Everything above and beside the opening stays closed, so the room reads as
 // sealed apart from the two passages.
+/**
+ * A wall with a hole in it.
+ *
+ * Built from three pieces — two jambs and the lintel — but drawn as one. Each
+ * piece outlined on its own put a line up from either corner of the opening to
+ * the ceiling, and those lines are seams in a thing that has none: the walls
+ * here are monolithic and have stood for as long as the library has. Only what
+ * is really an edge is drawn, which is the wall's own frame and the opening
+ * cut in it.
+ */
 function addDoorWall(room, index) {
   const basis = wallBasis(index);
   const jambWidth = (WALL_WIDTH - DOOR_WIDTH) / 2;
   const jambOffset = (DOOR_WIDTH + jambWidth) / 2;
   const lintelHeight = WALL_HEIGHT - DOOR_HEIGHT;
+  const plain = { outlined: false };
   for (const side of [-1, 1]) {
     addBox(
       room,
@@ -238,6 +265,8 @@ function addDoorWall(room, index) {
       [jambWidth, WALL_HEIGHT, DOOR_WALL_THICKNESS],
       pointOnWall(basis, side * jambOffset, WALL_HEIGHT / 2),
       basis.rotation,
+      null,
+      plain,
     );
   }
   addBox(
@@ -246,16 +275,22 @@ function addDoorWall(room, index) {
     [DOOR_WIDTH, lintelHeight, DOOR_WALL_THICKNESS],
     pointOnWall(basis, 0, DOOR_HEIGHT + lintelHeight / 2),
     basis.rotation,
+    null,
+    plain,
   );
-  // A shallow reveal around the opening so the threshold reads as cut stone
-  // rather than a floating edge.
-  addBox(
-    room,
-    trimMaterial,
-    [DOOR_WIDTH + 0.18, 0.1, DOOR_WALL_THICKNESS + 0.06],
-    pointOnWall(basis, 0, DOOR_HEIGHT + 0.05),
-    basis.rotation,
-  );
+
+  const half = WALL_WIDTH / 2;
+  const opening = DOOR_WIDTH / 2;
+  drawOnWall(room.userData.outlinePositions, basis, DOOR_WALL_THICKNESS / 2, [
+    // the wall itself
+    [-half, WALL_HEIGHT, half, WALL_HEIGHT],
+    [-half, 0, -half, WALL_HEIGHT],
+    [half, 0, half, WALL_HEIGHT],
+    // and the opening cut in it
+    [-opening, 0, -opening, DOOR_HEIGHT],
+    [opening, 0, opening, DOOR_HEIGHT],
+    [-opening, DOOR_HEIGHT, opening, DOOR_HEIGHT],
+  ]);
 }
 
 const frameMatrix = new THREE.Matrix4();

@@ -319,6 +319,21 @@ function addSpineTemplate(labels, cell, x, centreY, frame, roomOffset) {
   labels.indices.push(base, base + 2, base + 1, base + 2, base + 3, base + 1);
 }
 
+// A wall with a hole in it, drawn as one thing. Outlining each of its three
+// pieces put a seam from either corner of the opening up to the ceiling, and
+// these walls are monolithic: only the wall's own frame and the opening cut in
+// it are real edges. See addDoorWall in room.js, which does the same.
+const facePoint = new THREE.Vector3();
+function drawOnWall(outlines, basis, roomOffset, inward, edges) {
+  for (const [fromT, fromY, toT, toY] of edges) {
+    for (const [t, y] of [[fromT, fromY], [toT, toY]]) {
+      const point = pointOnWall(basis, t, y, inward);
+      facePoint.copy(point).applyMatrix4(roomOffset);
+      outlines.push(facePoint.x, facePoint.y, facePoint.z);
+    }
+  }
+}
+
 function addDistantDoorWall(batches, index, roomOffset, outlines = null) {
   const basis = wallBasis(index);
   const jambWidth = (WALL_WIDTH - DOOR_WIDTH) / 2;
@@ -326,10 +341,21 @@ function addDistantDoorWall(batches, index, roomOffset, outlines = null) {
   const lintelHeight = WALL_HEIGHT - DOOR_HEIGHT;
   for (const side of [-1, 1]) {
     addBox(batches, wallMaterial, [jambWidth, WALL_HEIGHT, DOOR_WALL_THICKNESS],
-      pointOnWall(basis, side * jambOffset, WALL_HEIGHT / 2), basis.rotation, null, roomOffset, null, outlines);
+      pointOnWall(basis, side * jambOffset, WALL_HEIGHT / 2), basis.rotation, null, roomOffset, null);
   }
   addBox(batches, wallMaterial, [DOOR_WIDTH, lintelHeight, DOOR_WALL_THICKNESS],
-    pointOnWall(basis, 0, DOOR_HEIGHT + lintelHeight / 2), basis.rotation, null, roomOffset, null, outlines);
+    pointOnWall(basis, 0, DOOR_HEIGHT + lintelHeight / 2), basis.rotation, null, roomOffset, null);
+  if (!outlines) return;
+  const half = WALL_WIDTH / 2;
+  const opening = DOOR_WIDTH / 2;
+  drawOnWall(outlines, basis, roomOffset, DOOR_WALL_THICKNESS / 2, [
+    [-half, WALL_HEIGHT, half, WALL_HEIGHT],
+    [-half, 0, -half, WALL_HEIGHT],
+    [half, 0, half, WALL_HEIGHT],
+    [-opening, 0, -opening, DOOR_HEIGHT],
+    [opening, 0, opening, DOOR_HEIGHT],
+    [-opening, DOOR_HEIGHT, opening, DOOR_HEIGHT],
+  ]);
 }
 
 function addSolidWall(batches, index, roomOffset, outlines = null) {

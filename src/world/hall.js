@@ -38,7 +38,7 @@ import {
   HALL_TRANSOM_DEPTH,
   WALL_THICKNESS,
 } from '../constants.js';
-import { ceilingMaterial, floorMaterial, trimMaterial, wallMaterial } from '../core/materials.js';
+import { ceilingMaterial, floorMaterial, wallMaterial } from '../core/materials.js';
 import { appendMergedEdges, appendMergedGeometry, boxGeometryFor } from './geometry.js';
 
 const SLAB = 0.12;
@@ -125,14 +125,11 @@ export function appendHall(batches, outlines, matrix, openAlcoves = false) {
 
     for (const opening of OPENINGS) {
       // Every opening is cut lower than the passage, leaving a lintel to write
-      // on, and framed by a sill and a band so it reads from down the corridor.
+      // on. Nothing is applied around it: a sill on the floor and a band under
+      // the lintel read as joinery, and there is none here — the walls are
+      // monolithic and only what is really an edge is drawn.
       addBox(batches, outlines, wallMaterial, [WALL_THICKNESS, HALL_LINTEL_HEIGHT, 2 * HALL_SIDE_HALF],
         wallX, HALL_OPENING_HEIGHT + HALL_LINTEL_HEIGHT / 2, opening);
-      addBox(batches, outlines, trimMaterial, [0.1, 0.05, 2 * HALL_SIDE_HALF],
-        side * HALL_HALF_WIDTH, 0.025, opening, () => 0.5);
-      addBox(batches, outlines, trimMaterial, [0.14, 0.07, 2 * HALL_SIDE_HALF + 0.28],
-        side * HALL_HALF_WIDTH, HALL_OPENING_HEIGHT - 0.035, opening, () => 0.45);
-
       // The bay behind it: jamb returns and a blind end. Without one the
       // opening is a hole onto nothing.
       const bayX = side * ALCOVE_CENTRE;
