@@ -102,6 +102,60 @@ let hallMatrix = new THREE.Matrix4();
  * `outlines` may be null for passages far enough down the corridor that their
  * arrises would be sub-pixel.
  */
+/**
+ * Only the edges that are edges.
+ *
+ * A passage is built from boxes because that is how a hole is made, but it is
+ * not made of them: the walls are monolithic and have stood as long as the
+ * library has. Outlining each box drew the seams between them — a line up from
+ * either corner of every opening, another where one length of wall met the
+ * next — and every one of those stood for a joint that is not there. What is
+ * really an edge is where a surface turns: the floor and ceiling lines along
+ * each wall, and the outline of each opening cut in it.
+ */
+const linePoint = new THREE.Vector3();
+function line(outlines, from, to) {
+  for (const point of [from, to]) {
+    linePoint.set(point[0], point[1], point[2]).applyMatrix4(hallMatrix);
+    outlines.push(linePoint.x, linePoint.y, linePoint.z);
+  }
+}
+
+function drawPassageEdges(outlines, openAlcoves) {
+  for (const side of [-1, 1]) {
+    const face = side * HALL_HALF_WIDTH;
+    // Where the wall meets the floor and the ceiling, the length of the passage.
+    line(outlines, [face, 0, 0], [face, 0, HALL_LENGTH]);
+    line(outlines, [face, DOOR_HEIGHT, 0], [face, DOOR_HEIGHT, HALL_LENGTH]);
+
+    for (const opening of OPENINGS) {
+      const near = opening - HALL_SIDE_HALF;
+      const far = opening + HALL_SIDE_HALF;
+      line(outlines, [face, 0, near], [face, HALL_OPENING_HEIGHT, near]);
+      line(outlines, [face, 0, far], [face, HALL_OPENING_HEIGHT, far]);
+      line(outlines, [face, HALL_OPENING_HEIGHT, near], [face, HALL_OPENING_HEIGHT, far]);
+
+      // The arm behind it: its own two walls meeting its floor and ceiling.
+      const reach = side * ALCOVE_REACH;
+      for (const jamb of [near, far]) {
+        line(outlines, [face, 0, jamb], [reach, 0, jamb]);
+        line(outlines, [face, HALL_OPENING_HEIGHT, jamb], [reach, HALL_OPENING_HEIGHT, jamb]);
+      }
+      // A blind arm has a back; a walkable one opens on a chamber, and that
+      // chamber's own doorway is where the edge is.
+      if (!openAlcoves) {
+        line(outlines, [reach, 0, near], [reach, HALL_OPENING_HEIGHT, near]);
+        line(outlines, [reach, 0, far], [reach, HALL_OPENING_HEIGHT, far]);
+        line(outlines, [reach, HALL_OPENING_HEIGHT, near], [reach, HALL_OPENING_HEIGHT, far]);
+      }
+    }
+  }
+  // The head of the opening at each end of the passage.
+  for (const end of [0, HALL_LENGTH]) {
+    line(outlines, [-HALL_HALF_WIDTH, HALL_OPENING_HEIGHT, end], [HALL_HALF_WIDTH, HALL_OPENING_HEIGHT, end]);
+  }
+}
+
 export function appendHall(batches, outlines, matrix, openAlcoves = false) {
   hallMatrix = matrix;
   const centre = HALL_LENGTH / 2;
@@ -119,31 +173,28 @@ export function appendHall(batches, outlines, matrix, openAlcoves = false) {
   for (const side of [-1, 1]) {
     const wallX = side * (HALL_HALF_WIDTH + WALL_THICKNESS / 2);
     for (const [runCentre, runLength] of wallRuns(OPENINGS)) {
-      addBox(batches, outlines, wallMaterial, [WALL_THICKNESS, DOOR_HEIGHT, runLength],
-        wallX, DOOR_HEIGHT / 2, runCentre);
+      addBox(batches, null, wallMaterial, [WALL_THICKNESS, DOOR_HEIGHT, runLength],
+        wallX, DOOR_HEIGHT / 2, runCentre, hallShade, false);
     }
 
     for (const opening of OPENINGS) {
       // Every opening is cut lower than the passage, leaving a lintel to write
-      // on. Nothing is applied around it: a sill on the floor and a band under
-      // the lintel read as joinery, and there is none here — the walls are
-      // monolithic and only what is really an edge is drawn.
-      addBox(batches, outlines, wallMaterial, [WALL_THICKNESS, HALL_LINTEL_HEIGHT, 2 * HALL_SIDE_HALF],
-        wallX, HALL_OPENING_HEIGHT + HALL_LINTEL_HEIGHT / 2, opening);
-      // The bay behind it: jamb returns and a blind end. Without one the
-      // opening is a hole onto nothing.
+      // on. Nothing is applied around it — no sill, no band: those read as
+      // joinery, and there is none here.
+      addBox(batches, null, wallMaterial, [WALL_THICKNESS, HALL_LINTEL_HEIGHT, 2 * HALL_SIDE_HALF],
+        wallX, HALL_OPENING_HEIGHT + HALL_LINTEL_HEIGHT / 2, opening, hallShade, false);
+      // The arm behind it: its two walls, and a back when nothing stands there.
       const bayX = side * ALCOVE_CENTRE;
       for (const jamb of [-1, 1]) {
-        addBox(batches, outlines, wallMaterial, [ALCOVE_DEPTH, HALL_OPENING_HEIGHT, WALL_THICKNESS],
-          bayX, HALL_OPENING_HEIGHT / 2, opening + jamb * (HALL_SIDE_HALF + WALL_THICKNESS / 2));
+        addBox(batches, null, wallMaterial, [ALCOVE_DEPTH, HALL_OPENING_HEIGHT, WALL_THICKNESS],
+          bayX, HALL_OPENING_HEIGHT / 2, opening + jamb * (HALL_SIDE_HALF + WALL_THICKNESS / 2),
+          hallShade, false);
       }
-      // Closed at the back only when nothing has been built behind it: for the
-      // two passages the player can walk into, a chamber stands there instead —
-      // see vista.js.
       if (!openAlcoves) {
-        addBox(batches, outlines, wallMaterial,
+        addBox(batches, null, wallMaterial,
           [WALL_THICKNESS, HALL_OPENING_HEIGHT, 2 * HALL_SIDE_HALF + 2 * WALL_THICKNESS],
-          side * (ALCOVE_REACH + WALL_THICKNESS / 2), HALL_OPENING_HEIGHT / 2, opening);
+          side * (ALCOVE_REACH + WALL_THICKNESS / 2), HALL_OPENING_HEIGHT / 2, opening,
+          hallShade, false);
       }
 
       addBox(batches, null, floorMaterial, [ALCOVE_DEPTH, SLAB, 2 * HALL_SIDE_HALF],
@@ -158,10 +209,12 @@ export function appendHall(batches, outlines, matrix, openAlcoves = false) {
   // two meet flush — so the sign there needs a surface of its own. Both ends
   // carry one because a passage is the same passage from either side.
   for (const end of [HALL_TRANSOM_DEPTH / 2, HALL_LENGTH - HALL_TRANSOM_DEPTH / 2]) {
-    addBox(batches, outlines, wallMaterial,
+    addBox(batches, null, wallMaterial,
       [2 * HALL_HALF_WIDTH, HALL_LINTEL_HEIGHT, HALL_TRANSOM_DEPTH],
-      0, HALL_OPENING_HEIGHT + HALL_LINTEL_HEIGHT / 2, end);
+      0, HALL_OPENING_HEIGHT + HALL_LINTEL_HEIGHT / 2, end, hallShade, false);
   }
+
+  if (outlines) drawPassageEdges(outlines, openAlcoves);
 }
 
 /**
