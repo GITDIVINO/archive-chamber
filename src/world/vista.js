@@ -77,11 +77,13 @@ import {
   shelfBoardShade,
 } from './room.js';
 
-// How many chambers are built in each direction. At a density of 0.013 the fog
-// has closed 94% by 126 units, so the fourth and fifth chambers were geometry
-// nobody could see. Three reaches 95 units and pays for the template chambers
-// now standing behind every side opening.
-const VISTA_DEPTH = 3;
+// How many chambers are built in each direction. What sells the recession is
+// the count of repeats a walker can actually see, so this is set against the
+// fog rather than guessed: at a density of 0.0095 the view is 96% closed by 190
+// units, and six chambers reach exactly that far. The last of them cannot be
+// made out, which is the point — the corridor has to run out of sight rather
+// than out of chambers.
+const VISTA_DEPTH = 6;
 // Chambers this close still show individual volumes; past it a filled band is
 // indistinguishable and far cheaper. One nearer than before, because a chamber
 // two along is now twice as far off as it used to be.
@@ -387,9 +389,10 @@ function addTemplateChamber(batches, outlinePositions, labels, wallNumbers, leve
 
 // How far the view down a side arm carries. The arms are the same corridor as
 // any other and must recede the same way — a walker who turns and sees one
-// chamber with a wall behind it has been told the world ends there. Two is
-// where the fog has closed: the second chamber out stands 79 units off.
-const ARM_DEPTH = 2;
+// chamber with a wall behind it has been told the world ends there. An arm
+// starts further out than the main run does, so four of them reach 142 units,
+// by which point the fog is 93% closed.
+const ARM_DEPTH = 4;
 
 /**
  * The corridor that runs out along each arm of a crossing.

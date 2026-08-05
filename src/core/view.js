@@ -13,9 +13,14 @@ scene.background = new THREE.Color(0xf4f2ec);
 // made the corridor recede into glare, where nothing could be read; a drawing
 // puts distance into grey instead, as lines crowd together. At room scale this
 // is about one percent and invisible — it only tells in the passages.
-scene.fog = new THREE.FogExp2(0xd3cfc3, 0.013);
+//
+// Thin enough that the corridor keeps its repeats: the recession is sold by how
+// many chambers a walker can count before the grey takes them, and at 0.013 it
+// took them by the third. The far plane is set past the last chamber the vista
+// builds, allowing for a walker standing at the far end of a passage.
+scene.fog = new THREE.FogExp2(0xd3cfc3, 0.0095);
 
-export const camera = new THREE.PerspectiveCamera(70, viewportWidth() / viewportHeight(), 0.08, 170);
+export const camera = new THREE.PerspectiveCamera(70, viewportWidth() / viewportHeight(), 0.08, 260);
 camera.position.set(0, 1.65, 5.2);
 
 export const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
