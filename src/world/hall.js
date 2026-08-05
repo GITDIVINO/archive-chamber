@@ -73,18 +73,15 @@ function batchFor(batches, material) {
   return batch;
 }
 
-// The scene is unlit, so the passage carries its depth in vertex colour like
-// everything else. It darkens away from both open ends, which is what stops a
-// bare tube from reading as one flat band, and the alcoves go darker still so a
-// side opening looks like somewhere that continues rather than a niche.
-function hallShade(local) {
-  const fromEnd = Math.min(local.z, HALL_LENGTH - local.z);
-  const depth = THREE.MathUtils.clamp(fromEnd / (HALL_LENGTH / 2), 0, 1);
-  const sideways = THREE.MathUtils.clamp((Math.abs(local.x) - HALL_HALF_WIDTH) / ALCOVE_DEPTH, 0, 1);
-  return THREE.MathUtils.lerp(1, 0.5, depth) * THREE.MathUtils.lerp(1, 0.42, sideways);
-}
-
-function addBox(batches, outlines, material, size, x, y, z, shade = hallShade, outlined = true, turn = 0) {
+// Nothing in a passage is toned. It used to darken towards its middle and its
+// arms darker still, from a time when it was a bare tube with nothing in it and
+// needed the gradient to read as deep at all. It has a chamber at the end of
+// every arm now, and fog, and its own converging lines — and the gradient only
+// fought them, putting grey walls against a white ceiling and shifting as a
+// walker moved, in a building whose surfaces are one material throughout. A
+// chamber's walls carry no tone either. Depth into a shelf is a different
+// matter: that is a real recess, and it keeps its shading.
+function addBox(batches, outlines, material, size, x, y, z, shade = null, outlined = true, turn = 0) {
   const entry = boxGeometryFor(size[0], size[1], size[2]);
   localMatrix.makeRotationY(turn).setPosition(x, y, z);
   worldMatrix.copy(localMatrix).premultiply(hallMatrix);
@@ -174,7 +171,7 @@ export function appendHall(batches, outlines, matrix, openAlcoves = false) {
     const wallX = side * (HALL_HALF_WIDTH + WALL_THICKNESS / 2);
     for (const [runCentre, runLength] of wallRuns(OPENINGS)) {
       addBox(batches, null, wallMaterial, [WALL_THICKNESS, DOOR_HEIGHT, runLength],
-        wallX, DOOR_HEIGHT / 2, runCentre, hallShade, false);
+        wallX, DOOR_HEIGHT / 2, runCentre, null, false);
     }
 
     for (const opening of OPENINGS) {
@@ -182,19 +179,19 @@ export function appendHall(batches, outlines, matrix, openAlcoves = false) {
       // on. Nothing is applied around it — no sill, no band: those read as
       // joinery, and there is none here.
       addBox(batches, null, wallMaterial, [WALL_THICKNESS, HALL_LINTEL_HEIGHT, 2 * HALL_SIDE_HALF],
-        wallX, HALL_OPENING_HEIGHT + HALL_LINTEL_HEIGHT / 2, opening, hallShade, false);
+        wallX, HALL_OPENING_HEIGHT + HALL_LINTEL_HEIGHT / 2, opening, null, false);
       // The arm behind it: its two walls, and a back when nothing stands there.
       const bayX = side * ALCOVE_CENTRE;
       for (const jamb of [-1, 1]) {
         addBox(batches, null, wallMaterial, [ALCOVE_DEPTH, HALL_OPENING_HEIGHT, WALL_THICKNESS],
           bayX, HALL_OPENING_HEIGHT / 2, opening + jamb * (HALL_SIDE_HALF + WALL_THICKNESS / 2),
-          hallShade, false);
+          null, false);
       }
       if (!openAlcoves) {
         addBox(batches, null, wallMaterial,
           [WALL_THICKNESS, HALL_OPENING_HEIGHT, 2 * HALL_SIDE_HALF + 2 * WALL_THICKNESS],
           side * (ALCOVE_REACH + WALL_THICKNESS / 2), HALL_OPENING_HEIGHT / 2, opening,
-          hallShade, false);
+          null, false);
       }
 
       addBox(batches, null, floorMaterial, [ALCOVE_DEPTH, SLAB, 2 * HALL_SIDE_HALF],
@@ -211,7 +208,7 @@ export function appendHall(batches, outlines, matrix, openAlcoves = false) {
   for (const end of [HALL_TRANSOM_DEPTH / 2, HALL_LENGTH - HALL_TRANSOM_DEPTH / 2]) {
     addBox(batches, null, wallMaterial,
       [2 * HALL_HALF_WIDTH, HALL_LINTEL_HEIGHT, HALL_TRANSOM_DEPTH],
-      0, HALL_OPENING_HEIGHT + HALL_LINTEL_HEIGHT / 2, end, hallShade, false);
+      0, HALL_OPENING_HEIGHT + HALL_LINTEL_HEIGHT / 2, end, null, false);
   }
 
   if (outlines) drawPassageEdges(outlines, openAlcoves);
