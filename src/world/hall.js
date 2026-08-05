@@ -196,12 +196,6 @@ export function appendHall(batches, outlines, matrix, openAlcoves = false) {
     }
   }
 
-  // The beam that carries the name of the chamber at the far end is not built
-  // here. A passage is drawn once and serves both directions, so a beam at each
-  // end meant one always stood in the mouth of the doorway a walker was looking
-  // out of. It belongs to the chamber instead — see addFarBeam in room.js —
-  // which knows which end is far.
-
   if (outlines) drawPassageEdges(outlines, openAlcoves);
 }
 

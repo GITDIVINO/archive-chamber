@@ -39,7 +39,7 @@ import {
   CABINET_WIDTH,
   ALCOVE_REACH,
   CHAMBER_STEP,
-  DOOR_HEIGHT,
+  HALL_OPENING_HEIGHT,
   HALL_SIDE_CENTRE,
   HALL_START,
   DOOR_WIDTH,
@@ -338,13 +338,13 @@ function addDistantDoorWall(batches, index, roomOffset, outlines = null) {
   const basis = wallBasis(index);
   const jambWidth = (WALL_WIDTH - DOOR_WIDTH) / 2;
   const jambOffset = (DOOR_WIDTH + jambWidth) / 2;
-  const lintelHeight = WALL_HEIGHT - DOOR_HEIGHT;
+  const lintelHeight = WALL_HEIGHT - HALL_OPENING_HEIGHT;
   for (const side of [-1, 1]) {
     addBox(batches, wallMaterial, [jambWidth, WALL_HEIGHT, DOOR_WALL_THICKNESS],
       pointOnWall(basis, side * jambOffset, WALL_HEIGHT / 2), basis.rotation, null, roomOffset, null);
   }
   addBox(batches, wallMaterial, [DOOR_WIDTH, lintelHeight, DOOR_WALL_THICKNESS],
-    pointOnWall(basis, 0, DOOR_HEIGHT + lintelHeight / 2), basis.rotation, null, roomOffset, null);
+    pointOnWall(basis, 0, HALL_OPENING_HEIGHT + lintelHeight / 2), basis.rotation, null, roomOffset, null);
   if (!outlines) return;
   const half = WALL_WIDTH / 2;
   const opening = DOOR_WIDTH / 2;
@@ -352,9 +352,9 @@ function addDistantDoorWall(batches, index, roomOffset, outlines = null) {
     [-half, WALL_HEIGHT, half, WALL_HEIGHT],
     [-half, 0, -half, WALL_HEIGHT],
     [half, 0, half, WALL_HEIGHT],
-    [-opening, 0, -opening, DOOR_HEIGHT],
-    [opening, 0, opening, DOOR_HEIGHT],
-    [-opening, DOOR_HEIGHT, opening, DOOR_HEIGHT],
+    [-opening, 0, -opening, HALL_OPENING_HEIGHT],
+    [opening, 0, opening, HALL_OPENING_HEIGHT],
+    [-opening, HALL_OPENING_HEIGHT, opening, HALL_OPENING_HEIGHT],
   ]);
 }
 

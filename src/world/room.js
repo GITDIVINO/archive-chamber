@@ -25,14 +25,8 @@ import {
   BOOK_WIDTH,
   CABINET_POST_WIDTH,
   CABINET_WIDTH,
-  APOTHEM,
   DOOR_HALF_WIDTH,
-  DOOR_HEIGHT,
-  HALL_HALF_WIDTH,
-  HALL_LENGTH,
   HALL_OPENING_HEIGHT,
-  HALL_START,
-  HALL_TRANSOM_DEPTH,
   ROOM_RADIUS,
   DOOR_WIDTH,
   SHELF_BASE_Y,
@@ -249,34 +243,6 @@ function drawOnWall(outlinePositions, basis, inward, edges) {
 // Everything above and beside the opening stays closed, so the room reads as
 // sealed apart from the two passages.
 /**
- * The beam across the far end of the passage behind a doorway.
- *
- * It exists to carry the name of the chamber at that end — see world/signs.js —
- * and it is built with the chamber rather than with the passage because only
- * the chamber knows which end is far. A passage is drawn once and serves both
- * directions, so a beam at each of its ends put one in the mouth of every
- * doorway, hanging in the opening a walker was looking out of.
- */
-function addFarBeam(room, index) {
-  const basis = wallBasis(index);
-  const height = DOOR_HEIGHT - HALL_OPENING_HEIGHT;
-  const centre = HALL_START + HALL_LENGTH - HALL_TRANSOM_DEPTH / 2;
-  addBox(
-    room,
-    wallMaterial,
-    [2 * HALL_HALF_WIDTH, height, HALL_TRANSOM_DEPTH],
-    pointOnWall(basis, 0, HALL_OPENING_HEIGHT + height / 2, APOTHEM - centre),
-    basis.rotation,
-    null,
-    { outlined: false },
-  );
-  // Its lower arris, which is the head of the opening into that chamber.
-  drawOnWall(room.userData.outlinePositions, basis, APOTHEM - centre + HALL_TRANSOM_DEPTH / 2, [
-    [-HALL_HALF_WIDTH, HALL_OPENING_HEIGHT, HALL_HALF_WIDTH, HALL_OPENING_HEIGHT],
-  ]);
-}
-
-/**
  * A wall with a hole in it.
  *
  * Built from three pieces — two jambs and the lintel — but drawn as one. Each
@@ -290,7 +256,12 @@ function addDoorWall(room, index) {
   const basis = wallBasis(index);
   const jambWidth = (WALL_WIDTH - DOOR_WIDTH) / 2;
   const jambOffset = (DOOR_WIDTH + jambWidth) / 2;
-  const lintelHeight = WALL_HEIGHT - DOOR_HEIGHT;
+  // A doorway is cut to the same height as every other opening in the passage
+  // behind it, so that the wall above it is what a walker in the corridor sees
+  // as the band across either end. Cut to the full height of the passage there
+  // was no band, and a beam hung in to make one stood in the opening whenever
+  // it was looked at from the chamber side.
+  const lintelHeight = WALL_HEIGHT - HALL_OPENING_HEIGHT;
   const plain = { outlined: false };
   for (const side of [-1, 1]) {
     addBox(
@@ -307,7 +278,7 @@ function addDoorWall(room, index) {
     room,
     wallMaterial,
     [DOOR_WIDTH, lintelHeight, DOOR_WALL_THICKNESS],
-    pointOnWall(basis, 0, DOOR_HEIGHT + lintelHeight / 2),
+    pointOnWall(basis, 0, HALL_OPENING_HEIGHT + lintelHeight / 2),
     basis.rotation,
     null,
     plain,
@@ -321,9 +292,9 @@ function addDoorWall(room, index) {
     [-half, 0, -half, WALL_HEIGHT],
     [half, 0, half, WALL_HEIGHT],
     // and the opening cut in it
-    [-opening, 0, -opening, DOOR_HEIGHT],
-    [opening, 0, opening, DOOR_HEIGHT],
-    [-opening, DOOR_HEIGHT, opening, DOOR_HEIGHT],
+    [-opening, 0, -opening, HALL_OPENING_HEIGHT],
+    [opening, 0, opening, HALL_OPENING_HEIGHT],
+    [-opening, HALL_OPENING_HEIGHT, opening, HALL_OPENING_HEIGHT],
   ]);
 }
 
@@ -810,7 +781,6 @@ export function makeRoom(q, r, level, roomTag) {
   for (let index = 0; index < 6; index++) {
     if (doorWalls.includes(index)) {
       addDoorWall(room, index);
-      addFarBeam(room, index);
     } else {
       addSolidWall(room, index);
     }

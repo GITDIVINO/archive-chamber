@@ -40,7 +40,6 @@ import {
   HALL_OPENING_HEIGHT,
   HALL_SIDE_CENTRE,
   HALL_START,
-  HALL_TRANSOM_DEPTH,
   WALL_HEIGHT,
 } from '../constants.js';
 import { drawDraftedLabel, wallBasis } from './geometry.js';
@@ -51,15 +50,15 @@ import { alcoveChamberMatrix } from './vista.js';
 // The same plane a built room uses for its own marking.
 const MARK_WIDTH = 7.4;
 const MARK_HEIGHT = 1.85;
-// The plaque over the far entrance, on the beam that crosses the end of the
-// passage. Kept to the same proportion as a ceiling marking so both can share
-// one canvas without either being stretched.
+// The plaque over the far entrance, flat on the wall above it — the band a
+// walker sees across the end of the corridor. Kept to the same proportion as a
+// ceiling marking so both can share one canvas without either being stretched.
 const PLAQUE_WIDTH = 2.05;
 const PLAQUE_HEIGHT = PLAQUE_WIDTH * MARK_HEIGHT / MARK_WIDTH;
 const PLAQUE_Y = HALL_OPENING_HEIGHT + HALL_LINTEL_HEIGHT / 2;
 // Just clear of the surface each is painted on, so the two never z-fight.
 const PROUD = 0.012;
-const PLAQUE_Z = HALL_LENGTH - HALL_TRANSOM_DEPTH - PROUD;
+const PLAQUE_Z = HALL_LENGTH - PROUD;
 const CELL_WIDTH = 640;
 const CELL_HEIGHT = Math.round(CELL_WIDTH * MARK_HEIGHT / MARK_WIDTH);
 
