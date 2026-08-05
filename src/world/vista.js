@@ -77,13 +77,22 @@ import {
   shelfBoardShade,
 } from './room.js';
 
-// How many chambers are built in each direction. What sells the recession is
-// the count of repeats a walker can actually see, so this is set against the
-// fog rather than guessed: at a density of 0.0095 the view is 96% closed by 190
-// units, and six chambers reach exactly that far. The last of them cannot be
-// made out, which is the point — the corridor has to run out of sight rather
-// than out of chambers.
-const VISTA_DEPTH = 6;
+// How many chambers are built in each direction.
+//
+// The corridor is drawn once and never moves: crossing a threshold rebuilds the
+// chamber at the origin and carries the walker back one CHAMBER_STEP, so they
+// oscillate over a range of about thirty-two units and the geometry around them
+// is periodic with exactly that period. Everything they see is therefore
+// identical before and after a crossing — everything except the two ends, where
+// the periodicity has to stop. At each crossing the far end springs one step
+// away and the near end one step closer, and if either is still legible that
+// shows as a chamber quietly appearing behind them.
+//
+// So the depth is set from the worst case rather than from the average. The
+// closest an end ever comes is its distance less the twenty-three units a
+// walker can travel down a passage. Eight chambers reach 253, so the worst is
+// 230, where fog at 0.0095 has closed 99.2% — nothing left to appear.
+const VISTA_DEPTH = 8;
 // Chambers this close still show individual volumes; past it a filled band is
 // indistinguishable and far cheaper. One nearer than before, because a chamber
 // two along is now twice as far off as it used to be.
@@ -390,9 +399,10 @@ function addTemplateChamber(batches, outlinePositions, labels, wallNumbers, leve
 // How far the view down a side arm carries. The arms are the same corridor as
 // any other and must recede the same way — a walker who turns and sees one
 // chamber with a wall behind it has been told the world ends there. An arm
-// starts further out than the main run does, so four of them reach 142 units,
-// by which point the fog is 93% closed.
-const ARM_DEPTH = 4;
+// starts further out than the main run does and a walker can go seven and a
+// half units down one, so six of them put the worst case at 198 units, where
+// the fog has closed 97%.
+const ARM_DEPTH = 6;
 
 /**
  * The corridor that runs out along each arm of a crossing.
