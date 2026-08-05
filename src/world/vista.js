@@ -13,8 +13,12 @@
  * two free walls face each other, so both of its passages lie on this axis and
  * are already drawn here — there is nothing extra to build when somebody steps
  * into one, and crossing a threshold leaves the view untouched, which is the
- * whole point. Their side openings lead off the axis and so are not drawn
- * beyond the alcove behind each one.
+ * whole point.
+ *
+ * The arms of their crossings run off the axis, and a corridor runs out along
+ * each of those too. A walker who turns at a crossing and sees one chamber with
+ * a wall behind it has been told the world ends there; it does not, in that
+ * direction any more than in this one.
  *
  * The horror is meant to be that it is not a trick: those rooms genuinely
  * exist, hold their own 640 volumes, and can be walked to one threshold at a
@@ -345,26 +349,6 @@ export function alcoveChamberMatrix(target, level, side) {
     .setPosition(side * (ALCOVE_REACH + HALL_START), 0, HALL_SIDE_CENTRE);
 }
 
-const alcoveMatrix = new THREE.Matrix4();
-function addAlcoveChambers(batches, outlinePositions, labels, wallNumbers, level, hallMatrix, doorWalls, shelvedWalls) {
-  for (const side of [1, -1]) {
-    // Rotating by θ sends a wall normal at angle a to a − θ, and the doorway
-    // has to end up pointing back down the alcove — at −x on the left side of
-    // the passage, at +x on the right.
-    alcoveChamberMatrix(alcoveMatrix, level, side).premultiply(hallMatrix);
-    addChamberSlab(batches, floorMaterial, alcoveMatrix, -0.02, -Math.PI / 2);
-    addChamberSlab(batches, ceilingMaterial, alcoveMatrix, WALL_HEIGHT + 0.02, Math.PI / 2);
-    for (const index of shelvedWalls) {
-      addDistantBookWall(batches, outlinePositions, labels, wallNumbers, level, index, alcoveMatrix, true, index);
-    }
-    for (const index of doorWalls) addDistantDoorWall(batches, index, alcoveMatrix, outlinePositions);
-    for (let index = 0; index < 6; index++) {
-      if (!doorWalls.includes(index)) addSolidWall(batches, index, alcoveMatrix, outlinePositions);
-    }
-    addChamberArrises(outlinePositions, alcoveMatrix);
-  }
-}
-
 // The six vertical arrises of a chamber. In a built room these are drawn as
 // lines and they are most of what says "hexagon"; without them a chamber seen
 // through a doorway is a set of shelves floating in a pale field, and stepping
@@ -378,6 +362,62 @@ function addChamberArrises(outlinePositions, roomOffset) {
     for (const y of [0.02, WALL_HEIGHT]) {
       arrisPoint.set(x, y, z).applyMatrix4(roomOffset);
       outlinePositions.push(arrisPoint.x, arrisPoint.y, arrisPoint.z);
+    }
+  }
+}
+
+const alcoveMatrix = new THREE.Matrix4();
+const armMatrix = new THREE.Matrix4();
+
+/** One chamber of the corridor, placed by `roomOffset`. */
+function addTemplateChamber(batches, outlinePositions, labels, wallNumbers, level, roomOffset, detailed, seed) {
+  const doorWalls = freeWallsForLevel(level);
+  addChamberSlab(batches, floorMaterial, roomOffset, -0.02, -Math.PI / 2);
+  addChamberSlab(batches, ceilingMaterial, roomOffset, WALL_HEIGHT + 0.02, Math.PI / 2);
+  const drawn = detailed ? outlinePositions : null;
+  for (const index of bookWallsForLevel(level)) {
+    addDistantBookWall(batches, outlinePositions, labels, wallNumbers, level, index, roomOffset, detailed, seed);
+  }
+  for (const index of doorWalls) addDistantDoorWall(batches, index, roomOffset, drawn);
+  for (let index = 0; index < 6; index++) {
+    if (!doorWalls.includes(index)) addSolidWall(batches, index, roomOffset, drawn);
+  }
+  if (detailed) addChamberArrises(outlinePositions, roomOffset);
+}
+
+// How far the view down a side arm carries. The arms are the same corridor as
+// any other and must recede the same way — a walker who turns and sees one
+// chamber with a wall behind it has been told the world ends there. Two is
+// where the fog has closed: the second chamber out stands 79 units off.
+const ARM_DEPTH = 2;
+
+/**
+ * The corridor that runs out along each arm of a crossing.
+ *
+ * The chamber at the mouth of an arm is turned so that its own two doorways lie
+ * along that arm — see alcoveChamberMatrix — so the corridor simply carries on
+ * through it, chamber and passage alternating, exactly as the one the walker is
+ * standing in does. In its local frame the doorway it presents faces back the
+ * way they came, so everything further out lies the other way.
+ */
+function addArms(batches, outlinePositions, labels, wallNumbers, level, hallMatrix) {
+  const doorWalls = freeWallsForLevel(level);
+  const basis = wallBasis(doorWalls[0]);
+  for (const side of [1, -1]) {
+    alcoveChamberMatrix(alcoveMatrix, level, side).premultiply(hallMatrix);
+    for (let step = 0; step <= ARM_DEPTH; step++) {
+      const out = -CHAMBER_STEP * step;
+      armMatrix.makeTranslation(basis.nx * out, 0, basis.nz * out).premultiply(alcoveMatrix);
+      addTemplateChamber(
+        batches, outlinePositions, labels, wallNumbers, level, armMatrix,
+        step === 0, doorWalls[0] + step,
+      );
+      if (step === ARM_DEPTH) continue;
+      hallTransform(
+        armMatrix, -basis.nx, -basis.nz,
+        basis.nx * out, basis.nz * out, HALL_START,
+      ).premultiply(alcoveMatrix);
+      appendHall(batches, step === 0 ? outlinePositions : null, armMatrix, false);
     }
   }
 }
@@ -438,9 +478,7 @@ export function buildVista(level) {
     const walkable = n === 0 || n === -1;
     hallTransform(offsetMatrix, axis.x, axis.z, axis.x * base, axis.z * base, HALL_START);
     appendHall(batches, Math.abs(n) <= VISTA_DETAIL_DEPTH ? outlinePositions : null, offsetMatrix, walkable);
-    if (walkable) {
-      addAlcoveChambers(batches, outlinePositions, labels, wallNumbers, level, offsetMatrix, doorWalls, shelvedWalls);
-    }
+    if (walkable) addArms(batches, outlinePositions, labels, wallNumbers, level, offsetMatrix);
   }
 
   for (const batch of batches.values()) {
