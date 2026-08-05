@@ -35,7 +35,6 @@ import {
   HALL_SIDE_CENTRE,
   HALL_SIDE_HALF,
   DOOR_WALL_THICKNESS,
-  HALL_TRANSOM_DEPTH,
   WALL_THICKNESS,
 } from '../constants.js';
 import { ceilingMaterial, floorMaterial, wallMaterial } from '../core/materials.js';
@@ -147,10 +146,6 @@ function drawPassageEdges(outlines, openAlcoves) {
       }
     }
   }
-  // The head of the opening at each end of the passage.
-  for (const end of [0, HALL_LENGTH]) {
-    line(outlines, [-HALL_HALF_WIDTH, HALL_OPENING_HEIGHT, end], [HALL_HALF_WIDTH, HALL_OPENING_HEIGHT, end]);
-  }
 }
 
 export function appendHall(batches, outlines, matrix, openAlcoves = false) {
@@ -201,15 +196,11 @@ export function appendHall(batches, outlines, matrix, openAlcoves = false) {
     }
   }
 
-  // A beam across each end, at the height of the side lintels. The far end has
-  // no wall that could be lowered — it is the next chamber's doorway, and the
-  // two meet flush — so the sign there needs a surface of its own. Both ends
-  // carry one because a passage is the same passage from either side.
-  for (const end of [HALL_TRANSOM_DEPTH / 2, HALL_LENGTH - HALL_TRANSOM_DEPTH / 2]) {
-    addBox(batches, null, wallMaterial,
-      [2 * HALL_HALF_WIDTH, HALL_LINTEL_HEIGHT, HALL_TRANSOM_DEPTH],
-      0, HALL_OPENING_HEIGHT + HALL_LINTEL_HEIGHT / 2, end, null, false);
-  }
+  // The beam that carries the name of the chamber at the far end is not built
+  // here. A passage is drawn once and serves both directions, so a beam at each
+  // end meant one always stood in the mouth of the doorway a walker was looking
+  // out of. It belongs to the chamber instead — see addFarBeam in room.js —
+  // which knows which end is far.
 
   if (outlines) drawPassageEdges(outlines, openAlcoves);
 }

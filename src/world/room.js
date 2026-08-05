@@ -25,8 +25,14 @@ import {
   BOOK_WIDTH,
   CABINET_POST_WIDTH,
   CABINET_WIDTH,
+  APOTHEM,
   DOOR_HALF_WIDTH,
   DOOR_HEIGHT,
+  HALL_HALF_WIDTH,
+  HALL_LENGTH,
+  HALL_OPENING_HEIGHT,
+  HALL_START,
+  HALL_TRANSOM_DEPTH,
   ROOM_RADIUS,
   DOOR_WIDTH,
   SHELF_BASE_Y,
@@ -242,6 +248,34 @@ function drawOnWall(outlinePositions, basis, inward, edges) {
 // A doorway wall is the same surface with a hole in it: two jambs and a lintel.
 // Everything above and beside the opening stays closed, so the room reads as
 // sealed apart from the two passages.
+/**
+ * The beam across the far end of the passage behind a doorway.
+ *
+ * It exists to carry the name of the chamber at that end — see world/signs.js —
+ * and it is built with the chamber rather than with the passage because only
+ * the chamber knows which end is far. A passage is drawn once and serves both
+ * directions, so a beam at each of its ends put one in the mouth of every
+ * doorway, hanging in the opening a walker was looking out of.
+ */
+function addFarBeam(room, index) {
+  const basis = wallBasis(index);
+  const height = DOOR_HEIGHT - HALL_OPENING_HEIGHT;
+  const centre = HALL_START + HALL_LENGTH - HALL_TRANSOM_DEPTH / 2;
+  addBox(
+    room,
+    wallMaterial,
+    [2 * HALL_HALF_WIDTH, height, HALL_TRANSOM_DEPTH],
+    pointOnWall(basis, 0, HALL_OPENING_HEIGHT + height / 2, APOTHEM - centre),
+    basis.rotation,
+    null,
+    { outlined: false },
+  );
+  // Its lower arris, which is the head of the opening into that chamber.
+  drawOnWall(room.userData.outlinePositions, basis, APOTHEM - centre + HALL_TRANSOM_DEPTH / 2, [
+    [-HALL_HALF_WIDTH, HALL_OPENING_HEIGHT, HALL_HALF_WIDTH, HALL_OPENING_HEIGHT],
+  ]);
+}
+
 /**
  * A wall with a hole in it.
  *
@@ -774,8 +808,12 @@ export function makeRoom(q, r, level, roomTag) {
   const doorWalls = freeWallsForLevel(level);
   const shelvedWalls = bookWallsForLevel(level);
   for (let index = 0; index < 6; index++) {
-    if (doorWalls.includes(index)) addDoorWall(room, index);
-    else addSolidWall(room, index);
+    if (doorWalls.includes(index)) {
+      addDoorWall(room, index);
+      addFarBeam(room, index);
+    } else {
+      addSolidWall(room, index);
+    }
     if (shelvedWalls.includes(index)) collectBookWall(room, index, q, r, level, traces.disturbed);
   }
   if (traces.tally) addTally(room, traces.tally);
