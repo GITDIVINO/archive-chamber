@@ -329,7 +329,8 @@ const passage = await page.evaluate(async () => {
   const held = (normal, tangent) => {
     const point = place(2, normal, tangent);
     doors.constrainToPlace(point, 0n);
-    return doors.wallCoordinates(2, point.x, point.z);
+    const at = doors.wallCoordinates(2, point.x, point.z);
+    return { ...at, along: at.normal - c.HALL_START };
   };
   const middle = c.HALL_START + c.HALL_SIDE_CENTRE;
   return {
@@ -344,7 +345,10 @@ const passage = await page.evaluate(async () => {
     noExitAfter: exitAt(c.HALL_END - 1, -(c.SIDE_EXIT_REACH + 0.1)),
     // Walls: the passage holds a walker in, except where it opens.
     heldAgainstSide: held(c.HALL_START + 2, 5).tangent,
-    heldInAlcove: held(middle, 9).tangent,
+    // A side arm is a corridor, not a pocket: it is open at its far end, and
+    // what bounds a walker there is its own two walls, not a wall across it.
+    heldInArm: held(middle + 4, c.ALCOVE_REACH - 1).along ?? null,
+    reachesDownArm: held(middle, c.ALCOVE_REACH - 0.4).tangent,
     // A shelved wall has no passage behind it at all.
     throughBookWall: doors.crossedPassageExit(place(0, c.HALL_START + 2, 0), 0n),
     limits: { half: c.HALL_HALF_WIDTH, reach: c.ALCOVE_REACH, radius: c.PLAYER_RADIUS },
@@ -364,12 +368,12 @@ assert.ok(
   `the passage wall must stop a walker, not let them through at ${passage.heldAgainstSide}`,
 );
 assert.ok(
-  Math.abs(passage.heldInAlcove) <= passage.limits.reach - passage.limits.radius + 1e-6,
-  'an alcove is blind: its back wall stops a walker',
+  Math.abs(passage.reachesDownArm) > passage.limits.half,
+  'a walker must be able to walk down a side arm at all, or the turning is unreachable',
 );
 assert.ok(
-  Math.abs(passage.heldInAlcove) > passage.limits.half,
-  'a walker must be able to step into the alcove at all, or the turning is unreachable',
+  Math.abs(passage.reachesDownArm) > passage.limits.reach - 0.5,
+  'and all the way to its far end, where the chamber takes over — an arm is a corridor, not a pocket',
 );
 
 // On the map a passage has no length, because in the plane it has none. A

@@ -116,22 +116,23 @@ const OPENING_CLEAR_HALF = HALL_SIDE_HALF - PLAYER_RADIUS;
 
 function constrainToHall(position, hall) {
   const { basis, along, tangent } = hall;
-  const atOpening = Math.abs(along - HALL_SIDE_CENTRE) <= OPENING_CLEAR_HALF;
-  const reach = atOpening ? ALCOVE_CLEAR_REACH : HALL_CLEAR_HALF_WIDTH;
-  const sideways = Math.min(Math.abs(tangent), reach) * Math.sign(tangent);
+  const atCrossing = Math.abs(along - HALL_SIDE_CENTRE) <= OPENING_CLEAR_HALF;
 
-  if (Math.abs(sideways) > HALL_HALF_WIDTH) {
-    // Inside a bay: its own jambs now bound how far along the passage the
-    // player may drift, or they would walk out through the side wall.
-    const limit = OPENING_CLEAR_HALF;
+  if (Math.abs(tangent) > HALL_HALF_WIDTH && atCrossing) {
+    // Down a side arm. Its own walls bound how far along the passage the walker
+    // may drift; sideways it is open at the far end, exactly as the passage is
+    // at both of its own, and the crossing there hands them to a chamber.
     const offset = along - HALL_SIDE_CENTRE;
-    if (Math.abs(offset) > limit) {
-      const correction = Math.sign(offset) * limit - offset;
+    if (Math.abs(offset) > OPENING_CLEAR_HALF) {
+      const correction = Math.sign(offset) * OPENING_CLEAR_HALF - offset;
       position.x += basis.nx * correction;
       position.z += basis.nz * correction;
     }
+    return;
   }
-  const correction = sideways - tangent;
+
+  const reach = atCrossing ? ALCOVE_CLEAR_REACH : HALL_CLEAR_HALF_WIDTH;
+  const correction = Math.min(Math.abs(tangent), reach) * Math.sign(tangent) - tangent;
   if (correction !== 0) {
     position.x += basis.tx * correction;
     position.z += basis.tz * correction;

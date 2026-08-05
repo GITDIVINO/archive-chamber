@@ -55,10 +55,12 @@ export const HALL_START = APOTHEM + DOOR_WALL_THICKNESS / 2;
 export const HALL_END = HALL_START + HALL_LENGTH;
 export const HALL_SIDE_CENTRE = HALL_LENGTH / 2;
 export const HALL_SIDE_HALF = DOOR_HALF_WIDTH;
-// The side openings are backed by a short blind recess rather than left as a
-// hole: a walker must see somewhere to step into, and the alcove gives them
-// depth to read before the turn takes them out of this space entirely.
-export const ALCOVE_DEPTH = 2.3;
+// The side openings are arms of the same corridor, not recesses in its wall.
+// A passage is a junction of four chambers and it should look like one: from
+// the crossing at its middle every way on is the same length, and only what is
+// written over each says where it goes. The crossing is HALL_SIDE_CENTRE from
+// either end of the passage, so each arm reaches exactly that far sideways.
+export const ALCOVE_DEPTH = HALL_SIDE_CENTRE - HALL_HALF_WIDTH;
 // Every way out of a passage is cut lower than the passage itself, so that each
 // carries a lintel. That band is the only surface in a passage wide enough and
 // square enough to write on, and a walker standing at the junction needs to be
@@ -68,9 +70,9 @@ export const HALL_LINTEL_HEIGHT = DOOR_HEIGHT - HALL_OPENING_HEIGHT;
 // The far end has no wall to lower, so it gets a beam across it instead.
 export const HALL_TRANSOM_DEPTH = 0.18;
 export const ALCOVE_REACH = HALL_HALF_WIDTH + ALCOVE_DEPTH;
-// A step into the alcove rather than a brush against its mouth, and comfortably
-// short of its blind end so a walker who means to turn always gets there.
-export const SIDE_EXIT_REACH = HALL_HALF_WIDTH + 0.55;
+// The far end of a side arm, where the chamber's own doorway begins — the same
+// place, and the same margin, at which the way ahead hands a walker over.
+export const SIDE_EXIT_REACH = ALCOVE_REACH + 0.05;
 // Both ends of a passage carry their own doorway rather than sharing one, so
 // two chambers on the corridor axis stand this far apart when drawn. Only when
 // drawn: on the map and in the placement they are still exactly neighbours.
