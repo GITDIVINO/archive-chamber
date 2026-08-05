@@ -5,13 +5,19 @@
  * has three ways on with nothing to tell them apart: the openings are
  * identical, and so is every chamber behind them.
  *
- * Each is named once, in the place a walker is looking when they choose it. The
- * way ahead is named over its entrance, on the beam at the end of the passage,
- * because that is what somebody walking the corridor has in front of them. The
- * two at the sides are named on the ceiling of the chamber beyond — the same
- * marking a built room paints on its own — because to choose one of those a
- * walker turns and looks into it. Naming either of them twice put two copies of
- * one word in the same view, and neither could be read.
+ * Every way out is named over its own entrance: the one ahead on the beam that
+ * crosses the end of the passage, the two at the sides on their lintels. That
+ * is the sign somebody walking the corridor can read without stopping — a side
+ * opening is edge-on from down the passage, and anything written inside it
+ * cannot be seen at all until they turn.
+ *
+ * The two side chambers also carry the marking a built room paints on its own
+ * ceiling, which is a different job: it is what a walker reads once they have
+ * turned and looked in, and it is what makes the chamber drawn beyond a doorway
+ * look like the chamber they will be standing in a moment later. The one ahead
+ * has none, because the corridor's own chambers have none either and a marking
+ * there lands in the same view as the plaque on the beam, where two copies of
+ * one word leave neither readable.
  *
  * Those chambers cannot paint their own. The builder that draws them is
  * deliberately position-independent — that is what lets a walker cross a
@@ -27,9 +33,11 @@ import * as THREE from 'three';
 import { freeWallsForLevel } from '../../world-engine.js';
 import { roomTagFor } from '../../world-model.js';
 import {
+  HALL_HALF_WIDTH,
   HALL_LENGTH,
   HALL_LINTEL_HEIGHT,
   HALL_OPENING_HEIGHT,
+  HALL_SIDE_CENTRE,
   HALL_START,
   HALL_TRANSOM_DEPTH,
   WALL_HEIGHT,
@@ -48,7 +56,9 @@ const MARK_HEIGHT = 1.85;
 const PLAQUE_WIDTH = 2.05;
 const PLAQUE_HEIGHT = PLAQUE_WIDTH * MARK_HEIGHT / MARK_WIDTH;
 const PLAQUE_Y = HALL_OPENING_HEIGHT + HALL_LINTEL_HEIGHT / 2;
-const PLAQUE_Z = HALL_LENGTH - HALL_TRANSOM_DEPTH - 0.012;
+// Just clear of the surface each is painted on, so the two never z-fight.
+const PROUD = 0.012;
+const PLAQUE_Z = HALL_LENGTH - HALL_TRANSOM_DEPTH - PROUD;
 const CELL_WIDTH = 640;
 const CELL_HEIGHT = Math.round(CELL_WIDTH * MARK_HEIGHT / MARK_WIDTH);
 
@@ -60,15 +70,26 @@ const lift = new THREE.Matrix4().makeTranslation(0, WALL_HEIGHT, 0);
 const FACE_DOWN = new THREE.Matrix4().makeRotationX(Math.PI / 2);
 const corner = new THREE.Vector3();
 
-/** Where the name of one way out is written, in world space. */
-function surfaceOf(way, level) {
+/**
+ * The plaque over one entrance, in world space.
+ *
+ * Rotating a quad about y by θ sends its normal to (sin θ, 0, cos θ), so each
+ * angle here turns the face back towards somebody in the passage.
+ */
+function plaqueOver(way) {
+  const side = way === 'left' ? 1 : -1;
   if (way === 'ahead') {
-    // Flat against the beam, facing back down the passage: turning a quad about
-    // y by pi sends its normal to -z, which is the way somebody arrives from.
     return chamberMatrix.makeRotationY(Math.PI)
       .setPosition(0, PLAQUE_Y, PLAQUE_Z)
       .premultiply(hallMatrix);
   }
+  return chamberMatrix.makeRotationY(side * -Math.PI / 2)
+    .setPosition(side * (HALL_HALF_WIDTH - PROUD), PLAQUE_Y, HALL_SIDE_CENTRE)
+    .premultiply(hallMatrix);
+}
+
+/** The ceiling of the chamber behind a side opening, in world space. */
+function ceilingBeyond(way, level) {
   return alcoveChamberMatrix(chamberMatrix, level, way === 'left' ? 1 : -1)
     .premultiply(hallMatrix)
     .multiply(lift)
@@ -113,13 +134,12 @@ export function buildSigns(room) {
     const basis = wallBasis(wall);
     hallTransform(hallMatrix, basis.nx, basis.nz, 0, 0, HALL_START);
     for (const way of ['ahead', 'left', 'right']) {
-      const ahead = way === 'ahead';
-      appendMark(
-        target, tags.length, cells,
-        ahead ? PLAQUE_WIDTH : MARK_WIDTH,
-        ahead ? PLAQUE_HEIGHT : MARK_HEIGHT,
-        surfaceOf(way, room.level),
-      );
+      const cell = tags.length;
+      appendMark(target, cell, cells, PLAQUE_WIDTH, PLAQUE_HEIGHT, plaqueOver(way));
+      // Both readings of a side opening are one piece of lettering, used twice.
+      if (way !== 'ahead') {
+        appendMark(target, cell, cells, MARK_WIDTH, MARK_HEIGHT, ceilingBeyond(way, room.level));
+      }
       const there = exits[way];
       tags.push(roomTagFor(there.q, there.r, there.level));
     }

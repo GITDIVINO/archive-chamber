@@ -878,15 +878,16 @@ assert.equal(
 assert.equal(place.afterTurning, true, 'turning aside is marked: it cannot be retraced');
 assert.equal(place.afterWalkingThrough, false, 'walking straight through can be, and is not marked');
 
-// --- every way out is named exactly once -------------------------------------
+// --- every way out is named over its own entrance -----------------------------
 // A junction offers three identical openings onto three identical chambers.
-// The way ahead is named over its entrance, on the beam at the end of the
-// passage, because that is what a walker down the corridor has in front of
-// them; the two at the sides are named on the ceiling of the chamber beyond,
-// because to choose one of those they turn and look into it. Lettering has been
-// built mirrored in this project before, and neither a plaque seen at an angle
-// nor a flat marking read from below is easy to judge from a screenshot, so the
-// winding and the texture coordinates are checked directly.
+// Each is named on the surface over its entrance, which is the sign somebody
+// walking the corridor can read without stopping — a side opening is edge-on
+// from down the passage, and anything written inside it cannot be seen until
+// they turn. The two side chambers also carry the marking a built room paints
+// on its own ceiling, for whoever has turned. Lettering has been built mirrored
+// in this project before, and neither a plaque seen at an angle nor a flat
+// marking read from below is easy to judge from a screenshot, so the winding
+// and the texture coordinates are checked directly.
 const signs = await page.evaluate(async () => {
   const { moveToWorldHex, world } = await import('./src/world/rooms.js');
   const { renderedWorld } = await import('./src/core/view.js');
@@ -941,11 +942,12 @@ const signs = await page.evaluate(async () => {
 });
 
 assert.ok(!signs.error, signs.error ?? 'the ways out are named');
-assert.equal(signs.marks.length, 6, 'two passages, three ways on from each');
+assert.equal(signs.marks.length, 10, 'three plaques a passage, and a ceiling marking for each of its side openings');
 const flat = signs.marks.filter(mark => mark.lies < 1e-6);
 const upright = signs.marks.filter(mark => mark.lies >= 1e-6);
-assert.equal(flat.length, 4, 'the two side openings of each passage are named on a ceiling');
-assert.equal(upright.length, 2, 'and the way ahead over its own entrance');
+assert.equal(upright.length, 6, 'every way out is named over its own entrance');
+assert.equal(flat.length, 4, 'and each side chamber carries the marking a built room paints on its ceiling');
+assert.equal(signs.tags.length, 6, 'six ways on, each named once however many surfaces carry it');
 
 for (const [index, mark] of signs.marks.entries()) {
   assert.ok(mark.textureTopIsUp > 0, `marking ${index}: the top of the label must be at the top of its cell`);
