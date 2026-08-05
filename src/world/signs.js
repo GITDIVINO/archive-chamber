@@ -11,13 +11,13 @@
  * opening is edge-on from down the passage, and anything written inside it
  * cannot be seen at all until they turn.
  *
- * The two side chambers also carry the marking a built room paints on its own
- * ceiling, which is a different job: it is what a walker reads once they have
- * turned and looked in, and it is what makes the chamber drawn beyond a doorway
- * look like the chamber they will be standing in a moment later. The one ahead
- * has none, because the corridor's own chambers have none either and a marking
- * there lands in the same view as the plaque on the beam, where two copies of
- * one word leave neither readable.
+ * Each of the three chambers beyond also carries the marking a built room paints
+ * on its own ceiling, which is a different job: it is what a walker reads once
+ * they have looked in, and it is what makes the chamber drawn beyond a doorway
+ * look like the chamber they will be standing in a moment later. Leaving it off
+ * the one ahead — as it was for a while, to keep it out of the same view as the
+ * plaque on the beam — made a chamber's own name appear the instant a walker
+ * stepped through, which is the pop the plaque was never worth.
  *
  * Those chambers cannot paint their own. The builder that draws them is
  * deliberately position-independent — that is what lets a walker cross a
@@ -33,6 +33,7 @@ import * as THREE from 'three';
 import { freeWallsForLevel } from '../../world-engine.js';
 import { roomTagFor } from '../../world-model.js';
 import {
+  CHAMBER_STEP,
   HALL_HALF_WIDTH,
   HALL_LENGTH,
   HALL_LINTEL_HEIGHT,
@@ -88,12 +89,17 @@ function plaqueOver(way) {
     .premultiply(hallMatrix);
 }
 
-/** The ceiling of the chamber behind a side opening, in world space. */
-function ceilingBeyond(way, level) {
-  return alcoveChamberMatrix(chamberMatrix, level, way === 'left' ? 1 : -1)
-    .premultiply(hallMatrix)
-    .multiply(lift)
-    .multiply(FACE_DOWN);
+/** The ceiling of the chamber behind one way out, in world space. */
+function ceilingBeyond(way, level, basis) {
+  if (way === 'ahead') {
+    // Straight along the wall's normal and square to the world, exactly as the
+    // corridor places it: a mark turned differently from the room it belongs to
+    // would swing overhead as the walker crossed.
+    chamberMatrix.makeTranslation(basis.nx * CHAMBER_STEP, 0, basis.nz * CHAMBER_STEP);
+  } else {
+    alcoveChamberMatrix(chamberMatrix, level, way === 'left' ? 1 : -1).premultiply(hallMatrix);
+  }
+  return chamberMatrix.multiply(lift).multiply(FACE_DOWN);
 }
 
 function appendMark(target, cell, cells, width, height, matrix) {
@@ -134,12 +140,11 @@ export function buildSigns(room) {
     const basis = wallBasis(wall);
     hallTransform(hallMatrix, basis.nx, basis.nz, 0, 0, HALL_START);
     for (const way of ['ahead', 'left', 'right']) {
+      // The plaque over the entrance and the marking on the chamber's ceiling
+      // are one piece of lettering, used twice.
       const cell = tags.length;
       appendMark(target, cell, cells, PLAQUE_WIDTH, PLAQUE_HEIGHT, plaqueOver(way));
-      // Both readings of a side opening are one piece of lettering, used twice.
-      if (way !== 'ahead') {
-        appendMark(target, cell, cells, MARK_WIDTH, MARK_HEIGHT, ceilingBeyond(way, room.level));
-      }
+      appendMark(target, cell, cells, MARK_WIDTH, MARK_HEIGHT, ceilingBeyond(way, room.level, basis));
       const there = exits[way];
       tags.push(roomTagFor(there.q, there.r, there.level));
     }

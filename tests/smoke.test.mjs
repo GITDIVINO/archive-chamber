@@ -946,11 +946,11 @@ const signs = await page.evaluate(async () => {
 });
 
 assert.ok(!signs.error, signs.error ?? 'the ways out are named');
-assert.equal(signs.marks.length, 10, 'three plaques a passage, and a ceiling marking for each of its side openings');
+assert.equal(signs.marks.length, 12, 'a plaque and a ceiling marking for every way out of both passages');
 const flat = signs.marks.filter(mark => mark.lies < 1e-6);
 const upright = signs.marks.filter(mark => mark.lies >= 1e-6);
 assert.equal(upright.length, 6, 'every way out is named over its own entrance');
-assert.equal(flat.length, 4, 'and each side chamber carries the marking a built room paints on its ceiling');
+assert.equal(flat.length, 6, 'and every chamber beyond carries the marking a built room paints on its ceiling');
 assert.equal(signs.tags.length, 6, 'six ways on, each named once however many surfaces carry it');
 
 for (const [index, mark] of signs.marks.entries()) {
