@@ -878,14 +878,14 @@ assert.equal(
 assert.equal(place.afterTurning, true, 'turning aside is marked: it cannot be retraced');
 assert.equal(place.afterWalkingThrough, false, 'walking straight through can be, and is not marked');
 
-// --- every way out is named on the ceiling it leads to ------------------------
+// --- every way out is named exactly once -------------------------------------
 // A junction offers three identical openings onto three identical chambers.
-// What tells them apart is the marking overhead in each — the same one a built
-// room paints on its own ceiling — so a walker reads where a way leads by
-// looking into it. The chambers drawn beyond a doorway cannot paint it: that
-// builder is position-independent and does not know which chamber it stands in
-// for. Lettering has been built mirrored in this project before, and a flat
-// marking read from below is no easier to judge from a screenshot, so the
+// The way ahead is named over its entrance, on the beam at the end of the
+// passage, because that is what a walker down the corridor has in front of
+// them; the two at the sides are named on the ceiling of the chamber beyond,
+// because to choose one of those they turn and look into it. Lettering has been
+// built mirrored in this project before, and neither a plaque seen at an angle
+// nor a flat marking read from below is easy to judge from a screenshot, so the
 // winding and the texture coordinates are checked directly.
 const signs = await page.evaluate(async () => {
   const { moveToWorldHex, world } = await import('./src/world/rooms.js');
@@ -922,6 +922,10 @@ const signs = await page.evaluate(async () => {
       lies: Math.abs(origin.y - belowOrigin.y),
       height: origin.y,
       width: Math.hypot(across.x, across.y, across.z),
+      // A plaque hangs upright: its two upper corners are level with each other
+      // and above the lower pair.
+      hangs: origin.y - belowOrigin.y,
+      acrossIsLevel: Math.abs(across.y),
     });
   }
 
@@ -938,15 +942,31 @@ const signs = await page.evaluate(async () => {
 
 assert.ok(!signs.error, signs.error ?? 'the ways out are named');
 assert.equal(signs.marks.length, 6, 'two passages, three ways on from each');
+const flat = signs.marks.filter(mark => mark.lies < 1e-6);
+const upright = signs.marks.filter(mark => mark.lies >= 1e-6);
+assert.equal(flat.length, 4, 'the two side openings of each passage are named on a ceiling');
+assert.equal(upright.length, 2, 'and the way ahead over its own entrance');
+
 for (const [index, mark] of signs.marks.entries()) {
-  assert.ok(mark.facesDown !== 0, `marking ${index}: must lie flat with a face, not edge-on`);
   assert.ok(mark.textureTopIsUp > 0, `marking ${index}: the top of the label must be at the top of its cell`);
-  assert.ok(mark.lies < 1e-6, `marking ${index}: a ceiling marking lies flat`);
+}
+for (const mark of flat) {
+  // A marking that faced up would be invisible from the floor and perfectly
+  // correct seen from above, which no screenshot would catch.
+  assert.ok(mark.facesDown !== 0, 'a ceiling marking must have a face, not lie edge-on');
   assert.ok(
     Math.abs(mark.height - signs.ceiling) < 1e-6,
-    `marking ${index}: it belongs on the ceiling, found at ${mark.height}`,
+    `a ceiling marking belongs on the ceiling, found at ${mark.height}`,
   );
-  assert.ok(Math.abs(mark.width - 7.4) < 1e-6, `marking ${index}: the same plane a built room uses`);
+  assert.ok(Math.abs(mark.width - 7.4) < 1e-6, 'and on the same plane a built room uses');
+}
+for (const mark of upright) {
+  assert.ok(mark.hangs > 0, 'a plaque over an entrance must not hang upside down');
+  assert.ok(mark.acrossIsLevel < 1e-6, 'and its lettering must run level, not up the beam');
+  assert.ok(
+    mark.height > 2.4 && mark.height < 3.05,
+    `a plaque belongs on the beam over the entrance, found at ${mark.height}`,
+  );
 }
 assert.deepEqual(signs.tags, signs.said, 'each marking names the chamber its way out actually leads to');
 assert.ok(

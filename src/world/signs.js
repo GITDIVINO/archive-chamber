@@ -1,14 +1,19 @@
 /**
- * The name of every chamber a passage leads to, laid on that chamber's ceiling.
+ * The names of the ways out of a passage.
  *
  * A passage is a junction of four, and standing in the middle of one a walker
  * has three ways on with nothing to tell them apart: the openings are
- * identical, and so is every chamber behind them. What tells them apart is the
- * marking overhead in each — the same one a built room paints on its own
- * ceiling — so a walker reads where a way leads by looking into it, rather than
- * off a sign hung in the corridor.
+ * identical, and so is every chamber behind them.
  *
- * Those chambers cannot paint it themselves. The builder that draws them is
+ * Each is named once, in the place a walker is looking when they choose it. The
+ * way ahead is named over its entrance, on the beam at the end of the passage,
+ * because that is what somebody walking the corridor has in front of them. The
+ * two at the sides are named on the ceiling of the chamber beyond — the same
+ * marking a built room paints on its own — because to choose one of those a
+ * walker turns and looks into it. Naming either of them twice put two copies of
+ * one word in the same view, and neither could be read.
+ *
+ * Those chambers cannot paint their own. The builder that draws them is
  * deliberately position-independent — that is what lets a walker cross a
  * threshold without the corridor being rebuilt — so it does not know which
  * chamber it is standing in for. This module does: it is rebuilt with the room.
@@ -21,7 +26,14 @@
 import * as THREE from 'three';
 import { freeWallsForLevel } from '../../world-engine.js';
 import { roomTagFor } from '../../world-model.js';
-import { CHAMBER_STEP, HALL_START, WALL_HEIGHT } from '../constants.js';
+import {
+  HALL_LENGTH,
+  HALL_LINTEL_HEIGHT,
+  HALL_OPENING_HEIGHT,
+  HALL_START,
+  HALL_TRANSOM_DEPTH,
+  WALL_HEIGHT,
+} from '../constants.js';
 import { drawDraftedLabel, wallBasis } from './geometry.js';
 import { hallTransform } from './hall.js';
 import { passageExits } from './passage.js';
@@ -30,6 +42,13 @@ import { alcoveChamberMatrix } from './vista.js';
 // The same plane a built room uses for its own marking.
 const MARK_WIDTH = 7.4;
 const MARK_HEIGHT = 1.85;
+// The plaque over the far entrance, on the beam that crosses the end of the
+// passage. Kept to the same proportion as a ceiling marking so both can share
+// one canvas without either being stretched.
+const PLAQUE_WIDTH = 2.05;
+const PLAQUE_HEIGHT = PLAQUE_WIDTH * MARK_HEIGHT / MARK_WIDTH;
+const PLAQUE_Y = HALL_OPENING_HEIGHT + HALL_LINTEL_HEIGHT / 2;
+const PLAQUE_Z = HALL_LENGTH - HALL_TRANSOM_DEPTH - 0.012;
 const CELL_WIDTH = 640;
 const CELL_HEIGHT = Math.round(CELL_WIDTH * MARK_HEIGHT / MARK_WIDTH);
 
@@ -41,23 +60,28 @@ const lift = new THREE.Matrix4().makeTranslation(0, WALL_HEIGHT, 0);
 const FACE_DOWN = new THREE.Matrix4().makeRotationX(Math.PI / 2);
 const corner = new THREE.Vector3();
 
-/** The ceiling of the chamber behind one way out of a passage, in world space. */
-function ceilingOf(way, level, basis) {
+/** Where the name of one way out is written, in world space. */
+function surfaceOf(way, level) {
   if (way === 'ahead') {
-    chamberMatrix.makeTranslation(basis.nx * CHAMBER_STEP, 0, basis.nz * CHAMBER_STEP);
-  } else {
-    alcoveChamberMatrix(chamberMatrix, level, way === 'left' ? 1 : -1).premultiply(hallMatrix);
+    // Flat against the beam, facing back down the passage: turning a quad about
+    // y by pi sends its normal to -z, which is the way somebody arrives from.
+    return chamberMatrix.makeRotationY(Math.PI)
+      .setPosition(0, PLAQUE_Y, PLAQUE_Z)
+      .premultiply(hallMatrix);
   }
-  return chamberMatrix.multiply(lift).multiply(FACE_DOWN);
+  return alcoveChamberMatrix(chamberMatrix, level, way === 'left' ? 1 : -1)
+    .premultiply(hallMatrix)
+    .multiply(lift)
+    .multiply(FACE_DOWN);
 }
 
-function appendMark(target, cell, cells, matrix) {
+function appendMark(target, cell, cells, width, height, matrix) {
   // The canvas runs top to bottom and the texture bottom to top, so the first
   // cell is the highest strip.
   const top = 1 - cell / cells;
   const bottom = 1 - (cell + 1) / cells;
-  const halfWidth = MARK_WIDTH / 2;
-  const halfHeight = MARK_HEIGHT / 2;
+  const halfWidth = width / 2;
+  const halfHeight = height / 2;
   const base = target.positions.length / 3;
   for (const [x, y, u, v] of [
     [-halfWidth, halfHeight, 0, top],
@@ -73,10 +97,10 @@ function appendMark(target, cell, cells, matrix) {
 }
 
 /**
- * Marks the ceiling of every chamber the player's two passages lead to.
+ * Names every way out of the player's two passages.
  *
- * Six of them — three ways on from each passage — on one canvas and one mesh,
- * so the whole junction costs a single draw call.
+ * Six of them — three from each — on one canvas and one mesh, so the whole
+ * junction costs a single draw call.
  */
 export function buildSigns(room) {
   const walls = freeWallsForLevel(room.level);
@@ -89,7 +113,13 @@ export function buildSigns(room) {
     const basis = wallBasis(wall);
     hallTransform(hallMatrix, basis.nx, basis.nz, 0, 0, HALL_START);
     for (const way of ['ahead', 'left', 'right']) {
-      appendMark(target, tags.length, cells, ceilingOf(way, room.level, basis));
+      const ahead = way === 'ahead';
+      appendMark(
+        target, tags.length, cells,
+        ahead ? PLAQUE_WIDTH : MARK_WIDTH,
+        ahead ? PLAQUE_HEIGHT : MARK_HEIGHT,
+        surfaceOf(way, room.level),
+      );
       const there = exits[way];
       tags.push(roomTagFor(there.q, there.r, there.level));
     }
