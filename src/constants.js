@@ -36,11 +36,15 @@ export const DOOR_HALF_WIDTH = DOOR_WIDTH / 2;
 export const WALL_THICKNESS = 0.2;
 // The free walls are built deep, so a doorway is a short passage to walk
 // through rather than a hole to step over — the narrow hallway the story puts
-// between one gallery and the next. It cannot grow without limit: the passage
-// eats inward from the shared plane, and once its inner face drops near the
-// corners of the room the collision code can no longer tell a walker standing
-// in a corner from one standing in a threshold. At 1.2 the margin is 0.38.
+// between one gallery and the next.
 export const DOOR_WALL_THICKNESS = 1.2;
+// The extra depth is taken outward, never inward. Centred on the apothem like
+// a plain wall, a doorway this deep stood half a unit proud of its neighbours,
+// and at a hex corner that half unit has nowhere to go: it rode out in front of
+// the cabinet on the wall beside it. Pushed out by this much instead, both
+// walls share one inner face, the corner closes exactly, and the depth grows
+// into the space between chambers, which is empty and belongs to the passage.
+export const DOOR_WALL_OFFSET = (DOOR_WALL_THICKNESS - WALL_THICKNESS) / 2;
 
 // --- the passage -------------------------------------------------------------
 // Behind each doorway is a passage, and a passage is not in the hex plane: its
@@ -50,8 +54,10 @@ export const DOOR_WALL_THICKNESS = 1.2;
 // See src/world/passage.js for the topology this geometry serves.
 export const HALL_LENGTH = 15;
 export const HALL_HALF_WIDTH = DOOR_HALF_WIDTH;
-// The mouth of the passage: where the chamber's own deep doorway ends.
-export const HALL_START = APOTHEM + DOOR_WALL_THICKNESS / 2;
+// The mouth of the passage: where the chamber's own deep doorway ends. The
+// doorway begins flush with the room's other walls and is built outward from
+// there, so its outer face — and with it the passage — stands this far out.
+export const HALL_START = APOTHEM + DOOR_WALL_OFFSET + DOOR_WALL_THICKNESS / 2;
 export const HALL_END = HALL_START + HALL_LENGTH;
 export const HALL_SIDE_CENTRE = HALL_LENGTH / 2;
 export const HALL_SIDE_HALF = DOOR_HALF_WIDTH;
@@ -74,9 +80,10 @@ export const ALCOVE_REACH = HALL_HALF_WIDTH + ALCOVE_DEPTH;
 // place, and the same margin, at which the way ahead hands a walker over.
 export const SIDE_EXIT_REACH = ALCOVE_REACH + 0.05;
 // Both ends of a passage carry their own doorway rather than sharing one, so
-// two chambers on the corridor axis stand this far apart when drawn. Only when
+// two chambers on the corridor axis stand this far apart when drawn: a passage
+// between two mouths, and a mouth is HALL_START from each centre. Only when
 // drawn: on the map and in the placement they are still exactly neighbours.
-export const CHAMBER_STEP = 2 * APOTHEM + HALL_LENGTH + DOOR_WALL_THICKNESS;
+export const CHAMBER_STEP = 2 * HALL_START + HALL_LENGTH;
 
 // Sized so that a cabinet of five shelves stands on the floor and still ends
 // below the player's reach: at the old height the top shelf sat 2.63 away from

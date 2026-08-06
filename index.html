@@ -3,18 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>archive chamber</title>
+    <title>borges's dream</title>
     <link rel="stylesheet" href="style.css?v=design-polish-1" />
   </head>
   <body>
     <main id="ui">
       <section id="intro" class="panel" aria-live="polite">
+        <h1 class="game-title">borges's dream</h1>
         <p class="eyebrow">babylonian library · world w2</p>
         <p class="library-description">the catalogue contains every possible 410-page volume. the world repeats it without end.</p>
         <p id="startup-state" class="startup-state">locating archive…</p>
         <button id="start" type="button" disabled>enter the chamber</button>
         <p class="controls">wasd — move · mouse — look · e — read · f — search · r — register · shift — faster · m — sound</p>
         <p class="controls controls-touch">left half — move · right half — look · tap right — read · register — chambers entered · search — catalogue</p>
+        <p class="attribution">inspired by the library of babel by jorge luis borges, 1941. an independent work, not affiliated with or endorsed by the borges estate.</p>
       </section>
 
       <div id="reticle" aria-hidden="true">+</div>
@@ -28,7 +30,7 @@
           <button id="close-search" class="overlay-close" type="button">close</button>
         </header>
         <h2>find a fragment</h2>
-        <p class="overlay-copy">calculate one existing occurrence using exact lower-case letters, spaces, commas, and periods. spaces are part of the fragment.</p>
+        <p class="overlay-copy">calculate one existing occurrence. the library holds 29 signs in a single case — letters, spaces, commas, and periods — and nothing else can be typed here: anything else is dropped as it lands. spaces are part of the fragment.</p>
         <label for="search-input">text</label>
         <textarea id="search-input" maxlength="3200" spellcheck="false" autocomplete="off" autocapitalize="none" autocorrect="off"></textarea>
         <button id="search-submit" type="button">locate one occurrence</button>

@@ -22,7 +22,7 @@ import {
   PLAYER_BOUNDARY,
   PLAYER_RADIUS,
   SIDE_EXIT_REACH,
-  DOOR_WALL_THICKNESS,
+  WALL_THICKNESS,
 } from '../constants.js';
 import { wallBasis } from './geometry.js';
 
@@ -64,7 +64,7 @@ export function isWithinDoorway(index, level, x, z) {
 // the room, where a player is exactly boundary-far from both adjacent walls but
 // several units off to one side. It clamped that sideways offset to the width
 // of the opening and threw them bodily into the doorway.
-const DOOR_THRESHOLD_DEPTH = APOTHEM - DOOR_WALL_THICKNESS / 2;
+const DOOR_THRESHOLD_DEPTH = APOTHEM - WALL_THICKNESS / 2;
 
 /**
  * Keeps the player inside the room, letting them pass only where a doorway
@@ -118,11 +118,29 @@ function constrainToHall(position, hall) {
   const { basis, along, tangent } = hall;
   const atCrossing = Math.abs(along - HALL_SIDE_CENTRE) <= OPENING_CLEAR_HALF;
 
-  if (Math.abs(tangent) > HALL_HALF_WIDTH && atCrossing) {
-    // Down a side arm. Its own walls bound how far along the passage the walker
-    // may drift; sideways it is open at the far end, exactly as the passage is
-    // at both of its own, and the crossing there hands them to a chamber.
-    const offset = along - HALL_SIDE_CENTRE;
+  // Past the line of the passage wall, and level with the opening, there is
+  // only one place to be: a side arm. Its own two walls bound how far along the
+  // passage the walker may drift; sideways it is open at the far end, exactly
+  // as the passage is at both of its own, and the crossing there hands them to
+  // a chamber.
+  //
+  // The two questions are asked against different lines, and they have to be.
+  // Being in an arm is measured against the arm's own walls; being held off
+  // those walls is measured a body's radius inside them. Asked against the same
+  // line, each condition became the other's negation: the correction below
+  // could never run, and a walker who put a foot past it stopped counting as
+  // being in an arm at all — falling to the rule for the corridor, which
+  // measured them against a half-width of a metre and threw them the whole
+  // depth of the arm back into the passage. Hugging an arm's wall is exactly
+  // what sits a walker on that line, which is why it happened there and
+  // nowhere else.
+  //
+  // The gap between the two lines is one PLAYER_RADIUS, 0.28, and it cannot be
+  // stepped over: the fastest anybody moves is RUN_SPEED against a frame time
+  // held to 0.05, which is 0.275 in total and less than that along any one
+  // axis.
+  const offset = along - HALL_SIDE_CENTRE;
+  if (Math.abs(tangent) > HALL_HALF_WIDTH && Math.abs(offset) <= HALL_SIDE_HALF) {
     if (Math.abs(offset) > OPENING_CLEAR_HALF) {
       const correction = Math.sign(offset) * OPENING_CLEAR_HALF - offset;
       position.x += basis.nx * correction;

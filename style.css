@@ -42,6 +42,12 @@ canvas { display: block; filter: grayscale(.16) contrast(1.16); }
 .panel, #search-panel, #register-panel, #book-panel { background: var(--panel); border: 1px solid var(--line); box-shadow: 0 24px 90px #0002; backdrop-filter: blur(2px); }
 .panel { position: absolute; width: min(480px, calc(100vw - 42px)); left: 50%; top: 50%; padding: 34px 36px 30px; text-align: center; transform: translate(-50%, -50%); transition: opacity 220ms var(--ease-out), transform 220ms var(--ease-out); pointer-events: auto; font-family: "Courier New", monospace; }
 .panel.gone { opacity: 0; transform: translate(-50%, -47%); pointer-events: none; }
+/* The game's own name, in the same drafted hand as everything else. */
+.game-title { margin: 0 0 10px; color: var(--ink); font: 700 17px/1.2 "Courier New", monospace; letter-spacing: .13em; }
+/* What the work owes and what it does not claim. Set quietly, below the
+   controls: it belongs on the first screen, but it is not the first thing to
+   read there. */
+.attribution { max-width: 420px; margin: 22px auto 0; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font: 9px/1.6 "Courier New", monospace; letter-spacing: .04em; }
 .eyebrow { margin: 0 0 16px; color: #555; font: 700 10px/1.25 "Courier New", monospace; letter-spacing: .16em; }
 .library-description, .controls, .startup-state { margin: 0 auto; font: 10px/1.55 "Courier New", monospace; }
 .library-description { max-width: 420px; color: #333; letter-spacing: .08em; }

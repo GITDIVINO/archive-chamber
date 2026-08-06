@@ -895,7 +895,7 @@ assert.equal(place.afterWalkingThrough, false, 'walking straight through can be,
 const signs = await page.evaluate(async () => {
   const { moveToWorldHex, world } = await import('./src/world/rooms.js');
   const { renderedWorld } = await import('./src/core/view.js');
-  const { passageExits } = await import('./src/world/passage.js');
+  const { arrivalWallFor, passageExits } = await import('./src/world/passage.js');
   const { freeWallsForLevel } = await import('./world-engine.js');
   const { roomTagFor } = await import('./world-model.js');
   const { WALL_HEIGHT } = await import('./src/constants.js');
@@ -934,24 +934,47 @@ const signs = await page.evaluate(async () => {
     });
   }
 
+  // Two passages: four ways out of each, then the corridors running on from it
+  // — ahead, then down either arm.
+  //
+  // The arms are derived the long way round on purpose. signs.js carries them
+  // on by the passage's own wall; here they are carried on by where the walk
+  // actually goes, which is out of the doorway opposite the one arrivalWallFor
+  // hands the walker in by. The two must agree, and deriving them by one route
+  // and checking against the other is the only way that assertion means
+  // anything — a plaque naming the wrong chamber looks perfectly correct.
+  const NAMED_CORRIDOR_DEPTH = 2;
   const said = [];
   for (const wall of freeWallsForLevel(world.room.level)) {
     const exits = passageExits(world.room, wall);
-    for (const way of ['ahead', 'left', 'right']) {
+    for (const way of ['ahead', 'left', 'right', 'back']) {
       const there = exits[way];
       said.push(roomTagFor(there.q, there.r, there.level));
+    }
+    let ahead = exits.ahead;
+    for (let depth = 1; depth <= NAMED_CORRIDOR_DEPTH; depth++) {
+      ahead = passageExits(ahead, wall).ahead;
+      said.push(roomTagFor(ahead.q, ahead.r, ahead.level));
+    }
+    for (const exit of ['left', 'right']) {
+      let along = exits[exit];
+      const onward = (arrivalWallFor(along, world.room, world.room.level) + 3) % 6;
+      for (let depth = 1; depth <= NAMED_CORRIDOR_DEPTH; depth++) {
+        along = passageExits(along, onward).ahead;
+        said.push(roomTagFor(along.q, along.r, along.level));
+      }
     }
   }
   return { marks, said, tags: mesh.userData.plaques, ceiling: WALL_HEIGHT };
 });
 
 assert.ok(!signs.error, signs.error ?? 'the ways out are named');
-assert.equal(signs.marks.length, 12, 'a plaque and a ceiling marking for every way out of both passages');
+assert.equal(signs.marks.length, 26, 'a plaque for every way out of both passages and for the corridors beyond, and a ceiling marking for the three that lead onward');
 const flat = signs.marks.filter(mark => mark.lies < 1e-6);
 const upright = signs.marks.filter(mark => mark.lies >= 1e-6);
-assert.equal(upright.length, 6, 'every way out is named over its own entrance');
+assert.equal(upright.length, 20, 'every way out is named over its own entrance, including the one back and the corridors further along all three ways on');
 assert.equal(flat.length, 6, 'and every chamber beyond carries the marking a built room paints on its ceiling');
-assert.equal(signs.tags.length, 6, 'six ways on, each named once however many surfaces carry it');
+assert.equal(signs.tags.length, 20, 'twenty ways on, each named once however many surfaces carry it');
 
 for (const [index, mark] of signs.marks.entries()) {
   assert.ok(mark.textureTopIsUp > 0, `marking ${index}: the top of the label must be at the top of its cell`);

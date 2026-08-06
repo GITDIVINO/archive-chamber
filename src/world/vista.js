@@ -49,6 +49,7 @@ import {
   SPINE_WIDTH,
   ROOM_RADIUS,
   WALL_HEIGHT,
+  DOOR_WALL_OFFSET,
   DOOR_WALL_THICKNESS,
   WALL_THICKNESS,
   WALL_WIDTH,
@@ -96,6 +97,18 @@ const VISTA_DEPTH = 8;
 // Chambers this close still show individual volumes; past it a filled band is
 // indistinguishable and far cheaper. One nearer than before, because a chamber
 // two along is now twice as far off as it used to be.
+//
+// This bounds the volumes and nothing else. It used to bound the outlines with
+// them, and that was wrong for a reason that only shows when walking: the
+// corridor is built once and never moves, so a band of detail measured from it
+// is not measured from the walker. Crossing a threshold carries them one
+// CHAMBER_STEP along, and the same band that reached two chambers ahead of them
+// now reaches three — the far ones arriving with corners and doorways they did
+// not have a moment ago. A chamber with no arrises at all is not a cheaper
+// chamber in a white world, it is a different one, and the boundary read as
+// space being generated. Arrises are line segments in a buffer that is already
+// being built and they take the fog like everything else, so they are drawn to
+// the full depth and there is no boundary left to cross.
 const VISTA_DETAIL_DEPTH = 2;
 // The corridor runs along the axis shared by the two doorways, and that axis
 // turns with the level: what shows through a doorway on the floor above runs a
@@ -339,16 +352,19 @@ function addDistantDoorWall(batches, index, roomOffset, outlines = null) {
   const jambWidth = (WALL_WIDTH - DOOR_WIDTH) / 2;
   const jambOffset = (DOOR_WIDTH + jambWidth) / 2;
   const lintelHeight = WALL_HEIGHT - HALL_OPENING_HEIGHT;
+  // Seated outward from the wall line exactly as a built room seats it — see
+  // addDoorWall in room.js — so that crossing a threshold changes nothing.
+  const seat = -DOOR_WALL_OFFSET;
   for (const side of [-1, 1]) {
     addBox(batches, wallMaterial, [jambWidth, WALL_HEIGHT, DOOR_WALL_THICKNESS],
-      pointOnWall(basis, side * jambOffset, WALL_HEIGHT / 2), basis.rotation, null, roomOffset, null);
+      pointOnWall(basis, side * jambOffset, WALL_HEIGHT / 2, seat), basis.rotation, null, roomOffset, null);
   }
   addBox(batches, wallMaterial, [DOOR_WIDTH, lintelHeight, DOOR_WALL_THICKNESS],
-    pointOnWall(basis, 0, HALL_OPENING_HEIGHT + lintelHeight / 2), basis.rotation, null, roomOffset, null);
+    pointOnWall(basis, 0, HALL_OPENING_HEIGHT + lintelHeight / 2, seat), basis.rotation, null, roomOffset, null);
   if (!outlines) return;
   const half = WALL_WIDTH / 2;
   const opening = DOOR_WIDTH / 2;
-  drawOnWall(outlines, basis, roomOffset, DOOR_WALL_THICKNESS / 2, [
+  drawOnWall(outlines, basis, roomOffset, WALL_THICKNESS / 2, [
     [-half, WALL_HEIGHT, half, WALL_HEIGHT],
     [-half, 0, -half, WALL_HEIGHT],
     [half, 0, half, WALL_HEIGHT],
@@ -407,28 +423,40 @@ const alcoveMatrix = new THREE.Matrix4();
 const armMatrix = new THREE.Matrix4();
 
 /** One chamber of the corridor, placed by `roomOffset`. */
-function addTemplateChamber(batches, outlinePositions, labels, wallNumbers, level, roomOffset, detailed, seed) {
+/**
+ * One chamber of the corridor, placed by `roomOffset`.
+ *
+ * Outlining and separate volumes are two different questions and are asked
+ * separately. Every chamber is outlined however far off it is — see
+ * VISTA_DETAIL_DEPTH for why a chamber that gains its corners partway down a
+ * corridor is worse than one that never had them. Only near ones are worth
+ * their 640 individual volumes.
+ */
+function addTemplateChamber(batches, outlinePositions, labels, wallNumbers, level, roomOffset, separateVolumes, seed) {
   const doorWalls = freeWallsForLevel(level);
   addChamberSlab(batches, floorMaterial, roomOffset, -0.02, -Math.PI / 2);
   addChamberSlab(batches, ceilingMaterial, roomOffset, WALL_HEIGHT + 0.02, Math.PI / 2);
-  const drawn = detailed ? outlinePositions : null;
   for (const index of bookWallsForLevel(level)) {
-    addDistantBookWall(batches, outlinePositions, labels, wallNumbers, level, index, roomOffset, detailed, seed);
+    addDistantBookWall(batches, outlinePositions, labels, wallNumbers, level, index, roomOffset, separateVolumes, seed);
   }
-  for (const index of doorWalls) addDistantDoorWall(batches, index, roomOffset, drawn);
+  for (const index of doorWalls) addDistantDoorWall(batches, index, roomOffset, outlinePositions);
   for (let index = 0; index < 6; index++) {
-    if (!doorWalls.includes(index)) addSolidWall(batches, index, roomOffset, drawn);
+    if (!doorWalls.includes(index)) addSolidWall(batches, index, roomOffset, outlinePositions);
   }
-  if (detailed) addChamberArrises(outlinePositions, roomOffset);
+  addChamberArrises(outlinePositions, roomOffset);
 }
 
-// How far the view down a side arm carries. The arms are the same corridor as
-// any other and must recede the same way — a walker who turns and sees one
-// chamber with a wall behind it has been told the world ends there. An arm
-// starts further out than the main run does and a walker can go seven and a
-// half units down one, so six of them put the worst case at 198 units, where
-// the fog has closed 97%.
-const ARM_DEPTH = 6;
+// How far the view down a side arm carries, and how much of it carries volumes.
+//
+// Both are the main run's own figures, and they have to be. Standing at a
+// crossing a walker has ways on that are the same kind of thing in every
+// direction — the topology says so and the plaques say so — and the only thing
+// that ever contradicted it was how much of each had been built. An arm eight
+// chambers deep beside a run of eight reads as the same corridor turned; an arm
+// of six beside a run of eight reads as a shallower place, and that is legible
+// from the crossing long before any name on a wall is.
+const ARM_DEPTH = VISTA_DEPTH;
+const ARM_DETAIL_DEPTH = VISTA_DETAIL_DEPTH;
 
 /**
  * The corridor that runs out along each arm of a crossing.
@@ -449,14 +477,14 @@ function addArms(batches, outlinePositions, labels, wallNumbers, level, hallMatr
       armMatrix.makeTranslation(basis.nx * out, 0, basis.nz * out).premultiply(alcoveMatrix);
       addTemplateChamber(
         batches, outlinePositions, labels, wallNumbers, level, armMatrix,
-        step === 0, doorWalls[0] + step,
+        step <= ARM_DETAIL_DEPTH, doorWalls[0] + step,
       );
       if (step === ARM_DEPTH) continue;
       hallTransform(
         armMatrix, -basis.nx, -basis.nz,
         basis.nx * out, basis.nz * out, HALL_START,
       ).premultiply(alcoveMatrix);
-      appendHall(batches, step === 0 ? outlinePositions : null, armMatrix, false);
+      appendHall(batches, outlinePositions, armMatrix, false);
     }
   }
 }
@@ -493,10 +521,10 @@ export function buildVista(level) {
     for (const index of shelvedWalls) {
       addDistantBookWall(batches, outlinePositions, labels, wallNumbers, level, index, offsetMatrix, separateVolumes, roomSeed);
     }
-    if (separateVolumes) addChamberArrises(outlinePositions, offsetMatrix);
+    addChamberArrises(outlinePositions, offsetMatrix);
     // Both door walls now, one at each end: with a passage between them the
     // chambers no longer share a wall, so nothing is drawn twice.
-    const drawn = separateVolumes ? outlinePositions : null;
+    const drawn = outlinePositions;
     for (const index of doorWalls) addDistantDoorWall(batches, index, offsetMatrix, drawn);
     // Every wall that is not a doorway, shelved or not. A cabinet stands in
     // front of its wall rather than instead of it: without one behind them the
@@ -507,16 +535,17 @@ export function buildVista(level) {
     }
   }
 
-  // A passage in every gap, including the two the player can walk into. Their
-  // arrises are worth drawing only while the alcoves are still legible, and
-  // only those two get a chamber built behind each side opening: a walker can
-  // reach no others, and four full hexagons is already the price of the whole
-  // corridor again.
+  // A passage in every gap, including the two the player can walk into. Every
+  // one of them is outlined, for the same reason every chamber is: a passage
+  // that gained its arrises as the walker stepped through a doorway announced
+  // the step. Only the two they can stand in get a chamber built behind each
+  // side opening — a walker can reach no others, and four full hexagons is
+  // already the price of the whole corridor again.
   for (let n = -VISTA_DEPTH; n < VISTA_DEPTH; n++) {
     const base = CHAMBER_STEP * n;
     const walkable = n === 0 || n === -1;
     hallTransform(offsetMatrix, axis.x, axis.z, axis.x * base, axis.z * base, HALL_START);
-    appendHall(batches, Math.abs(n) <= VISTA_DETAIL_DEPTH ? outlinePositions : null, offsetMatrix, walkable);
+    appendHall(batches, outlinePositions, offsetMatrix, walkable);
     if (walkable) addArms(batches, outlinePositions, labels, wallNumbers, level, offsetMatrix);
   }
 

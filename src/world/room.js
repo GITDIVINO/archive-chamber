@@ -40,6 +40,7 @@ import {
   SPINE_HEIGHT,
   SPINE_WIDTH,
   WALL_HEIGHT,
+  DOOR_WALL_OFFSET,
   DOOR_WALL_THICKNESS,
   WALL_THICKNESS,
   WALL_WIDTH,
@@ -263,12 +264,17 @@ function addDoorWall(room, index) {
   // it was looked at from the chamber side.
   const lintelHeight = WALL_HEIGHT - HALL_OPENING_HEIGHT;
   const plain = { outlined: false };
+  // Built outward from the room's own wall line rather than centred on it, so
+  // that its inner face is the same face every other wall presents and the
+  // corner it shares with the cabinet beside it closes flush. See
+  // DOOR_WALL_OFFSET in constants.js.
+  const seat = -DOOR_WALL_OFFSET;
   for (const side of [-1, 1]) {
     addBox(
       room,
       wallMaterial,
       [jambWidth, WALL_HEIGHT, DOOR_WALL_THICKNESS],
-      pointOnWall(basis, side * jambOffset, WALL_HEIGHT / 2),
+      pointOnWall(basis, side * jambOffset, WALL_HEIGHT / 2, seat),
       basis.rotation,
       null,
       plain,
@@ -278,7 +284,7 @@ function addDoorWall(room, index) {
     room,
     wallMaterial,
     [DOOR_WIDTH, lintelHeight, DOOR_WALL_THICKNESS],
-    pointOnWall(basis, 0, HALL_OPENING_HEIGHT + lintelHeight / 2),
+    pointOnWall(basis, 0, HALL_OPENING_HEIGHT + lintelHeight / 2, seat),
     basis.rotation,
     null,
     plain,
@@ -286,7 +292,8 @@ function addDoorWall(room, index) {
 
   const half = WALL_WIDTH / 2;
   const opening = DOOR_WIDTH / 2;
-  drawOnWall(room.userData.outlinePositions, basis, DOOR_WALL_THICKNESS / 2, [
+  // The face this wall shows the room is now the plain walls' own face.
+  drawOnWall(room.userData.outlinePositions, basis, WALL_THICKNESS / 2, [
     // the wall itself
     [-half, WALL_HEIGHT, half, WALL_HEIGHT],
     [-half, 0, -half, WALL_HEIGHT],
@@ -697,10 +704,10 @@ const TALLY_HEIGHT = 1.34;
 const TALLY_STROKE = 0.015;
 const TALLY_LENGTH = 0.15;
 const TALLY_GAP = 0.036;
-// A tally is always beside a doorway, and a doorway wall is built deep, so its
-// visible face is half that thickness in from the wall plane — scratching at
-// the plane itself would bury the marks inside the jamb.
-const TALLY_FACE = DOOR_WALL_THICKNESS / 2 + 0.004;
+// A tally is always beside a doorway, and a doorway wall now shows the room the
+// same face every other wall does — scratching at the wall plane itself would
+// bury the marks inside the jamb.
+const TALLY_FACE = WALL_THICKNESS / 2 + 0.004;
 function addTally(room, tally) {
   const basis = wallBasis(tally.wall);
   const shade = () => 0.16;

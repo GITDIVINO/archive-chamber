@@ -65,8 +65,20 @@ export const ceilingMaterial = pencilMaterial(paperTexture, 0xd8d8d4);
 export const shelfMaterial = shadedMaterial(woodTexture);
 export const trimMaterial = shadedMaterial(graphiteTexture);
 export const wallMaterial = shadedMaterial(paperTexture, 0xdfdfdb);
-export const outlineMaterial = new THREE.LineBasicMaterial({ color: 0x141414, transparent: true, opacity: 0.82 });
-export const roomLineMaterial = new THREE.LineBasicMaterial({ color: 0x242424, transparent: true, opacity: 0.7 });
+// An arris is drawn, not inked. At near-black the lines read as a border round
+// every surface — a drawn outline of a room rather than the room itself — and
+// in a passage, where the same few edges converge and repeat down the whole
+// corridor, they were the loudest thing in view. Taken to graphite and let down
+// in opacity, they do the one job they are actually for: telling a white wall
+// from a white ceiling. They cannot go further than this. The world is white on
+// white and these edges are the only thing separating one surface from another;
+// without them a chamber is a set of shelves floating in a pale field, which is
+// exactly what it looked like the one time they were dropped.
+export const outlineMaterial = new THREE.LineBasicMaterial({ color: 0x6f6f6a, transparent: true, opacity: 0.55 });
+// The six vertical corners of the hexagon, and most of what says "hexagon" at
+// all. Kept a touch lighter still: they are long, they run the full height, and
+// they are the lines a walker sees edge-on from every position in the room.
+export const roomLineMaterial = new THREE.LineBasicMaterial({ color: 0x7c7c77, transparent: true, opacity: 0.5 });
 
 // Volumes are instanced per texture, so this array also defines how many
 // instanced draw calls a wall of books costs. The shared box geometry carries

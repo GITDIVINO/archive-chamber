@@ -1,6 +1,7 @@
 {
-  "name": "archive-chamber-prototype",
+  "name": "borges-dream",
   "private": true,
+  "description": "Сон Борхеса — a first-person library of every possible book. Inspired by Jorge Luis Borges's The Library of Babel (1941); an independent work, not affiliated with or endorsed by the Borges estate.",
   "type": "module",
   "scripts": {
     "start": "python3 launch.py",
