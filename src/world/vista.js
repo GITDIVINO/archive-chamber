@@ -1,13 +1,10 @@
 /**
  * The view through the doorways, and the passages themselves.
  *
- * Only the player's own hex is ever built in full. What lies beyond a doorway
- * is this: passage, chamber, passage, chamber, repeated down the corridor axis
- * and stripped to the shapes that still read at distance — carcase, shelf
- * ledges, and volumes. Nothing here is looked up in the catalogue: spines carry
- * stand-in markings from a fixed set, not titles, because a title is a smudge
- * by the second room and these chambers exist only to be seen through a
- * doorway. The books a player can actually open are built when they walk in.
+ * The player's chamber and its six horizontal neighbours are exact room
+ * objects owned by rooms.js. This module owns only the two walkable passages
+ * attached to the current room and the vertically repeated shaft that can be
+ * seen through the open floor and ceiling.
  *
  * The passages the player walks through are these same passages. A chamber's
  * two free walls face each other, so both of its passages lie on this axis and
@@ -15,109 +12,128 @@
  * into one, and crossing a threshold leaves the view untouched, which is the
  * whole point.
  *
- * The arms of their crossings run off the axis, and a corridor runs out along
- * each of those too. A walker who turns at a crossing and sees one chamber with
- * a wall behind it has been told the world ends there; it does not, in that
- * direction any more than in this one.
- *
- * The horror is meant to be that it is not a trick: those rooms genuinely
- * exist, hold their own 640 volumes, and can be walked to one threshold at a
- * time.
+ * Vertical rooms repeat the same silhouette with a deliberately sparse book
+ * rhythm and balustrade. They are never used behind a horizontal doorway, so
+ * crossing a corridor threshold cannot swap between two levels of detail.
  */
 
 import * as THREE from 'three';
 import { SHELVES_PER_WALL, VOLUMES_PER_SHELF } from '../../babel-v3.js';
-import { bookWallsForLevel, canonicalWallForWallIndex, freeWallsForLevel } from '../../world-engine.js';
+import { bookWallsForLevel, freeWallsForLevel } from '../../world-engine.js';
 import { WALL_DIRECTIONS } from '../../world-model.js';
 import {
   BOOK_DEPTH,
   BOOK_FRONT_Z,
   BOOK_HEIGHT,
-  BOOK_STEP,
-  BOOK_WIDTH,
+  CABINET_RUN_WIDTH,
+  CABINET_SECTIONS_PER_WALL,
   CABINET_POST_WIDTH,
-  CABINET_WIDTH,
-  ALCOVE_REACH,
   CHAMBER_STEP,
+  DOOR_HEIGHT,
   HALL_OPENING_HEIGHT,
-  HALL_SIDE_CENTRE,
+  HALL_HALF_WIDTH,
+  HALL_LENGTH,
   HALL_START,
   DOOR_WIDTH,
   SHELF_BASE_Y,
   SHELF_PITCH,
-  SPINE_HEIGHT,
-  SPINE_WIDTH,
   ROOM_RADIUS,
   WALL_HEIGHT,
   DOOR_WALL_OFFSET,
   DOOR_WALL_THICKNESS,
   WALL_THICKNESS,
   WALL_WIDTH,
+  WELL_RADIUS,
+  WELL_SLAB_THICKNESS,
 } from '../constants.js';
-import { ceilingMaterial, floorMaterial, outlineMaterial, shelfMaterial, trimMaterial, wallMaterial } from '../core/materials.js';
+import {
+  bookMaterials,
+  dustMaterial,
+  distantFixtureMaterial,
+  lampMaterial,
+  metalMaterial,
+  shelfMaterial,
+  vistaCeilingMaterial,
+  vistaFloorMaterial,
+  vistaOutlineMaterial,
+  wallMaterial,
+} from '../core/materials.js';
 import { appendMergedEdges, appendMergedGeometry, axialMapOffset, boxGeometryFor, mergedMesh, pointOnWall, wallBasis } from './geometry.js';
+const SHELVED_WALLS = 4;
 import { appendHall, hallTransform } from './hall.js';
 import {
   PLINTH_HEIGHT,
-  addCarcaseOutline,
-  addShelfEdge,
-  addWallNumber,
-  wallNumberMaterial,
+  CABINET_WALL_INSET,
+  CABINET_BOOK_STEP,
+  CABINET_SECTION_PITCH,
+  CABINET_UPRIGHTS_PER_WALL,
   CARCASE_BACK_THICKNESS,
   CARCASE_BACK_Z,
   CARCASE_CENTRE_Y,
   CARCASE_CENTRE_Z,
   CARCASE_DEPTH,
   CARCASE_HEIGHT,
+  bookGeometry,
   RAIL_THICKNESS,
   SHELF_CENTRE_Z,
   SHELF_DEPTH,
   SHELF_SURFACE_OFFSET,
   SHELF_THICKNESS,
+  WALL_CORNICE_BANDS,
+  WALL_PILASTER_WIDTH,
   nicheShade,
   shelfBoardShade,
 } from './room.js';
+import {
+  WELL_BALUSTRADE_PARTS,
+  WELL_BRIDGE_PARTS,
+  WELL_LANTERN_POSITIONS,
+  WELL_LIP_PARTS,
+  WELL_STAIR_LANTERNS,
+  WELL_STAIR_PARTS,
+} from './well.js';
 
-// How many chambers are built in each direction.
-//
-// The corridor is drawn once and never moves: crossing a threshold rebuilds the
-// chamber at the origin and carries the walker back one CHAMBER_STEP, so they
-// oscillate over a range of about thirty-two units and the geometry around them
-// is periodic with exactly that period. Everything they see is therefore
-// identical before and after a crossing — everything except the two ends, where
-// the periodicity has to stop. At each crossing the far end springs one step
-// away and the near end one step closer, and if either is still legible that
-// shows as a chamber quietly appearing behind them.
-//
-// So the depth is set from the worst case rather than from the average. The
-// closest an end ever comes is its distance less the twenty-three units a
-// walker can travel down a passage. Eight chambers reach 253, so the worst is
-// 230, where fog at 0.0095 has closed 99.2% — nothing left to appear.
-const VISTA_DEPTH = 8;
-// Chambers this close still show individual volumes; past it a filled band is
-// indistinguishable and far cheaper. One nearer than before, because a chamber
-// two along is now twice as far off as it used to be.
-//
-// This bounds the volumes and nothing else. It used to bound the outlines with
-// them, and that was wrong for a reason that only shows when walking: the
-// corridor is built once and never moves, so a band of detail measured from it
-// is not measured from the walker. Crossing a threshold carries them one
-// CHAMBER_STEP along, and the same band that reached two chambers ahead of them
-// now reaches three — the far ones arriving with corners and doorways they did
-// not have a moment ago. A chamber with no arrises at all is not a cheaper
-// chamber in a white world, it is a different one, and the boundary read as
-// space being generated. Arrises are line segments in a buffer that is already
-// being built and they take the fog like everything else, so they are drawn to
-// the full depth and there is no boundary left to cross.
-const VISTA_DETAIL_DEPTH = 2;
+// Looking straight up or down exposes a column of chambers. Twenty-eight in
+// either direction reaches 134 metres; the existing fog has erased the last
+// few before geometry ends, so the stack has no visible cap. Unlike the
+// horizontal vista these rooms need no individual volumes: from one floor away
+// a shelf band and its ruled edges already read as a wall of books.
+// Fourteen, not twenty-eight. A storey is three times taller now, so fourteen
+// floors reach 202 units — past the distance the fog has already erased and
+// inside the 320 far plane. Keeping twenty-eight would build 400 units of
+// chamber, half of it invisible, at twice the cost.
+export const VERTICAL_VISTA_DEPTH = 14;
 // The corridor runs along the axis shared by the two doorways, and that axis
 // turns with the level: what shows through a doorway on the floor above runs a
 // different way, which is the whole reason a stair is worth climbing.
 
 const localMatrix = new THREE.Matrix4();
 const worldMatrix = new THREE.Matrix4();
+const tiltMatrix = new THREE.Matrix4();
 const offsetMatrix = new THREE.Matrix4();
-const outlineCorner = new THREE.Vector3();
+const verticalHallMatrix = new THREE.Matrix4();
+const sectionFrame = new THREE.Matrix4();
+const volumeMatrix = new THREE.Matrix4();
+const VISTA_SURFACE_MATERIALS = Object.freeze({
+  floor: vistaFloorMaterial,
+  ceiling: vistaCeilingMaterial,
+});
+
+function finishVistaGeometry(group, batches, outlinePositions) {
+  for (const batch of batches.values()) {
+    const mesh = mergedMesh(batch, batch.material);
+    // Never picked and never walked into; it exists only to be looked at.
+    mesh.raycast = () => {};
+    group.add(mesh);
+  }
+  if (!outlinePositions.length) return;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(outlinePositions, 3));
+  const outlines = new THREE.LineSegments(geometry, vistaOutlineMaterial);
+  outlines.renderOrder = 2;
+  outlines.raycast = () => {};
+  group.add(outlines);
+}
 
 function batchFor(batches, material) {
   let batch = batches.get(material);
@@ -128,9 +144,11 @@ function batchFor(batches, material) {
   return batch;
 }
 
-function addBox(batches, material, size, position, rotation, parentMatrix, roomOffset, shade, outlines = null) {
+function addBox(batches, material, size, position, rotation, parentMatrix, roomOffset, shade, outlines = null, rotationZ = 0) {
   const entry = boxGeometryFor(size[0], size[1], size[2]);
-  localMatrix.makeRotationY(rotation).setPosition(position.x, position.y, position.z);
+  localMatrix.makeRotationY(rotation);
+  if (rotationZ) localMatrix.multiply(tiltMatrix.makeRotationZ(rotationZ));
+  localMatrix.setPosition(position.x, position.y, position.z);
   worldMatrix.copy(localMatrix);
   if (parentMatrix) worldMatrix.premultiply(parentMatrix);
   worldMatrix.premultiply(roomOffset);
@@ -148,188 +166,140 @@ function addBox(batches, material, size, position, rotation, parentMatrix, roomO
 // Each sits a hair below the passage's own floor and above its ceiling, so
 // wherever the two meet the passage wins and nothing is coplanar.
 function addChamberSlab(batches, material, roomOffset, y, rotationX) {
-  const geometry = new THREE.CircleGeometry(ROOM_RADIUS, 6);
+  const geometry = new THREE.RingGeometry(WELL_RADIUS, ROOM_RADIUS, 6);
   worldMatrix.makeRotationX(rotationX).setPosition(0, y, 0).premultiply(roomOffset);
   appendMergedGeometry(batchFor(batches, material), geometry, worldMatrix);
   geometry.dispose();
 }
 
-// A volume through a doorway, toned like a real spine: the shelf above shadows
-// its head. What actually makes a row read as books, though, is the shadowed
-// gap between one volume and the next.
-function volumeShade(bottomY) {
-  return local => THREE.MathUtils.lerp(1.02, 0.66, THREE.MathUtils.clamp((local.y - bottomY) / BOOK_HEIGHT, 0, 1));
-}
-
-// Volumes are placed on the same grid the real room uses, but none of them is
-// a particular book: no catalogue index is computed and no title is read.
-function addDistantVolumes(batches, outlinePositions, labels, seed, shelfY, frame, roomOffset) {
-  const bottomY = shelfY + SHELF_SURFACE_OFFSET;
-  const shade = volumeShade(bottomY);
-  const centreY = bottomY + BOOK_HEIGHT / 2;
-  const centreZ = BOOK_FRONT_Z + BOOK_DEPTH / 2;
-  const halfWidth = BOOK_WIDTH / 2;
-  const faceZ = BOOK_FRONT_Z;
-  for (let volumeIndex = 0; volumeIndex < VOLUMES_PER_SHELF; volumeIndex++) {
-    const x = -((VOLUMES_PER_SHELF - 1) * BOOK_STEP) / 2 + volumeIndex * BOOK_STEP;
-    addBox(batches, trimMaterial, [BOOK_WIDTH, BOOK_HEIGHT, BOOK_DEPTH],
-      new THREE.Vector3(x, centreY, centreZ), 0, frame, roomOffset, shade);
-    // The 30mm gap between neighbours is barely a pixel from the next chamber,
-    // so tone alone left the row a blank slab. Drawing each spine's front face
-    // is what separates them, exactly as it does in the room the player is in.
-    const corners = [
-      [x - halfWidth, bottomY],
-      [x + halfWidth, bottomY],
-      [x + halfWidth, bottomY + BOOK_HEIGHT],
-      [x - halfWidth, bottomY + BOOK_HEIGHT],
-    ];
-    for (let corner = 0; corner < corners.length; corner++) {
-      for (const [cornerX, cornerY] of [corners[corner], corners[(corner + 1) % corners.length]]) {
-        outlineCorner.set(cornerX, cornerY, faceZ).applyMatrix4(frame).applyMatrix4(roomOffset);
-        outlinePositions.push(outlineCorner.x, outlineCorner.y, outlineCorner.z);
-      }
-    }
-    // Cycled by position so neighbours never share a marking, which would make
-    // the repetition look like a texture rather than a shelf.
-    const cell = (seed + volumeIndex * 3) % SPINE_TEMPLATES.length;
-    addSpineTemplate(labels, cell, x, centreY, frame, roomOffset);
+function addDistantBalustrade(batches, outlinePositions, roomOffset, simplified = false) {
+  for (const part of WELL_BALUSTRADE_PARTS) {
+    // At vertical vista distance the thin balusters collapse into a grey block
+    // and account for most of the shaft geometry. Keep the two continuous rails
+    // and the six corner posts; they preserve the exact hex without thousands
+    // of sub-pixel boxes.
+    if (simplified && part.size[0] < 0.08 && part.size[2] < 0.08) continue;
+    addBox(
+      batches,
+      metalMaterial,
+      part.size,
+      part.position,
+      part.rotation,
+      null,
+      roomOffset,
+      null,
+      null,
+    );
+  }
+  for (const part of WELL_LIP_PARTS) {
+    addBox(
+      batches,
+      wallMaterial,
+      part.size,
+      part.position,
+      part.rotation,
+      null,
+      roomOffset,
+      null,
+      null,
+    );
   }
 }
 
-// One wall of shelving. Far off it is reduced to what survives the distance:
-// the carcase, the ledges, and a band for its volumes. Near to — the chambers a
-// walker can see through a doorway they are about to cross — it carries the
-// same plinth, arrises, shelf edges and wall numeral the real thing does, so
-// that stepping over the threshold changes nothing that can be seen. The one
-// thing it cannot carry is the true titles: those need 640 catalogue lookups
-// against a room this builder does not know, and at nine units a spine is three
-// pixels wide.
-function addDistantBookWall(batches, outlinePositions, labels, wallNumbers, level, index, roomOffset, detailed, roomSeed) {
-  const basis = wallBasis(index);
-  const frameOffset = pointOnWall(basis, 0, 0, 0.28);
-  const frame = new THREE.Matrix4().makeRotationY(basis.rotation)
-    .setPosition(frameOffset.x, frameOffset.y, frameOffset.z);
-  const postOffset = (CABINET_WIDTH - CABINET_POST_WIDTH) / 2;
-  const postHeight = CARCASE_HEIGHT - 2 * RAIL_THICKNESS;
+// The real passage has a finite topological length, but a visible background
+// immediately behind its far mouth reads as a coloured panel. For stacked
+// floors only, continue its four surfaces far enough into the shared fog that
+// the opening remains a corridor without spawning another chamber there.
+const VERTICAL_TUNNEL_EXTENSION = 42;
+const tunnelPoint = new THREE.Vector3();
+function addTunnelLine(outlines, matrix, from, to) {
+  if (!outlines) return;
+  for (const point of [from, to]) {
+    tunnelPoint.set(point[0], point[1], point[2]).applyMatrix4(matrix);
+    outlines.push(tunnelPoint.x, tunnelPoint.y, tunnelPoint.z);
+  }
+}
 
-  // The base runs solid from the floor to the underside of the lowest board,
-  // exactly as it does in a built room: as a thin rail it left a void beneath
-  // that board and the foot of the case read as three stacked pieces.
-  addBox(batches, shelfMaterial, [CABINET_WIDTH, PLINTH_HEIGHT, CARCASE_DEPTH],
-    new THREE.Vector3(0, PLINTH_HEIGHT / 2, CARCASE_CENTRE_Z), 0, frame, roomOffset, nicheShade);
-  addBox(batches, shelfMaterial, [CABINET_WIDTH, RAIL_THICKNESS, CARCASE_DEPTH],
-    new THREE.Vector3(0, CARCASE_HEIGHT - RAIL_THICKNESS / 2, CARCASE_CENTRE_Z), 0, frame, roomOffset,
-    shelfBoardShade(CARCASE_HEIGHT - RAIL_THICKNESS / 2));
+function addVistaTunnel(batches, outlines, matrix, length, start = 0) {
+  const centre = start + length / 2;
+  const slab = 0.12;
+  addBox(batches, vistaFloorMaterial, [2 * HALL_HALF_WIDTH, slab, length],
+    new THREE.Vector3(0, -slab / 2, centre), 0, null, matrix, null);
+  addBox(batches, vistaCeilingMaterial, [2 * HALL_HALF_WIDTH, slab, length],
+    new THREE.Vector3(0, DOOR_HEIGHT + slab / 2, centre), 0, null, matrix, null);
   for (const side of [-1, 1]) {
+    addBox(batches, wallMaterial, [WALL_THICKNESS, DOOR_HEIGHT, length],
+      new THREE.Vector3(
+        side * (HALL_HALF_WIDTH + WALL_THICKNESS / 2),
+        DOOR_HEIGHT / 2,
+        centre,
+      ), 0, null, matrix, null);
+    const face = side * HALL_HALF_WIDTH;
+    addTunnelLine(outlines, matrix, [face, 0, start], [face, 0, start + length]);
+    addTunnelLine(outlines, matrix, [face, DOOR_HEIGHT, start], [face, DOOR_HEIGHT, start + length]);
+  }
+}
+
+
+// One wall of shelving in the vertical shaft. Horizontal neighbours never use
+// this representation; they are exact portal rooms. That separation makes
+// this deliberately cheap LOD safe: it cannot appear at a corridor threshold.
+function addDistantBookWall(batches, volumes, index, roomOffset) {
+  const basis = wallBasis(index);
+  const postHeight = CARCASE_HEIGHT - 2 * RAIL_THICKNESS;
+  const runOffset = pointOnWall(basis, 0, 0, CABINET_WALL_INSET);
+  const runFrame = new THREE.Matrix4().makeRotationY(basis.rotation)
+    .setPosition(runOffset.x, runOffset.y, runOffset.z);
+
+  // The active and distant rooms share one architectural rule: one continuous
+  // built-in bookcase from corner to corner. Sections divide the books and
+  // their addresses, never the wall itself.
+  addBox(batches, shelfMaterial, [CABINET_RUN_WIDTH, PLINTH_HEIGHT, CARCASE_DEPTH],
+    new THREE.Vector3(0, PLINTH_HEIGHT / 2, CARCASE_CENTRE_Z), 0, runFrame, roomOffset, nicheShade);
+  const headRailY = CARCASE_HEIGHT - RAIL_THICKNESS / 2;
+  addBox(batches, shelfMaterial, [CABINET_RUN_WIDTH, RAIL_THICKNESS, CARCASE_DEPTH],
+    new THREE.Vector3(0, headRailY, CARCASE_CENTRE_Z), 0, runFrame, roomOffset,
+    shelfBoardShade(headRailY));
+  addBox(batches, shelfMaterial, [CABINET_RUN_WIDTH, CARCASE_HEIGHT, CARCASE_BACK_THICKNESS],
+    new THREE.Vector3(0, CARCASE_CENTRE_Y, CARCASE_BACK_Z), 0, runFrame, roomOffset, nicheShade);
+
+  const outerPost = (CABINET_RUN_WIDTH - CABINET_POST_WIDTH) / 2;
+  for (const x of [-outerPost, outerPost]) {
     addBox(batches, shelfMaterial, [CABINET_POST_WIDTH, postHeight, CARCASE_DEPTH],
-      new THREE.Vector3(side * postOffset, CARCASE_CENTRE_Y, CARCASE_CENTRE_Z), 0, frame, roomOffset, nicheShade);
-  }
-  addBox(batches, shelfMaterial, [CABINET_WIDTH, CARCASE_HEIGHT, CARCASE_BACK_THICKNESS],
-    new THREE.Vector3(0, CARCASE_CENTRE_Y, CARCASE_BACK_Z), 0, frame, roomOffset, nicheShade);
-
-  // The whole cabinet is drawn in one frame, so the outline helpers take the
-  // room's transform folded into the wall's.
-  const drawn = detailed ? new THREE.Matrix4().multiplyMatrices(roomOffset, frame) : null;
-  if (drawn) {
-    addCarcaseOutline(outlinePositions, drawn);
-    addWallNumber(wallNumbers, canonicalWallForWallIndex(level, index), drawn);
+      new THREE.Vector3(x, CARCASE_CENTRE_Y, CARCASE_CENTRE_Z), 0, runFrame, roomOffset, nicheShade);
   }
 
-  const bandWidth = VOLUMES_PER_SHELF * BOOK_STEP;
   for (let shelfIndex = 0; shelfIndex < SHELVES_PER_WALL; shelfIndex++) {
     const shelfY = SHELF_BASE_Y + shelfIndex * SHELF_PITCH;
-    addBox(batches, shelfMaterial, [CABINET_WIDTH, SHELF_THICKNESS, SHELF_DEPTH],
-      new THREE.Vector3(0, shelfY, SHELF_CENTRE_Z), 0, frame, roomOffset, shelfBoardShade(shelfY));
-    if (drawn) {
-      addShelfEdge(outlinePositions, drawn, shelfY);
-      addDistantVolumes(batches, outlinePositions, labels, roomSeed + index * 5 + shelfIndex * 2, shelfY, frame, roomOffset);
-      continue;
+    addBox(batches, shelfMaterial, [CABINET_RUN_WIDTH, SHELF_THICKNESS, SHELF_DEPTH],
+      new THREE.Vector3(0, shelfY, SHELF_CENTRE_Z), 0, runFrame, roomOffset, shelfBoardShade(shelfY));
+  }
+
+  // Real volumes, one instance each, exactly as the walker's own chamber has
+  // them. This used to be a ruled band per shelf — a stripe with twelve lines
+  // ruled across it — which meant every floor of the shaft was a drawing of a
+  // library rather than a library, and it showed the moment a walker looked
+  // down. Instancing makes the honest version cost one draw call for the whole
+  // stack, so there was never a reason to fake it.
+  const basisFrame = wallBasis(index);
+  for (let section = 0; section < CABINET_SECTIONS_PER_WALL; section++) {
+    const tangent = (section - (CABINET_SECTIONS_PER_WALL - 1) / 2) * CABINET_SECTION_PITCH;
+    const offset = pointOnWall(basisFrame, tangent, 0, CABINET_WALL_INSET);
+    sectionFrame.makeRotationY(basisFrame.rotation)
+      .setPosition(offset.x, offset.y, offset.z)
+      .premultiply(roomOffset);
+    for (let shelfIndex = 0; shelfIndex < SHELVES_PER_WALL; shelfIndex++) {
+      const shelfY = SHELF_BASE_Y + shelfIndex * SHELF_PITCH;
+      const centreY = shelfY + SHELF_SURFACE_OFFSET + BOOK_HEIGHT / 2;
+      for (let volume = 0; volume < VOLUMES_PER_SHELF; volume++) {
+        const x = -((VOLUMES_PER_SHELF - 1) * CABINET_BOOK_STEP) / 2 + volume * CABINET_BOOK_STEP;
+        volumeMatrix.makeTranslation(x, centreY, BOOK_FRONT_Z + BOOK_DEPTH / 2)
+          .premultiply(sectionFrame);
+        volumeMatrix.toArray(volumes.matrices, volumes.count * 16);
+        volumes.count++;
+      }
     }
-    // Further off, one filled band: the gaps between spines have closed to
-    // less than a pixel, so thirty-two boxes would buy nothing.
-    const bandBottom = shelfY + SHELF_SURFACE_OFFSET;
-    addBox(batches, trimMaterial, [bandWidth, BOOK_HEIGHT, BOOK_DEPTH],
-      new THREE.Vector3(0, bandBottom + BOOK_HEIGHT / 2, BOOK_FRONT_Z + BOOK_DEPTH / 2),
-      0, frame, roomOffset, volumeShade(bandBottom));
   }
-}
-
-// Stand-in spine markings. These are literals on purpose: they are not titles,
-// they are not derived from any volume, and nothing addresses them. A spine
-// this far off is a smudge with the shape of lettering, and that shape is the
-// whole job — a shelf of blank spines reads as empty boxes.
-const SPINE_TEMPLATES = Object.freeze([
-  'ei.mrtqvlch',
-  'nkbadu wsyf',
-  'tqjr,plexn',
-  'ozvghmd.ik',
-  'wsfleun,ba',
-  'jhrxmpo tdz',
-  'cyunbil.gks',
-  'rmatqwv,zeh',
-]);
-const TEMPLATE_CELL_WIDTH = 72;
-const TEMPLATE_CELL_HEIGHT = 256;
-
-let sharedTemplateMaterial = null;
-function spineTemplateMaterial() {
-  if (sharedTemplateMaterial) return sharedTemplateMaterial;
-  const canvas = document.createElement('canvas');
-  canvas.width = TEMPLATE_CELL_WIDTH * SPINE_TEMPLATES.length;
-  canvas.height = TEMPLATE_CELL_HEIGHT;
-  const context = canvas.getContext('2d');
-  SPINE_TEMPLATES.forEach((label, cell) => {
-    const x = cell * TEMPLATE_CELL_WIDTH;
-    context.save();
-    context.fillStyle = '#262626';
-    context.globalAlpha = 0.88;
-    context.translate(x + TEMPLATE_CELL_WIDTH / 2, TEMPLATE_CELL_HEIGHT / 2);
-    context.rotate(-Math.PI / 2);
-    context.font = '600 19px "Courier New", monospace';
-    context.textAlign = 'center';
-    context.textBaseline = 'middle';
-    context.fillText(label, 0, 0);
-    context.restore();
-  });
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.generateMipmaps = false;
-  texture.minFilter = THREE.LinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  sharedTemplateMaterial = new THREE.MeshBasicMaterial({
-    map: texture,
-    transparent: true,
-    side: THREE.DoubleSide,
-    depthWrite: false,
-  });
-  return sharedTemplateMaterial;
-}
-
-const templateCorner = new THREE.Vector3();
-const templateMatrix = new THREE.Matrix4();
-function addSpineTemplate(labels, cell, x, centreY, frame, roomOffset) {
-  const inset = 2;
-  const u0 = (cell * TEMPLATE_CELL_WIDTH + inset) / (TEMPLATE_CELL_WIDTH * SPINE_TEMPLATES.length);
-  const u1 = ((cell + 1) * TEMPLATE_CELL_WIDTH - inset) / (TEMPLATE_CELL_WIDTH * SPINE_TEMPLATES.length);
-  const halfWidth = SPINE_WIDTH / 2;
-  const halfHeight = SPINE_HEIGHT / 2;
-  templateMatrix.makeRotationY(Math.PI)
-    .setPosition(x, centreY, BOOK_FRONT_Z - 0.015)
-    .premultiply(frame)
-    .premultiply(roomOffset);
-  const base = labels.positions.length / 3;
-  const corners = [
-    [-halfWidth, halfHeight, u0, 1],
-    [halfWidth, halfHeight, u1, 1],
-    [-halfWidth, -halfHeight, u0, 0],
-    [halfWidth, -halfHeight, u1, 0],
-  ];
-  for (const [cornerX, cornerY, u, v] of corners) {
-    templateCorner.set(cornerX, cornerY, 0).applyMatrix4(templateMatrix);
-    labels.positions.push(templateCorner.x, templateCorner.y, templateCorner.z);
-    labels.uvs.push(u, v);
-  }
-  labels.indices.push(base, base + 2, base + 1, base + 2, base + 3, base + 1);
 }
 
 // A wall with a hole in it, drawn as one thing. Outlining each of its three
@@ -380,6 +350,35 @@ function addSolidWall(batches, index, roomOffset, outlines = null) {
     pointOnWall(basis, 0, WALL_HEIGHT / 2), basis.rotation, null, roomOffset, null, outlines);
 }
 
+function addDistantWallJoinery(batches, index, roomOffset) {
+  const basis = wallBasis(index);
+  for (const band of WALL_CORNICE_BANDS) {
+    addBox(
+      batches,
+      shelfMaterial,
+      [WALL_WIDTH - 0.58, band.height, band.depth],
+      pointOnWall(basis, 0, band.y, band.inset),
+      basis.rotation,
+      null,
+      roomOffset,
+      null,
+    );
+  }
+  const tangent = WALL_WIDTH / 2 - WALL_PILASTER_WIDTH / 2 - 0.12;
+  for (const side of [-1, 1]) {
+    addBox(
+      batches,
+      shelfMaterial,
+      [WALL_PILASTER_WIDTH, WALL_HEIGHT - 0.3, 0.2],
+      pointOnWall(basis, side * tangent, (WALL_HEIGHT - 0.3) / 2, 0.16),
+      basis.rotation,
+      null,
+      roomOffset,
+      null,
+    );
+  }
+}
+
 // What a walker sees through a side opening of a passage: a chamber, and a
 // real one — the same hexagon, the same four walls of shelving, the same two
 // doorways as any other. A box would have been cheaper and it read as a
@@ -396,97 +395,110 @@ function addSolidWall(batches, index, roomOffset, outlines = null) {
  * same orientation this builder gave it. Otherwise the marking would turn as
  * the walker stepped through.
  */
-export function alcoveChamberMatrix(target, level, side) {
-  const facing = Math.PI / 6 + freeWallsForLevel(level)[0] * Math.PI / 3;
-  return target.makeRotationY(side > 0 ? facing - Math.PI : facing)
-    .setPosition(side * (ALCOVE_REACH + HALL_START), 0, HALL_SIDE_CENTRE);
-}
-
-// The six vertical arrises of a chamber. In a built room these are drawn as
-// lines and they are most of what says "hexagon"; without them a chamber seen
-// through a doorway is a set of shelves floating in a pale field, and stepping
-// over the threshold makes six lines appear at once.
-const arrisPoint = new THREE.Vector3();
-function addChamberArrises(outlinePositions, roomOffset) {
-  for (let corner = 0; corner < 6; corner++) {
-    const angle = corner * Math.PI / 3;
-    const x = Math.cos(angle) * ROOM_RADIUS * 0.975;
-    const z = Math.sin(angle) * ROOM_RADIUS * 0.975;
-    for (const y of [0.02, WALL_HEIGHT]) {
-      arrisPoint.set(x, y, z).applyMatrix4(roomOffset);
-      outlinePositions.push(arrisPoint.x, arrisPoint.y, arrisPoint.z);
-    }
-  }
-}
-
-const alcoveMatrix = new THREE.Matrix4();
-const armMatrix = new THREE.Matrix4();
-
 /** One chamber of the corridor, placed by `roomOffset`. */
 /**
  * One chamber of the corridor, placed by `roomOffset`.
  *
- * Outlining and separate volumes are two different questions and are asked
- * separately. Every chamber is outlined however far off it is — see
- * VISTA_DETAIL_DEPTH for why a chamber that gains its corners partway down a
- * corridor is worse than one that never had them. Only near ones are worth
- * their 640 individual volumes.
+ * Outlining and book detail remain separate concerns. Every chamber keeps the
+ * same architectural outline; the current configuration deliberately gives
+ * all vista chambers ruled bands instead of 3840 individual volumes.
  */
-function addTemplateChamber(batches, outlinePositions, labels, wallNumbers, level, roomOffset, separateVolumes, seed) {
+function addTemplateChamber(
+  batches,
+  outlinePositions,
+  volumes,
+  level,
+  roomOffset,
+) {
   const doorWalls = freeWallsForLevel(level);
-  addChamberSlab(batches, floorMaterial, roomOffset, -0.02, -Math.PI / 2);
-  addChamberSlab(batches, ceilingMaterial, roomOffset, WALL_HEIGHT + 0.02, Math.PI / 2);
-  for (const index of bookWallsForLevel(level)) {
-    addDistantBookWall(batches, outlinePositions, labels, wallNumbers, level, index, roomOffset, separateVolumes, seed);
+  addDistantBalustrade(batches, outlinePositions, roomOffset, false);
+  // The real lamps are point lights only in the active chamber.  Their distant
+  // globes remain visible on every storey as a single batched constellation;
+  // this is what lets darkness communicate scale instead of simply erasing it.
+  for (const position of WELL_LANTERN_POSITIONS) {
+    addBox(
+      batches,
+      lampMaterial,
+      [0.18, 0.27, 0.18],
+      position,
+      0,
+      null,
+      roomOffset,
+      null,
+      null,
+    );
+    // No painted halo out here either: the bloom pass reaches the whole
+    // shaft, and a translucent cube around every distant fixture was both a
+    // visible square and thousands of overlapping transparent draws.
   }
-  for (const index of doorWalls) addDistantDoorWall(batches, index, roomOffset, outlinePositions);
-  for (let index = 0; index < 6; index++) {
-    if (!doorWalls.includes(index)) addSolidWall(batches, index, roomOffset, outlinePositions);
+  // The flight repeats on every floor of the shaft, and it has to: looking down
+  // the well is the one place the stair can be seen as what it is — a single
+  // diagonal running the whole height of a world otherwise built from nothing
+  // but horizontals and verticals. A quarter of the treads and none of the
+  // railing survives the distance, which is all that is wanted.
+  // The same crossing and the same flight the walker is standing on, part for
+  // part. There used to be a reduced copy out here — a quarter of the treads,
+  // no balusters, no lanterns — and it read as exactly what it was: the floors
+  // above and below were a cheaper building than this one. A shaft whose whole
+  // subject is that every storey is the same storey cannot afford that.
+  for (const part of [...WELL_BRIDGE_PARTS, ...WELL_STAIR_PARTS]) {
+    addBox(
+      batches,
+      part.trim ? metalMaterial : (part.wood ? shelfMaterial : wallMaterial),
+      part.size,
+      part.position,
+      part.rotation,
+      null,
+      roomOffset,
+      null,
+      null,
+      part.rotationZ ?? 0,
+    );
   }
-  addChamberArrises(outlinePositions, roomOffset);
-}
 
-// How far the view down a side arm carries, and how much of it carries volumes.
-//
-// Both are the main run's own figures, and they have to be. Standing at a
-// crossing a walker has ways on that are the same kind of thing in every
-// direction — the topology says so and the plaques say so — and the only thing
-// that ever contradicted it was how much of each had been built. An arm eight
-// chambers deep beside a run of eight reads as the same corridor turned; an arm
-// of six beside a run of eight reads as a shallower place, and that is legible
-// from the crossing long before any name on a wall is.
-const ARM_DEPTH = VISTA_DEPTH;
-const ARM_DETAIL_DEPTH = VISTA_DETAIL_DEPTH;
-
-/**
- * The corridor that runs out along each arm of a crossing.
- *
- * The chamber at the mouth of an arm is turned so that its own two doorways lie
- * along that arm — see alcoveChamberMatrix — so the corridor simply carries on
- * through it, chamber and passage alternating, exactly as the one the walker is
- * standing in does. In its local frame the doorway it presents faces back the
- * way they came, so everything further out lies the other way.
- */
-function addArms(batches, outlinePositions, labels, wallNumbers, level, hallMatrix) {
-  const doorWalls = freeWallsForLevel(level);
-  const basis = wallBasis(doorWalls[0]);
-  for (const side of [1, -1]) {
-    alcoveChamberMatrix(alcoveMatrix, level, side).premultiply(hallMatrix);
-    for (let step = 0; step <= ARM_DEPTH; step++) {
-      const out = -CHAMBER_STEP * step;
-      armMatrix.makeTranslation(basis.nx * out, 0, basis.nz * out).premultiply(alcoveMatrix);
-      addTemplateChamber(
-        batches, outlinePositions, labels, wallNumbers, level, armMatrix,
-        step <= ARM_DETAIL_DEPTH, doorWalls[0] + step,
-      );
-      if (step === ARM_DEPTH) continue;
-      hallTransform(
-        armMatrix, -basis.nx, -basis.nz,
-        basis.nx * out, basis.nz * out, HALL_START,
-      ).premultiply(alcoveMatrix);
-      appendHall(batches, outlinePositions, armMatrix, false);
+  // Every lantern of the well, on every floor of the shaft. Bodies only: a
+  // light thirty metres down contributes nothing but its own brightness, and
+  // the bloom pass is what turns these into flames. All of them land in one
+  // batch, so the whole constellation is two draw calls.
+  for (const { position } of [
+    ...WELL_LANTERN_POSITIONS.map(position => ({ position })),
+    ...WELL_STAIR_LANTERNS,
+  ]) {
+    addBox(batches, metalMaterial, [0.34, 0.08, 0.34],
+      new THREE.Vector3(position.x, position.y - 0.19, position.z), 0, null, roomOffset, null, null);
+    addBox(batches, metalMaterial, [0.29, 0.07, 0.29],
+      new THREE.Vector3(position.x, position.y + 0.19, position.z), 0, null, roomOffset, null, null);
+    for (const [dx, dz] of [[-0.13, -0.13], [-0.13, 0.13], [0.13, -0.13], [0.13, 0.13]]) {
+      addBox(batches, metalMaterial, [0.035, 0.34, 0.035],
+        new THREE.Vector3(position.x + dx, position.y, position.z + dz), 0, null, roomOffset, null, null);
+    }
+    addBox(batches, lampMaterial, [0.19, 0.28, 0.19], position, 0, null, roomOffset, null, null);
+  }
+  // Repeated cabinet lights turn the shaft into a receding constellation. No
+  // point lights are allocated here: these tiny emissive bodies are batched in
+  // one material and disappear naturally into fog.
+  for (const wall of bookWallsForLevel(level)) {
+    const basis = wallBasis(wall);
+    for (const ratio of [-0.39, -0.195, 0, 0.195, 0.39]) {
+      const tangent = ratio * CABINET_RUN_WIDTH;
+      const position = pointOnWall(basis, tangent, CARCASE_HEIGHT - 0.22, 0.62);
+      addBox(batches, distantFixtureMaterial, [0.4, 0.045, 0.045],
+        pointOnWall(basis, tangent, CARCASE_HEIGHT - 0.04, 0.42), basis.rotation, null, roomOffset, null);
+      addBox(batches, lampMaterial, [0.16, 0.11, 0.12],
+        position, basis.rotation, null, roomOffset, null);
     }
   }
+  for (const index of bookWallsForLevel(level)) {
+    addDistantBookWall(batches, volumes, index, roomOffset);
+  }
+  for (const index of doorWalls) addDistantDoorWall(batches, index, roomOffset, null);
+  for (let index = 0; index < 6; index++) {
+    if (!doorWalls.includes(index)) addSolidWall(batches, index, roomOffset, null);
+    addDistantWallJoinery(batches, index, roomOffset);
+  }
+  // Physical shelf bands, slab lips and balustrades already describe every
+  // repeated hexagon. Per-box edge lines accumulated into a black wireframe
+  // when viewed along the shaft, so only the active room keeps drafted arrises.
 }
 
 /**
@@ -500,80 +512,125 @@ export function buildVista(level) {
   const group = new THREE.Group();
   const batches = new Map();
   const outlinePositions = [];
-  const labels = { positions: [], uvs: [], indices: [], colors: [] };
-  const wallNumbers = { positions: [], uvs: [], indices: [], colors: [] };
+  // Four shelved walls, six sections, five shelves, thirty-two volumes: 3840 a
+  // chamber, for every floor of the shaft above and below.
+  const stackedChambers = VERTICAL_VISTA_DEPTH * 2;
+  const volumesPerChamber = SHELVED_WALLS * CABINET_SECTIONS_PER_WALL * SHELVES_PER_WALL * VOLUMES_PER_SHELF;
+  const volumes = {
+    matrices: new Float32Array(stackedChambers * volumesPerChamber * 16),
+    count: 0,
+  };
+  let verticalPassages = 0;
   // A wall index is its own axial direction, so the corridor axis follows
   // straight from which wall carries a doorway.
   const doorWalls = freeWallsForLevel(level);
-  const shelvedWalls = bookWallsForLevel(level);
   const corridorDirection = doorWalls[0];
+  const baseLevel = BigInt(level);
   // The axial offset gives the direction; the spacing along it is now set by
   // the passage, not by the tiling, because chambers no longer share a wall.
   const axis = axialMapOffset(...WALL_DIRECTIONS[corridorDirection]).normalize();
 
-  for (let n = -VISTA_DEPTH; n <= VISTA_DEPTH; n++) {
-    if (n === 0) continue;
-    offsetMatrix.makeTranslation(axis.x * CHAMBER_STEP * n, 0, axis.z * CHAMBER_STEP * n);
-    addChamberSlab(batches, floorMaterial, offsetMatrix, -0.02, -Math.PI / 2);
-    addChamberSlab(batches, ceilingMaterial, offsetMatrix, WALL_HEIGHT + 0.02, Math.PI / 2);
-    const separateVolumes = Math.abs(n) <= VISTA_DETAIL_DEPTH;
-    const roomSeed = ((n % SPINE_TEMPLATES.length) + SPINE_TEMPLATES.length) % SPINE_TEMPLATES.length;
-    for (const index of shelvedWalls) {
-      addDistantBookWall(batches, outlinePositions, labels, wallNumbers, level, index, offsetMatrix, separateVolumes, roomSeed);
+  // The rooms above and below occupy the same q/r column. Their logical level
+  // still matters: it rotates the pair of door walls exactly as a real level
+  // would. Each floor is a ring around the same opening, so its lip and guard
+  // repeat all the way into the fog without ever capping the shaft.
+  for (let delta = -VERTICAL_VISTA_DEPTH; delta <= VERTICAL_VISTA_DEPTH; delta++) {
+    if (delta === 0) continue;
+    const stackedLevel = baseLevel + BigInt(delta);
+    offsetMatrix.makeTranslation(0, WALL_HEIGHT * delta, 0);
+    addChamberSlab(batches, vistaFloorMaterial, offsetMatrix, -0.02, -Math.PI / 2);
+    // The current room already owns the underside of the boundary directly
+    // overhead. Every other boundary needs its own downward-facing plane.
+    if (delta !== 1) {
+      addChamberSlab(batches, vistaCeilingMaterial, offsetMatrix, -WELL_SLAB_THICKNESS, Math.PI / 2);
     }
-    addChamberArrises(outlinePositions, offsetMatrix);
-    // Both door walls now, one at each end: with a passage between them the
-    // chambers no longer share a wall, so nothing is drawn twice.
-    const drawn = outlinePositions;
-    for (const index of doorWalls) addDistantDoorWall(batches, index, offsetMatrix, drawn);
-    // Every wall that is not a doorway, shelved or not. A cabinet stands in
-    // front of its wall rather than instead of it: without one behind them the
-    // shelved walls left a bright gap above the case, and the numeral painted
-    // on that wall had nothing to be painted on.
-    for (let index = 0; index < 6; index++) {
-      if (!doorWalls.includes(index)) addSolidWall(batches, index, offsetMatrix, drawn);
+    addTemplateChamber(batches, outlinePositions, volumes, stackedLevel, offsetMatrix);
+
+    // One real passage begins behind each visible doorway. That is enough to
+    // keep the background from reading as a coloured panel, without growing a
+    // second horizontal library on every floor of the shaft.
+    for (const wall of freeWallsForLevel(stackedLevel)) {
+      const basis = wallBasis(wall);
+      hallTransform(verticalHallMatrix, basis.nx, basis.nz, 0, 0, HALL_START)
+        .premultiply(offsetMatrix);
+      appendHall(batches, outlinePositions, verticalHallMatrix, false, VISTA_SURFACE_MATERIALS);
+      addVistaTunnel(
+        batches,
+        outlinePositions,
+        verticalHallMatrix,
+        VERTICAL_TUNNEL_EXTENSION,
+        HALL_LENGTH,
+      );
+      verticalPassages++;
     }
   }
 
-  // A passage in every gap, including the two the player can walk into. Every
-  // one of them is outlined, for the same reason every chamber is: a passage
-  // that gained its arrises as the walker stepped through a doorway announced
-  // the step. Only the two they can stand in get a chamber built behind each
-  // side opening — a walker can reach no others, and four full hexagons is
-  // already the price of the whole corridor again.
-  for (let n = -VISTA_DEPTH; n < VISTA_DEPTH; n++) {
+  // Dust is not decoration here; it gives the light a medium and the well a
+  // measurable depth. Positions are deterministic, sparse and concentrated
+  // around the shaft so the same constellation is seen after every reload.
+  const dustPositions = [];
+  const dustCount = 720;
+  for (let index = 0; index < dustCount; index++) {
+    const angle = index * 2.399963229728653;
+    const radius = WELL_RADIUS * (0.16 + ((index * 47) % 100) / 132);
+    const y = ((index * 137) % 1000) / 1000
+      * (VERTICAL_VISTA_DEPTH * WALL_HEIGHT * 1.8)
+      - VERTICAL_VISTA_DEPTH * WALL_HEIGHT * 0.9;
+    dustPositions.push(
+      Math.cos(angle) * radius,
+      y,
+      Math.sin(angle) * radius,
+    );
+  }
+  const dustGeometry = new THREE.BufferGeometry();
+  dustGeometry.setAttribute('position', new THREE.Float32BufferAttribute(dustPositions, 3));
+  const dust = new THREE.Points(dustGeometry, dustMaterial);
+  dust.raycast = () => {};
+  dust.userData.atmosphericDust = true;
+  group.add(dust);
+
+  // Finish the vertical shaft before adding the two walkable passages. Those
+  // passages deliberately remain separate children: a portal destination must
+  // omit the passage behind its arrival doorway. The base world already owns
+  // that corridor up to the threshold; drawing the destination copy as well
+  // lets its near wall cross the portal plane and hang inside the visible hex.
+  // Once the threshold is crossed the ordinary vista, with both passages, is
+  // still present and becomes canonical without a visual substitute.
+  if (volumes.count) {
+    const shelved = new THREE.InstancedMesh(bookGeometry, bookMaterials[0], volumes.count);
+    shelved.instanceMatrix = new THREE.InstancedBufferAttribute(
+      volumes.matrices.subarray(0, volumes.count * 16),
+      16,
+    );
+    shelved.instanceMatrix.needsUpdate = true;
+    shelved.castShadow = false;
+    shelved.receiveShadow = true;
+    shelved.frustumCulled = false;
+    shelved.raycast = () => {};
+    group.add(shelved);
+  }
+  finishVistaGeometry(group, batches, outlinePositions);
+
+  for (let n = -1; n < 1; n++) {
     const base = CHAMBER_STEP * n;
-    const walkable = n === 0 || n === -1;
+    const passageWall = n === 0 ? doorWalls[0] : doorWalls[1];
+    const passage = new THREE.Group();
+    const passageBatches = new Map();
+    const passageOutlines = [];
+    passage.userData.vistaPassageWall = passageWall;
     hallTransform(offsetMatrix, axis.x, axis.z, axis.x * base, axis.z * base, HALL_START);
-    appendHall(batches, outlinePositions, offsetMatrix, walkable);
-    if (walkable) addArms(batches, outlinePositions, labels, wallNumbers, level, offsetMatrix);
+    appendHall(
+      passageBatches,
+      passageOutlines,
+      offsetMatrix,
+      true,
+    );
+    finishVistaGeometry(passage, passageBatches, passageOutlines);
+    group.add(passage);
   }
-
-  for (const batch of batches.values()) {
-    const mesh = mergedMesh(batch, batch.material);
-    // Never picked and never walked into; it exists only to be looked at.
-    mesh.raycast = () => {};
-    group.add(mesh);
-  }
-  if (labels.positions.length) {
-    const mesh = mergedMesh(labels, spineTemplateMaterial());
-    mesh.renderOrder = 3;
-    mesh.raycast = () => {};
-    group.add(mesh);
-  }
-  if (wallNumbers.positions.length) {
-    const mesh = mergedMesh(wallNumbers, wallNumberMaterial());
-    mesh.renderOrder = 3;
-    mesh.raycast = () => {};
-    group.add(mesh);
-  }
-  if (outlinePositions.length) {
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(outlinePositions, 3));
-    const outlines = new THREE.LineSegments(geometry, outlineMaterial);
-    outlines.renderOrder = 2;
-    outlines.raycast = () => {};
-    group.add(outlines);
-  }
+  group.userData.verticalPassages = verticalPassages;
+  group.userData.verticalChambers = VERTICAL_VISTA_DEPTH * 2;
+  group.userData.cabinetRunWidth = CABINET_RUN_WIDTH;
+  group.userData.cabinetUprightsPerWall = CABINET_UPRIGHTS_PER_WALL;
   return group;
 }

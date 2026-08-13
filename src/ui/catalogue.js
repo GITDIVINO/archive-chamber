@@ -2,13 +2,14 @@
  * The catalogue panel: fragment search and exact address entry.
  *
  * Search and v3 addresses open a catalogue record and deliberately leave the
- * player where they are.  Only an explicit w2 address, or a row of the register, selects another physical
+ * player where they are. Only an explicit world address, or a row of the register, selects another physical
  * chamber.
  */
 
 import { ALPHABET, bookIndexFor, parsePageAddress, search } from '../../babel-v3.js';
 import {
   LEGACY_WORLD_ALGORITHM_VERSION,
+  PREVIOUS_WORLD_ALGORITHM_VERSION,
   WORLD_ALGORITHM_VERSION,
   catalogBookIndexFor,
   parseWorldPageAddress,
@@ -133,15 +134,31 @@ export async function runSearch() {
 export function openExactAddress() {
   const candidate = addressInput.value.trim();
   if (!candidate) {
-    searchResult.textContent = 'enter a full v3 or w2 page address';
+    searchResult.textContent = 'enter a full v3 or world page address';
     return;
   }
   if (candidate.length > MAX_CLIENT_ADDRESS_LENGTH) {
     searchResult.textContent = 'record is too long for this client';
     return;
   }
+  const worldPrefixes = [
+    WORLD_ALGORITHM_VERSION,
+    PREVIOUS_WORLD_ALGORITHM_VERSION,
+    LEGACY_WORLD_ALGORITHM_VERSION,
+  ];
+  const candidateParts = candidate.split(';');
+  const isWorldRecord = worldPrefixes.includes(candidateParts[0]);
+  // An exact world remains mathematically unbounded, but building thousands of
+  // catalogue placements from a multi-kilobyte room index can monopolise the
+  // browser. 1024 hexadecimal digits already name vastly more rooms than a
+  // person could traverse; longer records are still valid in the model, just
+  // deliberately not rendered by this client.
+  if (isWorldRecord && candidateParts[1]?.length > 1024) {
+    searchResult.textContent = 'world record is too long for this client';
+    return;
+  }
   try {
-    if (candidate.startsWith(WORLD_ALGORITHM_VERSION + ';') || candidate.startsWith(LEGACY_WORLD_ALGORITHM_VERSION + ';')) {
+    if (isWorldRecord) {
       if (candidate.split(';').length === 2) {
         const worldRoom = parseWorldRoomAddress(candidate);
         moveToWorldHex(worldRoom.q, worldRoom.r, worldRoom.level);
@@ -161,6 +178,6 @@ export function openExactAddress() {
     searchResult.textContent = 'exact record opened';
     searchPanel.classList.remove('visible');
   } catch {
-    searchResult.textContent = 'enter a valid full v3 or w2 page address';
+    searchResult.textContent = 'enter a valid full v3 or world page address';
   }
 }

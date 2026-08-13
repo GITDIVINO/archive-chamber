@@ -32,10 +32,10 @@
 
 * { box-sizing: border-box; }
 html, body, canvas { width: 100%; height: 100%; margin: 0; overflow: hidden; }
-body { background: var(--paper); color: var(--ink); font-family: Manrope, sans-serif; }
+body { background: #090706; color: var(--ink); font-family: Manrope, sans-serif; }
 /* Gentle on purpose: contrast(1.5) brightness(1.08) drove every tone above
    white, so the shelves rendered as flat line art with no depth left in them. */
-canvas { display: block; filter: grayscale(.16) contrast(1.16); }
+canvas { display: block; filter: contrast(1.035) saturate(.88); }
 #ui { position: fixed; inset: 0; z-index: 1; pointer-events: none; }
 #ui::before { content: ''; position: absolute; inset: 0; pointer-events: none; opacity: .08; mix-blend-mode: multiply; background-image: repeating-linear-gradient(8deg, transparent 0 4px, rgba(0, 0, 0, .09) 4px 5px); }
 

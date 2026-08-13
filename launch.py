@@ -7,7 +7,17 @@ from subprocess import run
 from os import chdir
 
 chdir(Path(__file__).parent)
-server = ThreadingHTTPServer(("127.0.0.1", 0), SimpleHTTPRequestHandler)
+
+
+class DevelopmentHandler(SimpleHTTPRequestHandler):
+    """Serve the live workspace without retaining stale JavaScript modules."""
+
+    def end_headers(self):
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+
+
+server = ThreadingHTTPServer(("127.0.0.1", 0), DevelopmentHandler)
 url = f"http://127.0.0.1:{server.server_port}"
 print(f"Game open: {url}\nKeep this window open while playing.\nPress Ctrl+C to stop.")
 run(["open", url], check=False)

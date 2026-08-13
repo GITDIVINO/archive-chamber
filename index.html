@@ -4,13 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>borges's dream</title>
-    <link rel="stylesheet" href="style.css?v=design-polish-1" />
+    <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <main id="ui">
       <section id="intro" class="panel" aria-live="polite">
         <h1 class="game-title">borges's dream</h1>
-        <p class="eyebrow">babylonian library · world w2</p>
+        <p class="eyebrow">babylonian library · world w3</p>
         <p class="library-description">the catalogue contains every possible 410-page volume. the world repeats it without end.</p>
         <p id="startup-state" class="startup-state">locating archive…</p>
         <button id="start" type="button" disabled>enter the chamber</button>
@@ -21,7 +21,7 @@
 
       <div id="reticle" aria-hidden="true">+</div>
       <canvas id="hex-map" aria-label="world adjacency map"></canvas>
-      <div id="status"><button id="cell" type="button" title="copy exact w2 room address">chamber locating…</button><span id="sound">sound: muted</span><button id="open-register" type="button">register</button><button id="open-search" type="button">search</button></div>
+      <div id="status"><button id="cell" type="button" title="copy exact w3 room address">chamber locating…</button><span id="sound">sound: muted</span><button id="open-register" type="button">register</button><button id="open-search" type="button">search</button></div>
       <div id="notice" role="status" aria-live="polite"></div>
 
       <aside id="search-panel" aria-live="polite" aria-label="catalogue search">
@@ -34,9 +34,9 @@
         <label for="search-input">text</label>
         <textarea id="search-input" maxlength="3200" spellcheck="false" autocomplete="off" autocapitalize="none" autocorrect="off"></textarea>
         <button id="search-submit" type="button">locate one occurrence</button>
-        <p class="catalogue-divider">or open a known v3 or w2 record</p>
+        <p class="catalogue-divider">or open a known v3 or world record</p>
         <label for="address-input">full address</label>
-        <input id="address-input" type="text" inputmode="text" maxlength="8192" spellcheck="false" autocomplete="off" autocapitalize="none" autocorrect="off" placeholder="w2;0;2;2;13;197" />
+        <input id="address-input" type="text" inputmode="text" maxlength="8192" spellcheck="false" autocomplete="off" autocapitalize="none" autocorrect="off" placeholder="w3;0;2;2;13;197" />
         <button id="address-submit" type="button">open exact address</button>
         <p id="search-result" class="search-result"></p>
       </aside>

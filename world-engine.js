@@ -1,11 +1,11 @@
 /**
- * World placement w2.
+ * World placement w3.
  *
- * Babel v3 remains a finite catalogue of every complete book.  w2 places that
- * catalogue in an unbounded world of stacked axial levels: every room has 640
+ * Babel v3 remains a finite catalogue of every complete book.  w3 places that
+ * catalogue in an unbounded world of stacked axial levels: every room has 3840
  * physical slots, and catalogue books repeat after BOOK_SPACE_SIZE world slots.
  *
- * w2 differs from w1 in one thing: a room is (q, r, level) rather than (q, r).
+ * w3 keeps w2's stacked coordinates but widens each wall to six cabinet bays.
  *
  * The reason is a proof rather than a preference.  A room has six walls, four
  * shelved and two free, and a doorway is a hole in a wall two rooms share — so
@@ -13,18 +13,18 @@
  * With exactly two free walls per room that forces them opposite, the graph of
  * passages is 2-regular, and a 2-regular graph is a disjoint union of paths and
  * cycles: on one level a walker can never leave their own corridor.  Adding
- * doors would cost a shelved wall and with it the 640 volumes.
+ * doors would cost a shelved wall and with it 960 volumes in w3.
  *
  * Levels dissolve it without touching the contract.  The free pair rotates with
  * the level, so corridors on adjacent levels run along different axes; two such
  * axes have determinant ±1 and therefore generate the whole lattice.  Climbing
  * one level, walking, and coming back down reaches any room in the plane, and
- * every room still has four shelved walls and 640 volumes.
+ * every room still has four shelved walls and 3840 volumes.
  *
  * Canonical wire addresses:
- *   w2;<world-room-index-in-lowercase-hex>
- *   w2;<world-room-index-in-lowercase-hex>;<wall>;<shelf>;<volume>
- *   w2;<world-room-index-in-lowercase-hex>;<wall>;<shelf>;<volume>;<page>
+ *   w3;<world-room-index-in-lowercase-hex>
+ *   w3;<world-room-index-in-lowercase-hex>;<wall>;<shelf>;<volume>
+ *   w3;<world-room-index-in-lowercase-hex>;<wall>;<shelf>;<volume>;<page>
  *
  * A w1 address still parses: w1 enumerated exactly the level-0 rooms, so it is
  * read as such and translated rather than rejected.
@@ -41,11 +41,15 @@ import {
   bookIndexFor,
 } from './babel-v3.js';
 
-export const WORLD_ALGORITHM_VERSION = 'w2';
+export const WORLD_ALGORITHM_VERSION = 'w3';
+export const PREVIOUS_WORLD_ALGORITHM_VERSION = 'w2';
 export const LEGACY_WORLD_ALGORITHM_VERSION = 'w1';
-export const WORLD_FINGERPRINT = 'w2-axial-level-zigzag-cantor-cycle-640-780713600-20260803';
+export const WORLD_FINGERPRINT = 'w3-axial-level-zigzag-cantor-cycle-3840-780712640-20260809';
 export const WORLD_BOOK_COUNT = BOOK_SPACE_SIZE;
-export const WORLD_VOLUMES_PER_ROOM = VOLUMES_PER_HEX;
+export const WORLD_CABINET_SECTIONS_PER_WALL = 6;
+export const WORLD_VOLUMES_PER_SHELF = VOLUMES_PER_SHELF * WORLD_CABINET_SECTIONS_PER_WALL;
+export const WORLD_VOLUMES_PER_ROOM = BigInt(WALLS_PER_HEX * SHELVES_PER_WALL * WORLD_VOLUMES_PER_SHELF);
+export const W2_VOLUMES_PER_ROOM = VOLUMES_PER_HEX;
 
 /**
  * Which two walls a level leaves free, and so which axis its corridors run
@@ -199,20 +203,39 @@ function worldRoomFromLocation(location) {
   return { ...worldCoordinatesForRoomIndex(worldRoom), worldRoom };
 }
 
+function worldVersionFor(location) {
+  return location.worldVersion === LEGACY_WORLD_ALGORITHM_VERSION
+    ? LEGACY_WORLD_ALGORITHM_VERSION
+    : location.worldVersion === PREVIOUS_WORLD_ALGORITHM_VERSION
+      ? PREVIOUS_WORLD_ALGORITHM_VERSION
+      : WORLD_ALGORITHM_VERSION;
+}
+
+function volumesPerShelfForVersion(version) {
+  return version === WORLD_ALGORITHM_VERSION ? WORLD_VOLUMES_PER_SHELF : VOLUMES_PER_SHELF;
+}
+
+function volumesPerRoomForVersion(version) {
+  return version === WORLD_ALGORITHM_VERSION ? WORLD_VOLUMES_PER_ROOM : W2_VOLUMES_PER_ROOM;
+}
+
 function normalizedWorldLocation(location, defaultPage = 1) {
   const room = worldRoomFromLocation(location);
+  const worldVersion = worldVersionFor(location);
   return {
     ...room,
+    worldVersion,
     wall: positiveInteger(location.wall, WALLS_PER_HEX, 'wall'),
     shelf: positiveInteger(location.shelf, SHELVES_PER_WALL, 'shelf'),
-    volume: positiveInteger(location.volume, VOLUMES_PER_SHELF, 'volume'),
+    volume: positiveInteger(location.volume, volumesPerShelfForVersion(worldVersion), 'volume'),
     page: positiveInteger(location.page === undefined ? defaultPage : location.page, PAGES_PER_VOLUME, 'page'),
   };
 }
 
 function volumeSlotForNormalizedLocation(location) {
+  const volumesPerShelf = volumesPerShelfForVersion(location.worldVersion);
   return (BigInt(location.wall - 1) * BigInt(SHELVES_PER_WALL) + BigInt(location.shelf - 1))
-    * BigInt(VOLUMES_PER_SHELF)
+    * BigInt(volumesPerShelf)
     + BigInt(location.volume - 1);
 }
 
@@ -222,32 +245,37 @@ export function worldVolumeSlotFor(location) {
 
 export function worldSlotIndexFor(location) {
   const value = normalizedWorldLocation(location);
-  return value.worldRoom * WORLD_VOLUMES_PER_ROOM + volumeSlotForNormalizedLocation(value);
+  return value.worldRoom * volumesPerRoomForVersion(value.worldVersion) + volumeSlotForNormalizedLocation(value);
 }
 
 export function worldLocationForSlotIndex(index, page = 1) {
   const worldSlot = nonNegativeBigInt(index, 'world slot index');
   const worldRoom = worldSlot / WORLD_VOLUMES_PER_ROOM;
   const slot = worldSlot % WORLD_VOLUMES_PER_ROOM;
-  const shelfSlot = slot / BigInt(VOLUMES_PER_SHELF);
+  const shelfSlot = slot / BigInt(WORLD_VOLUMES_PER_SHELF);
   return {
     ...worldCoordinatesForRoomIndex(worldRoom),
     worldRoom,
     wall: Number(shelfSlot / BigInt(SHELVES_PER_WALL)) + 1,
     shelf: Number(shelfSlot % BigInt(SHELVES_PER_WALL)) + 1,
-    volume: Number(slot % BigInt(VOLUMES_PER_SHELF)) + 1,
+    volume: Number(slot % BigInt(WORLD_VOLUMES_PER_SHELF)) + 1,
+    worldVersion: WORLD_ALGORITHM_VERSION,
     page: positiveInteger(page, PAGES_PER_VOLUME, 'page'),
   };
 }
 
 const MANIFESTO_CATALOG_BOOK_INDEX = bookIndexFor(MANIFESTO_LOCATION);
 const ORIGIN_MANIFESTO_SLOT = (BigInt(2 - 1) * BigInt(SHELVES_PER_WALL) + BigInt(2 - 1))
+  * BigInt(WORLD_VOLUMES_PER_SHELF)
+  + BigInt(13 - 1);
+const W2_ORIGIN_MANIFESTO_SLOT = (BigInt(2 - 1) * BigInt(SHELVES_PER_WALL) + BigInt(2 - 1))
   * BigInt(VOLUMES_PER_SHELF)
   + BigInt(13 - 1);
 
-// Unchanged from w1: room (0,0,0) still encodes to index 0, and the slot of
-// wall 2, shelf 2, volume 13 is the same, so the manifesto keeps its place.
+// Room (0,0,0) still encodes to index 0. The w3 offset is adjusted so the
+// manifesto also keeps its human-readable wall/shelf/volume address.
 export const WORLD_BOOK_OFFSET = modulo(MANIFESTO_CATALOG_BOOK_INDEX - ORIGIN_MANIFESTO_SLOT, WORLD_BOOK_COUNT);
+export const W2_WORLD_BOOK_OFFSET = modulo(MANIFESTO_CATALOG_BOOK_INDEX - W2_ORIGIN_MANIFESTO_SLOT, WORLD_BOOK_COUNT);
 export const WORLD_MANIFESTO_LOCATION = Object.freeze({
   q: 0n,
   r: 0n,
@@ -257,6 +285,7 @@ export const WORLD_MANIFESTO_LOCATION = Object.freeze({
   shelf: 2,
   volume: 13,
   page: MANIFESTO_LOCATION.page,
+  worldVersion: WORLD_ALGORITHM_VERSION,
 });
 
 export function catalogBookIndexForWorldSlotIndex(index) {
@@ -265,7 +294,9 @@ export function catalogBookIndexForWorldSlotIndex(index) {
 }
 
 export function catalogBookIndexFor(location) {
-  return catalogBookIndexForWorldSlotIndex(worldSlotIndexFor(location));
+  const value = normalizedWorldLocation(location);
+  const offset = value.worldVersion === WORLD_ALGORITHM_VERSION ? WORLD_BOOK_OFFSET : W2_WORLD_BOOK_OFFSET;
+  return modulo(worldSlotIndexFor(value) + offset, WORLD_BOOK_COUNT);
 }
 
 export function catalogPlacementForWorldSlotIndex(index) {
@@ -287,17 +318,19 @@ export function worldLocationForCatalogPlacement(bookIndex, occurrence = 0, page
   return worldLocationForSlotIndex(worldSlotIndexForCatalogPlacement(bookIndex, occurrence), page);
 }
 
-function formatRoomAddress(worldRoom) {
-  return WORLD_ALGORITHM_VERSION + ';' + worldRoom.toString(16);
+function formatRoomAddress(worldRoom, version = WORLD_ALGORITHM_VERSION) {
+  return version + ';' + worldRoom.toString(16);
 }
 
 function parsedParts(address, length, kind) {
-  if (typeof address !== 'string') throw new TypeError('expected a w2 ' + kind + ' address.');
+  if (typeof address !== 'string') throw new TypeError('expected a world ' + kind + ' address.');
   const parts = address.split(';');
   const version = parts[0];
-  if (parts.length !== length) throw new TypeError('expected a w2 ' + kind + ' address.');
-  if (version !== WORLD_ALGORITHM_VERSION && version !== LEGACY_WORLD_ALGORITHM_VERSION) {
-    throw new TypeError('expected a w2 ' + kind + ' address.');
+  if (parts.length !== length) throw new TypeError('expected a world ' + kind + ' address.');
+  if (version !== WORLD_ALGORITHM_VERSION
+    && version !== PREVIOUS_WORLD_ALGORITHM_VERSION
+    && version !== LEGACY_WORLD_ALGORITHM_VERSION) {
+    throw new TypeError('expected a world ' + kind + ' address.');
   }
   if (!CANONICAL_HEX.test(parts[1])) throw new TypeError('world room index must be canonical lowercase hexadecimal.');
   for (let index = 2; index < parts.length; index++) {
@@ -306,7 +339,7 @@ function parsedParts(address, length, kind) {
   return parts;
 }
 
-// A w1 index names a level-0 room; a w2 index names any room.
+// A w1 index names a level-0 room; w2 and w3 indices name stacked rooms.
 function coordinatesForParsedRoom(parts) {
   const index = BigInt('0x' + parts[1]);
   return parts[0] === LEGACY_WORLD_ALGORITHM_VERSION
@@ -315,24 +348,25 @@ function coordinatesForParsedRoom(parts) {
 }
 
 export function createWorldRoomAddress(location) {
-  return formatRoomAddress(worldRoomFromLocation(location).worldRoom);
+  return formatRoomAddress(worldRoomFromLocation(location).worldRoom, worldVersionFor(location));
 }
 
 export function parseWorldRoomAddress(address) {
   const parts = parsedParts(address, 2, 'room');
   const { q, r, level } = coordinatesForParsedRoom(parts);
-  return { q, r, level, worldRoom: worldRoomIndexFor(q, r, level) };
+  return { q, r, level, worldRoom: worldRoomIndexFor(q, r, level), worldVersion: parts[0] };
 }
 
 export function createWorldVolumeAddress(location) {
   const value = normalizedWorldLocation({ ...location, page: 1 });
-  return formatRoomAddress(value.worldRoom) + ';' + value.wall + ';' + value.shelf + ';' + value.volume;
+  return formatRoomAddress(value.worldRoom, value.worldVersion) + ';' + value.wall + ';' + value.shelf + ';' + value.volume;
 }
 
 export function parseWorldVolumeAddress(address) {
   const parts = parsedParts(address, 5, 'volume');
   return normalizedWorldLocation({
     ...coordinatesForParsedRoom(parts),
+    worldVersion: parts[0],
     wall: parts[2],
     shelf: parts[3],
     volume: parts[4],
@@ -349,6 +383,7 @@ export function parseWorldPageAddress(address) {
   const parts = parsedParts(address, 6, 'page');
   return normalizedWorldLocation({
     ...coordinatesForParsedRoom(parts),
+    worldVersion: parts[0],
     wall: parts[2],
     shelf: parts[3],
     volume: parts[4],
