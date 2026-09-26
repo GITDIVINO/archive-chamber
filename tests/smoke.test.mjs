@@ -199,6 +199,8 @@ const vertical = await page.evaluate(async () => {
     roomPointLights,
     lampCount: room.userData.lampCount,
     readingLampCount: room.userData.readingLampCount,
+    bookWallCount: room.userData.bookWallCount,
+    litLanternCount: room.userData.litLanternCount,
     openingCount: openings.length,
     openingRadii: openings.map(mesh => mesh.geometry.parameters.innerRadius),
     expectedRadius: WELL_RADIUS,
@@ -238,9 +240,16 @@ assert.equal(vertical.shadowMapEnabled, true, 'the active room must render stabl
 assert.equal(vertical.shadowLights, 1, 'one bounded key light supplies shadows without multiplying their cost');
 assert.ok(vertical.shadowCasters > 0, 'the active room architecture must cast shadows');
 assert.equal(vertical.vistaShadowCasters, 0, 'distant geometry must never spend the active shadow budget');
-assert.equal(vertical.roomPointLights, 2, 'the two doorway lanterns supply the bounded local-light budget');
+// The library is lit by its own lanterns (see a68af94): one at each exit, five
+// sconces to every cabinet wall, and the lit lanterns of the well. Nothing else
+// in a chamber may add a point light.
 assert.equal(vertical.lampCount, 2, 'the room records one canonical lamp at each exit');
-assert.equal(vertical.readingLampCount, 0, 'cabinet and stair lights stay emissive without multiplying point-light passes');
+assert.equal(vertical.readingLampCount, 5 * vertical.bookWallCount, 'five sconces to every cabinet wall, each a real light');
+assert.equal(
+  vertical.roomPointLights,
+  vertical.lampCount + vertical.readingLampCount + vertical.litLanternCount,
+  'the exit lamps, the sconces and the lit well lanterns are the only local lights',
+);
 assert.equal(vertical.openingCount, 2, 'the current chamber needs the same opening in its floor and ceiling');
 assert.ok(vertical.openingRadii.every(radius => radius === vertical.expectedRadius), 'both openings must follow the frozen well radius');
 assert.equal(vertical.balustradeParts, vertical.expectedParts, 'the full balustrade must be built around the opening');
