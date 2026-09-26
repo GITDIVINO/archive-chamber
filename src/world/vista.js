@@ -120,11 +120,19 @@ const VISTA_SURFACE_MATERIALS = Object.freeze({
 });
 
 function finishVistaGeometry(group, batches, outlinePositions) {
+  const steps = finishVistaGeometryInSteps(group, batches, outlinePositions);
+  while (!steps.next().done);
+}
+
+// Merging a whole shaft's batches is the largest single piece of building it,
+// so it too stops after each material and lets vistaBuilder's caller resume.
+function* finishVistaGeometryInSteps(group, batches, outlinePositions) {
   for (const batch of batches.values()) {
     const mesh = mergedMesh(batch, batch.material);
     // Never picked and never walked into; it exists only to be looked at.
     mesh.raycast = () => {};
     group.add(mesh);
+    yield;
   }
   if (!outlinePositions.length) return;
   const geometry = new THREE.BufferGeometry();
@@ -509,6 +517,23 @@ function addTemplateChamber(
  * leaves the view unchanged, which is exactly the point.
  */
 export function buildVista(level) {
+  const steps = vistaBuilder(level);
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value;
+}
+
+/**
+ * The same shaft as buildVista, a storey at a time.
+ *
+ * A whole shaft is most of a second of merging, and the walker meets it the
+ * first time they climb onto a floor whose shaft has not been built. Built in
+ * one piece ahead of time, it was the same second, only spent while they were
+ * walking. Each next() here does one storey (or the final merge) and returns,
+ * so the caller can spread a shaft over as many frames as it likes; the value
+ * the generator returns is the finished group.
+ */
+export function* vistaBuilder(level) {
   const group = new THREE.Group();
   const batches = new Map();
   const outlinePositions = [];
@@ -563,6 +588,7 @@ export function buildVista(level) {
       );
       verticalPassages++;
     }
+    yield;
   }
 
   // Dust is not decoration here; it gives the light a medium and the well a
@@ -609,7 +635,7 @@ export function buildVista(level) {
     shelved.raycast = () => {};
     group.add(shelved);
   }
-  finishVistaGeometry(group, batches, outlinePositions);
+  yield* finishVistaGeometryInSteps(group, batches, outlinePositions);
 
   for (let n = -1; n < 1; n++) {
     const base = CHAMBER_STEP * n;
