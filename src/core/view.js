@@ -57,6 +57,22 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 // appears at once, and the room turns muddy. Neutral mapping keeps hue and
 // saturation where filmic did not, and compresses only the top, so the room can
 // be lit properly without the tones underneath it going to mud.
+// Shadows are cast by the architecture alone: nothing that throws one ever
+// moves, and a lantern hangs where it was built. Redrawing every lantern's
+// cube map on every frame was nearly the whole cost of a frame (6.3 s of 6.35 s
+// under software rendering, 290 of 422 draws), and it was the same picture
+// each time. A scene's maps are therefore drawn again only when the set of
+// lanterns that cast them, or the set of rooms in the world, has changed:
+// entering a chamber, releasing one, or adopting a portal destination.
+const drawShadows = renderer.shadowMap.render;
+const shadowSignatures = new WeakMap();
+renderer.shadowMap.render = function (lights, shadowScene, shadowCamera) {
+  let signature = lights.map(light => light.id).join(',');
+  if (shadowScene === scene) signature += '|' + renderedWorld.children.map(child => child.id).join(',');
+  if (shadowSignatures.get(shadowScene) === signature) return;
+  shadowSignatures.set(shadowScene, signature);
+  drawShadows.call(this, lights, shadowScene, shadowCamera);
+};
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.22;
 document.body.prepend(renderer.domElement);
