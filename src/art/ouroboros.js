@@ -1,20 +1,22 @@
-// The emblem on the first screen: an ouroboros, and inside its ring Sisyphus
-// rolling his stone. The snake is always swallowing itself, so its scales flow
-// from the neck round to the tail and into the mouth. Sisyphus pushes his
-// stone up the inside of the ring against that flow: every step he takes the
-// snake carries back, and he never gets anywhere. Drawn in ink on the paper of
-// the intro panel, on its own 2D canvas, and only while the intro is showing.
+// The ouroboros with Sisyphus inside its ring, drawn on a 2D canvas.
+//
+// The snake is always swallowing itself, so its scales flow from the neck
+// round to the tail and into the mouth. Sisyphus pushes his stone up the inside
+// of the ring against that flow: every step he takes the snake carries back,
+// and he never gets anywhere. The drawing is a pure function of time, so one
+// canvas can feed as many surfaces as want it (see world/relief.js).
 
-const intro = document.querySelector('#intro');
-const canvas = document.querySelector('#emblem');
-
-const INK = '#1f1d1a';
-const FAR_INK = '#57514a';
-const PAPER = '#f4f2ec';
-const SKIN = '#e7e2d6';
+// Colours come from the caller; the default is ink on the panel's paper.
+export const PAPER_PALETTE = Object.freeze({
+  ink: '#1f1d1a',
+  farInk: '#57514a',
+  paper: '#f4f2ec',
+  skin: '#e7e2d6',
+});
+let palette = PAPER_PALETTE;
 
 // Everything is laid out on a 240-unit square, scaled to the canvas.
-const SIZE = 240;
+export const SIZE = 240;
 const C = SIZE / 2;
 const R = 88; // centreline of the snake's body
 const W = 20; // body width at its thickest
@@ -77,7 +79,7 @@ const stone = (() => {
 
 function drawRing(ctx) {
   ctx.lineWidth = 0.6;
-  ctx.strokeStyle = INK;
+  ctx.strokeStyle = palette.ink;
   ctx.beginPath();
   ctx.arc(C, C, R + W / 2 + 6, 0, Math.PI * 2);
   ctx.stroke();
@@ -105,7 +107,7 @@ function bentPath(ctx, points, smooth = false) {
 
 function drawMouth(ctx) {
   bentPath(ctx, [[-8, 0], [2, -4.6], [15, -4.6], [14, 5.2], [6, 5], [-4, 4]]);
-  ctx.fillStyle = INK;
+  ctx.fillStyle = palette.ink;
   ctx.fill();
 }
 
@@ -127,12 +129,12 @@ function drawBody(ctx, time) {
     ctx.lineTo(x, y);
   }
   ctx.closePath();
-  ctx.fillStyle = PAPER;
+  ctx.fillStyle = palette.paper;
   ctx.fill();
   ctx.save();
   ctx.clip();
 
-  ctx.strokeStyle = INK;
+  ctx.strokeStyle = palette.ink;
   ctx.lineWidth = 0.65;
   for (let s = flow - SCALE_STEP; s < BODY_LENGTH + SCALE_STEP; s += SCALE_STEP) {
     const u = s / BODY_LENGTH;
@@ -151,7 +153,7 @@ function drawBody(ctx, time) {
     ctx.lineTo(...polar(s0, scuteTop));
     ctx.lineTo(...polar(s1, scuteTop));
     ctx.lineTo(...polar(s1, inner + 0.6));
-    ctx.fillStyle = SKIN;
+    ctx.fillStyle = palette.skin;
     ctx.fill();
     ctx.stroke();
 
@@ -178,7 +180,7 @@ function drawBody(ctx, time) {
 
   // Edges drawn last so the scales never nibble them.
   ctx.lineWidth = 1.1;
-  ctx.strokeStyle = INK;
+  ctx.strokeStyle = palette.ink;
   for (const side of [1, -1]) {
     ctx.beginPath();
     for (let i = 0; i <= steps; i++) {
@@ -193,11 +195,11 @@ function drawBody(ctx, time) {
 
 function drawHead(ctx) {
   ctx.lineJoin = 'round';
-  ctx.strokeStyle = INK;
+  ctx.strokeStyle = palette.ink;
 
   // Lower jaw, under the tail.
   bentPath(ctx, [[-24, 10], [-12, 11.5], [4, 11.5], [12, 8.5], [14, 5.2], [6, 4.4], [-4, 3.6], [-10, 1.5], [-22, -1], [-30, 2]], true);
-  ctx.fillStyle = PAPER;
+  ctx.fillStyle = palette.paper;
   ctx.fill();
   ctx.lineWidth = 1.1;
   ctx.stroke();
@@ -214,7 +216,7 @@ function drawHead(ctx) {
   };
 
   // Fangs biting into the tail.
-  ctx.fillStyle = PAPER;
+  ctx.fillStyle = palette.paper;
   ctx.lineWidth = 0.8;
   for (const fang of [[[9, -4.4], [11, 1.8], [12.2, -4.3]], [[3, -4.4], [4, -1.2], [5, -4.4]], [[7, 4.8], [8, 1.6], [9, 4.7]]]) {
     bentPath(ctx, fang);
@@ -233,18 +235,18 @@ function drawHead(ctx) {
   // Nostril.
   ctx.beginPath();
   ctx.arc(...bent(15, -7.5), 0.8, 0, Math.PI * 2);
-  ctx.fillStyle = INK;
+  ctx.fillStyle = palette.ink;
   ctx.fill();
 
   // Eye: dark, with a pinpoint of paper.
   const [ex, ey] = bent(-7, -9.5);
   ctx.beginPath();
   ctx.ellipse(ex, ey, 3, 2.3, HINGE + Math.PI / 2, 0, Math.PI * 2);
-  ctx.fillStyle = INK;
+  ctx.fillStyle = palette.ink;
   ctx.fill();
   ctx.beginPath();
   ctx.arc(ex - 0.8, ey - 0.8, 0.65, 0, Math.PI * 2);
-  ctx.fillStyle = PAPER;
+  ctx.fillStyle = palette.paper;
   ctx.fill();
 }
 
@@ -294,18 +296,18 @@ function drawStoneAndFigure(ctx, time) {
   ctx.save();
   ctx.beginPath();
   ctx.arc(sx, sy, STONE_R, 0, Math.PI * 2);
-  ctx.fillStyle = SKIN;
+  ctx.fillStyle = palette.skin;
   ctx.fill();
   ctx.clip();
   ctx.translate(sx, sy);
   ctx.rotate(roll);
-  ctx.fillStyle = INK;
+  ctx.fillStyle = palette.ink;
   for (const [a, r, size] of stone.dots) {
     ctx.beginPath();
     ctx.arc(Math.cos(a) * r * STONE_R, Math.sin(a) * r * STONE_R, size * 0.55, 0, Math.PI * 2);
     ctx.fill();
   }
-  ctx.strokeStyle = INK;
+  ctx.strokeStyle = palette.ink;
   ctx.lineWidth = 0.7;
   for (const crack of stone.cracks) {
     ctx.beginPath();
@@ -334,7 +336,7 @@ function drawStoneAndFigure(ctx, time) {
   ctx.beginPath();
   ctx.arc(sx, sy, STONE_R, 0, Math.PI * 2);
   ctx.lineWidth = 1.1;
-  ctx.strokeStyle = INK;
+  ctx.strokeStyle = palette.ink;
   ctx.stroke();
 
   // Sisyphus, in his own frame: feet on the inner edge at the origin, up
@@ -379,8 +381,8 @@ function drawStoneAndFigure(ctx, time) {
   const nearHand = reachTo(0.12);
 
   // Far side first, in a paler ink, so the body reads in depth.
-  limb(ctx, shoulder, joint(shoulder, farHand, UPPER_ARM, FOREARM, -1), farHand, 1.9, FAR_INK);
-  limb(ctx, hip, joint(hip, farFoot, THIGH, SHIN, 1), farFoot, 2.5, FAR_INK);
+  limb(ctx, shoulder, joint(shoulder, farHand, UPPER_ARM, FOREARM, -1), farHand, 1.9, palette.farInk);
+  limb(ctx, hip, joint(hip, farFoot, THIGH, SHIN, 1), farFoot, 2.5, palette.farInk);
   ctx.beginPath();
   ctx.moveTo(farFoot[0] - 0.4, farFoot[1] - 0.2);
   ctx.lineTo(farFoot[0] - 2.4, farFoot[1] - 0.2);
@@ -396,11 +398,11 @@ function drawStoneAndFigure(ctx, time) {
   ctx.lineTo(shoulder[0] - n[0] * 2.2, shoulder[1] - n[1] * 2.2);
   ctx.lineTo(hip[0] - n[0] * 1.6, hip[1] - n[1] * 1.6);
   ctx.closePath();
-  ctx.fillStyle = INK;
+  ctx.fillStyle = palette.ink;
   ctx.fill();
   ctx.lineJoin = 'round';
   ctx.lineWidth = 1.2;
-  ctx.strokeStyle = INK;
+  ctx.strokeStyle = palette.ink;
   ctx.stroke();
 
   // Loincloth.
@@ -410,7 +412,7 @@ function drawStoneAndFigure(ctx, time) {
   ctx.lineTo(hip[0] - n[0] * 1.2 + 1.6, hip[1] - n[1] * 1.2 + 2.6);
   ctx.lineTo(hip[0] + n[0] * 1.6 + 0.6, hip[1] + n[1] * 1.6 + 2.2);
   ctx.closePath();
-  ctx.fillStyle = SKIN;
+  ctx.fillStyle = palette.skin;
   ctx.fill();
   ctx.lineWidth = 0.5;
   ctx.stroke();
@@ -423,22 +425,27 @@ function drawStoneAndFigure(ctx, time) {
   ctx.stroke();
   ctx.beginPath();
   ctx.arc(head[0], head[1], 2.3, 0, Math.PI * 2);
-  ctx.fillStyle = INK;
+  ctx.fillStyle = palette.ink;
   ctx.fill();
 
   // Near side over everything.
-  limb(ctx, hip, joint(hip, nearFoot, THIGH, SHIN, 1), nearFoot, 2.8, INK);
+  limb(ctx, hip, joint(hip, nearFoot, THIGH, SHIN, 1), nearFoot, 2.8, palette.ink);
   ctx.lineWidth = 1.8;
   ctx.beginPath();
   ctx.moveTo(nearFoot[0] - 0.4, nearFoot[1] - 0.2);
   ctx.lineTo(nearFoot[0] - 2.5, nearFoot[1] - 0.2);
   ctx.stroke();
-  limb(ctx, shoulder, joint(shoulder, nearHand, UPPER_ARM, FOREARM, -1), nearHand, 2.1, INK);
+  limb(ctx, shoulder, joint(shoulder, nearHand, UPPER_ARM, FOREARM, -1), nearHand, 2.1, palette.ink);
 
   ctx.restore();
 }
 
-function draw(ctx, time) {
+/**
+ * Draws the emblem at `time` seconds onto a context already scaled so that the
+ * drawing's 240-unit square fills the area wanted.
+ */
+export function drawOuroboros(ctx, time, colours = PAPER_PALETTE) {
+  palette = colours;
   ctx.clearRect(0, 0, SIZE, SIZE);
   drawRing(ctx);
   drawMouth(ctx);
@@ -446,60 +453,3 @@ function draw(ctx, time) {
   drawHead(ctx);
   drawStoneAndFigure(ctx, time);
 }
-
-function start() {
-  if (!intro || !canvas || !canvas.getContext) return;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-
-  const still = window.matchMedia('(prefers-reduced-motion: reduce)');
-  let frame = 0;
-  let last = 0;
-  let pixels = 0;
-
-  const fit = () => {
-    const size = canvas.getBoundingClientRect().width;
-    const next = Math.round(size * Math.min(window.devicePixelRatio || 1, 2));
-    if (!next || next === pixels) return;
-    pixels = next;
-    canvas.width = next;
-    canvas.height = next;
-  };
-
-  const render = time => {
-    fit();
-    if (!pixels) return;
-    ctx.setTransform(pixels / SIZE, 0, 0, pixels / SIZE, 0, 0);
-    draw(ctx, time);
-  };
-
-  const tick = now => {
-    frame = 0;
-    if (intro.classList.contains('gone')) return;
-    // Thirty frames a second is plenty for something this slow, and leaves
-    // the rest for the chamber drawing behind the panel.
-    if (now - last >= 33) {
-      last = now;
-      render(now / 1000);
-    }
-    frame = requestAnimationFrame(tick);
-  };
-
-  const resume = () => {
-    if (still.matches) {
-      render(0.45);
-      return;
-    }
-    if (!frame && !intro.classList.contains('gone')) frame = requestAnimationFrame(tick);
-  };
-
-  new MutationObserver(resume).observe(intro, { attributes: true, attributeFilter: ['class'] });
-  still.addEventListener?.('change', resume);
-  window.addEventListener('resize', () => {
-    pixels = 0;
-    if (still.matches) render(0.45);
-  });
-  resume();
-}
-
-start();
