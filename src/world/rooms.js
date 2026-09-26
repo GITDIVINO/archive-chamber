@@ -41,7 +41,7 @@ import { arrivalWallFor, passageEnds, passageExits } from './passage.js';
 import { noteChamber, ordinalFor } from './register.js';
 import { buildSigns, disposeSigns } from './signs.js';
 import { disposeRoom, makePortalRoom, makeRoom, paintPendingSpines } from './room.js';
-import { buildVista } from './vista.js';
+import { vistaBuilder } from './vista.js';
 
 const roomRegistry = new Map();
 
@@ -128,31 +128,49 @@ function levelResidue(level) {
 
 // Building one shaft is most of a second, and there are only ever three of
 // them. Rather than let the walker meet that cost at the moment they arrive on
-// a new floor — which is exactly when they are moving and will feel it — the
-// two they have not seen yet are built while they are standing still.
+// a new floor, the two they have not seen yet are built ahead of time.
 //
-// This moves the cost rather than removing it: an idle callback that runs for
-// nine hundred milliseconds has overrun its idle period long before it
-// finishes. Removing it means making buildVista itself cheap, which means
-// building the shaft as three template chambers instanced up the axis instead
-// of twenty-eight separately merged ones. That is the real fix and it is not
-// this one.
+// Ahead of time is not enough on its own. A shaft built in one piece from an
+// idle callback still stopped the world for most of a second, only now it did
+// it a few seconds after the walker set off, wherever they happened to be.
+// vistaBuilder does a storey per step, so the warm-up is spread over short
+// slices between frames and no one of them is long enough to be seen.
+const VISTA_WARM_SLICE_MS = 4;
+const vistaBuilds = new Map();
 let vistaWarmHandle = null;
 
+function nextMissingResidue() {
+  return [0, 1, 2].find(residue => !vistaByResidue.has(residue));
+}
+
+function stepVistaBuild(residue, deadline) {
+  let build = vistaBuilds.get(residue);
+  if (!build) {
+    build = vistaBuilder(BigInt(residue));
+    vistaBuilds.set(residue, build);
+  }
+  while (performance.now() < deadline) {
+    const step = build.next();
+    if (step.done) {
+      vistaBuilds.delete(residue);
+      vistaByResidue.set(residue, step.value);
+      return true;
+    }
+  }
+  return false;
+}
+
 function warmVistaCache() {
-  if (vistaWarmHandle !== null) return;
-  const missing = [0, 1, 2].find(residue => !vistaByResidue.has(residue));
-  if (missing === undefined) return;
-  const build = () => {
+  if (vistaWarmHandle !== null || nextMissingResidue() === undefined) return;
+  // One zero-delay task per slice, for the reason given at the destination
+  // queue below: an idle callback can starve while WebGL keeps the frame busy.
+  vistaWarmHandle = setTimeout(() => {
     vistaWarmHandle = null;
-    const residue = [0, 1, 2].find(candidate => !vistaByResidue.has(candidate));
+    const residue = nextMissingResidue();
     if (residue === undefined) return;
-    vistaByResidue.set(residue, buildVista(BigInt(residue)));
+    stepVistaBuild(residue, performance.now() + VISTA_WARM_SLICE_MS);
     warmVistaCache();
-  };
-  vistaWarmHandle = globalThis.requestIdleCallback
-    ? requestIdleCallback(build, { timeout: 6000 })
-    : setTimeout(build, 0);
+  }, 0);
 }
 
 function refreshVista() {
@@ -163,12 +181,10 @@ function refreshVista() {
   }
   if (vista) renderedWorld.remove(vista);
   const residue = levelResidue(level);
-  let cached = vistaByResidue.get(residue);
-  if (!cached) {
-    cached = buildVista(level);
-    vistaByResidue.set(residue, cached);
-  }
-  vista = cached;
+  // A walker who climbs before the warm-up reaches this floor has to be shown
+  // it now; whatever storeys are already built are kept.
+  if (!vistaByResidue.has(residue)) stepVistaBuild(residue, Infinity);
+  vista = vistaByResidue.get(residue);
   vistaLevel = level;
   renderedWorld.add(vista);
 }
@@ -349,6 +365,47 @@ function restoreStencil(states) {
   }
 }
 
+const apertureCorner = new THREE.Vector3();
+
+/**
+ * Limits drawing to the screen rectangle a doorway's mask covers.
+ *
+ * Returns false when that rectangle is empty. A corner behind the camera has
+ * no meaningful projection, so then the whole frame is left open, which is
+ * what the pass did before and is always correct.
+ */
+function scissorToAperture(mesh) {
+  const { width, height } = mesh.geometry.parameters;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const [x, y] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+    apertureCorner.set(x * width / 2, y * height / 2, 0).applyMatrix4(mesh.matrixWorld);
+    apertureCorner.applyMatrix4(camera.matrixWorldInverse);
+    if (apertureCorner.z > -camera.near) {
+      sceneTarget.scissorTest = false;
+      return true;
+    }
+    apertureCorner.applyMatrix4(camera.projectionMatrix);
+    minX = Math.min(minX, apertureCorner.x);
+    minY = Math.min(minY, apertureCorner.y);
+    maxX = Math.max(maxX, apertureCorner.x);
+    maxY = Math.max(maxY, apertureCorner.y);
+  }
+  const w = sceneTarget.width;
+  const h = sceneTarget.height;
+  // A pixel of margin each way: the rectangle must never trim the aperture.
+  const left = Math.max(0, Math.floor((minX + 1) / 2 * w) - 1);
+  const bottom = Math.max(0, Math.floor((minY + 1) / 2 * h) - 1);
+  const right = Math.min(w, Math.ceil((maxX + 1) / 2 * w) + 1);
+  const top = Math.min(h, Math.ceil((maxY + 1) / 2 * h) + 1);
+  if (right <= left || top <= bottom) return false;
+  sceneTarget.scissor.set(left, bottom, right - left, top - bottom);
+  sceneTarget.scissorTest = true;
+  return true;
+}
+
 function renderPassagePortals() {
   const previousAutoClear = renderer.autoClear;
   renderer.autoClear = false;
@@ -379,6 +436,13 @@ function renderPassagePortals() {
     for (const destination of passageDestinations.entries.values()) {
       destination.maskScene.updateMatrixWorld(true);
       if (!portalFrustum.intersectsObject(destination.mesh)) continue;
+      // The stencil already confines a destination to its doorway, but only
+      // after every fragment of a whole chamber and its shaft has been run and
+      // then discarded. Scissoring to the doorway's rectangle on screen stops
+      // that work before it starts; a far doorway is a few hundred pixels, not
+      // the frame.
+      if (!scissorToAperture(destination.mesh)) continue;
+      renderer.setRenderTarget(sceneTarget);
       renderer.clear(false, false, true);
       renderer.render(destination.maskScene, camera);
 
@@ -392,6 +456,8 @@ function renderPassagePortals() {
       renderer.render(destination.portalScene, camera);
       restoreStencil(states);
     }
+    sceneTarget.scissorTest = false;
+    renderer.setRenderTarget(sceneTarget);
     renderer.clear(false, false, true);
   }
   // Last, over the composed frame: see the note above the base pass.
