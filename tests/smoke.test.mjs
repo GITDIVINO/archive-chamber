@@ -199,6 +199,8 @@ const vertical = await page.evaluate(async () => {
     roomPointLights,
     lampCount: room.userData.lampCount,
     readingLampCount: room.userData.readingLampCount,
+    bookWallCount: room.userData.bookWallCount,
+    litLanternCount: room.userData.litLanternCount,
     openingCount: openings.length,
     openingRadii: openings.map(mesh => mesh.geometry.parameters.innerRadius),
     expectedRadius: WELL_RADIUS,
@@ -238,9 +240,16 @@ assert.equal(vertical.shadowMapEnabled, true, 'the active room must render stabl
 assert.equal(vertical.shadowLights, 1, 'one bounded key light supplies shadows without multiplying their cost');
 assert.ok(vertical.shadowCasters > 0, 'the active room architecture must cast shadows');
 assert.equal(vertical.vistaShadowCasters, 0, 'distant geometry must never spend the active shadow budget');
-assert.equal(vertical.roomPointLights, 2, 'the two doorway lanterns supply the bounded local-light budget');
+// The library is lit by its own lanterns (see a68af94): one at each exit, five
+// sconces to every cabinet wall, and the lit lanterns of the well. Nothing else
+// in a chamber may add a point light.
 assert.equal(vertical.lampCount, 2, 'the room records one canonical lamp at each exit');
-assert.equal(vertical.readingLampCount, 0, 'cabinet and stair lights stay emissive without multiplying point-light passes');
+assert.equal(vertical.readingLampCount, 5 * vertical.bookWallCount, 'five sconces to every cabinet wall, each a real light');
+assert.equal(
+  vertical.roomPointLights,
+  vertical.lampCount + vertical.readingLampCount + vertical.litLanternCount,
+  'the exit lamps, the sconces and the lit well lanterns are the only local lights',
+);
 assert.equal(vertical.openingCount, 2, 'the current chamber needs the same opening in its floor and ceiling');
 assert.ok(vertical.openingRadii.every(radius => radius === vertical.expectedRadius), 'both openings must follow the frozen well radius');
 assert.equal(vertical.balustradeParts, vertical.expectedParts, 'the full balustrade must be built around the opening');
@@ -296,11 +305,30 @@ for (const id of ['open-search', 'open-register', 'cell']) {
 // --- the physical manifesto opens on its fixed page --------------------------
 // The reader covers the status bar, so it has to be dismissed the way a player
 // would before the catalogue can be reached again.
+//
+// Closing a panel returns the walker to the chamber, and on a desktop that
+// means pointer lock on the world canvas. While the lock holds, every click
+// goes to the canvas whatever is drawn over it; that is what "canvas intercepts
+// pointer events" meant on Linux CI, where headless Chromium grants the lock
+// (macOS headless does not, which is why it passed locally). A player gets the
+// cursor back with Escape, which the browser handles itself and a synthetic key
+// press never reaches, so release it the same way the browser would.
+async function takeBackCursor() {
+  const locked = await page.evaluate(() => document.pointerLockElement?.className ?? null);
+  if (locked === null) return;
+  assert.equal(locked, 'world-canvas', 'returning to the chamber locks the pointer to the world, not to a panel');
+  await page.evaluate(() => new Promise(resolve => {
+    document.addEventListener('pointerlockchange', resolve, { once: true });
+    document.exitPointerLock();
+  }));
+}
+
 async function openCatalogue() {
   if (await page.locator('#book-panel.visible').count()) {
     await page.locator('#close-book').click();
     await page.waitForSelector('#book-panel.visible', { state: 'detached' });
   }
+  await takeBackCursor();
   await page.locator('#open-search').click();
 }
 
@@ -1214,6 +1242,7 @@ assert.ok(
 );
 
 // The panel decodes a number back into a place, and walks the player to it.
+await takeBackCursor();
 await page.locator('#open-register').click();
 await page.waitForSelector('#register-panel.visible');
 const rows = page.locator('.register-row');
