@@ -1,21 +1,46 @@
 /**
  * Which chamber currently exists in the scene.
  *
- * w2 is unbounded in the plane and in height, but only the player's own hex is
+ * w3 is unbounded in the plane and in height, but only the player's own hex is
  * ever built: entering a new room disposes the previous one. This is a renderer
  * limit, not a model one.
  */
 
+import * as THREE from 'three';
+import { freeWallsForLevel } from '../../world-engine.js';
 import { catalogueCoordinates, exactWorldRoomAddressFor, roomKey, roomTagFor } from '../../world-model.js';
-import { APOTHEM, CHAMBER_STEP } from '../constants.js';
-import { camera, renderedWorld } from '../core/view.js';
+import {
+  CHAMBER_STEP,
+  DOOR_HEIGHT,
+  EYE_HEIGHT,
+  HALL_END,
+  HALL_HALF_WIDTH,
+  HALL_SIDE_CENTRE,
+  HALL_START,
+  PLAYER_START_PITCH,
+  PLAYER_START_X,
+  PLAYER_START_YAW,
+  PLAYER_START_Z,
+  SIDE_EXIT_REACH,
+  WALL_HEIGHT,
+  WORLD_DISTANCE_COLOR,
+} from '../constants.js';
+import {
+  camera,
+  renderedWorld,
+  renderer,
+  scene,
+  setPortalRenderPass,
+  WORLD_FOG_DENSITY,
+} from '../core/view.js';
+import { sceneTarget } from '../core/bloom.js';
 import { player } from '../player.js';
 import { crossedPassageExit, passageWallAt } from './doors.js';
 import { wallBasis } from './geometry.js';
 import { arrivalWallFor, passageEnds, passageExits } from './passage.js';
 import { noteChamber, ordinalFor } from './register.js';
 import { buildSigns, disposeSigns } from './signs.js';
-import { disposeRoom, makeRoom, paintPendingSpines } from './room.js';
+import { disposeRoom, makePortalRoom, makeRoom, paintPendingSpines } from './room.js';
 import { buildVista } from './vista.js';
 
 const roomRegistry = new Map();
@@ -68,7 +93,7 @@ function refreshScene() {
     }
   }
   if (!roomRegistry.has(activeKey)) {
-    const room = makeRoom(q, r, level, world.tag);
+    const room = makeRoom(q, r, level);
     roomRegistry.set(activeKey, room);
     renderedWorld.add(room);
   }
@@ -83,16 +108,528 @@ function refreshScene() {
 let vista = null;
 let vistaLevel = null;
 
+// There are exactly three shafts, not one per floor.
+//
+// Everything the vista depends on comes from which pair of walls a level leaves
+// free, and that rotates with a period of three. So the shaft seen from level 0
+// is the shaft seen from level 3 and from level -3, part for part. Rebuilding
+// it on every change of floor cost most of a second and froze the walker on the
+// stair each time they arrived; built once per residue and kept, a storey
+// change is a swap of two children.
+//
+// The cost of keeping all three resident is three shafts' worth of geometry
+// against a rebuild the walker feels. Memory here is cheap and that pause was
+// not.
+const vistaByResidue = new Map();
+
+function levelResidue(level) {
+  return Number(((level % 3n) + 3n) % 3n);
+}
+
+// Building one shaft is most of a second, and there are only ever three of
+// them. Rather than let the walker meet that cost at the moment they arrive on
+// a new floor — which is exactly when they are moving and will feel it — the
+// two they have not seen yet are built while they are standing still.
+//
+// This moves the cost rather than removing it: an idle callback that runs for
+// nine hundred milliseconds has overrun its idle period long before it
+// finishes. Removing it means making buildVista itself cheap, which means
+// building the shaft as three template chambers instanced up the axis instead
+// of twenty-eight separately merged ones. That is the real fix and it is not
+// this one.
+let vistaWarmHandle = null;
+
+function warmVistaCache() {
+  if (vistaWarmHandle !== null) return;
+  const missing = [0, 1, 2].find(residue => !vistaByResidue.has(residue));
+  if (missing === undefined) return;
+  const build = () => {
+    vistaWarmHandle = null;
+    const residue = [0, 1, 2].find(candidate => !vistaByResidue.has(candidate));
+    if (residue === undefined) return;
+    vistaByResidue.set(residue, buildVista(BigInt(residue)));
+    warmVistaCache();
+  };
+  vistaWarmHandle = globalThis.requestIdleCallback
+    ? requestIdleCallback(build, { timeout: 6000 })
+    : setTimeout(build, 0);
+}
+
 function refreshVista() {
   const level = world.room.level;
-  if (vista && vistaLevel === level) return;
-  if (vista) {
-    renderedWorld.remove(vista);
-    for (const mesh of vista.children) mesh.geometry.dispose();
+  if (vista && vistaLevel !== null && levelResidue(vistaLevel) === levelResidue(level)) {
+    vistaLevel = level;
+    return;
   }
-  vista = buildVista(level);
+  if (vista) renderedWorld.remove(vista);
+  const residue = levelResidue(level);
+  let cached = vistaByResidue.get(residue);
+  if (!cached) {
+    cached = buildVista(level);
+    vistaByResidue.set(residue, cached);
+  }
+  vista = cached;
   vistaLevel = level;
   renderedWorld.add(vista);
+}
+
+// Every onward opening of both passages is a permanent aperture onto the exact
+// room it leads to. All six destinations are prepared while the walker is
+// still in the chamber: there is no proxy room and no corridor-entry build.
+let passageDestinations = null;
+let destinationPreparationHandle = null;
+let destinationPreparationGeneration = 0;
+const portalPoint = new THREE.Vector3();
+const portalInverse = new THREE.Matrix4();
+const portalProjection = new THREE.Matrix4();
+const portalFrustum = new THREE.Frustum();
+// All aperture masks share one stencil value. Only one is rendered at a time
+// and the buffer is cleared between them.
+const PORTAL_STENCIL_REF = 1;
+// The stencil plane sits 12 cm behind the physical threshold. At an oblique
+// angle a plane cut to the mathematical mouth projects a little inside the
+// nearer wall/ceiling edges and exposes the clear colour as a bright crack.
+// Deliberate overdraw is safe because the ordinary corridor is rendered first
+// and depth-tests the mask back to its true visible aperture.
+const PORTAL_MASK_OVERDRAW = 0.36;
+
+const depthResetScene = new THREE.Scene();
+const depthResetCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const depthResetMaterial = new THREE.ShaderMaterial({
+  colorWrite: false,
+  depthTest: false,
+  depthWrite: true,
+  fragmentShader: 'void main() { gl_FragColor = vec4(0.0); }',
+  stencilFail: THREE.KeepStencilOp,
+  stencilFunc: THREE.EqualStencilFunc,
+  stencilWrite: true,
+  stencilZFail: THREE.KeepStencilOp,
+  stencilZPass: THREE.KeepStencilOp,
+  vertexShader: 'void main() { gl_Position = vec4(position.xy, 1.0, 1.0); }',
+});
+depthResetScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), depthResetMaterial));
+
+function portalTransform(from, wall, exit) {
+  const there = passageExits(from, wall)[exit];
+  const arrival = arrivalWallFor(there, from, from.level);
+  const passageBasis = wallBasis(wall);
+  if (exit === 'ahead') {
+    const direction = new THREE.Vector3(passageBasis.nx, 0, passageBasis.nz);
+    return {
+      arrival,
+      centre: direction.clone().multiplyScalar(CHAMBER_STEP),
+      direction,
+      doorway: new THREE.Vector3(
+        passageBasis.nx * HALL_END,
+        DOOR_HEIGHT / 2,
+        passageBasis.nz * HALL_END,
+      ),
+      exit,
+      rotation: 0,
+      there,
+      wall,
+    };
+  }
+  const arrivalBasis = wallBasis(arrival);
+  const side = exit === 'right' ? 1 : -1;
+  const direction = new THREE.Vector3(
+    side * passageBasis.tx,
+    0,
+    side * passageBasis.tz,
+  );
+  // The destination doorway's outward normal faces back down the side arm.
+  // Three's positive Y rotation adds to atan2(x, z), so this angle maps the
+  // canonical arrival wall to -direction exactly.
+  const rotation = Math.atan2(-direction.x, -direction.z)
+    - Math.atan2(arrivalBasis.nx, arrivalBasis.nz);
+  const crossingX = passageBasis.nx * (HALL_START + HALL_SIDE_CENTRE);
+  const crossingZ = passageBasis.nz * (HALL_START + HALL_SIDE_CENTRE);
+  const doorwayX = crossingX + direction.x * SIDE_EXIT_REACH;
+  const doorwayZ = crossingZ + direction.z * SIDE_EXIT_REACH;
+  return {
+    arrival,
+    centre: new THREE.Vector3(
+      doorwayX + direction.x * HALL_START,
+      0,
+      doorwayZ + direction.z * HALL_START,
+    ),
+    direction,
+    doorway: new THREE.Vector3(doorwayX, DOOR_HEIGHT / 2, doorwayZ),
+    exit,
+    rotation,
+    there,
+    wall,
+  };
+}
+
+function portalMaskFor(transform, stencilRef) {
+  // Portal composition uses two coincident apertures with different jobs.
+  // The exact core ignores the old world's depth: at a side exit, geometry of
+  // the source chamber can be physically nearer than the non-Euclidean
+  // destination, but it must still disappear inside the doorway. A second,
+  // slightly larger fringe respects depth and fills only cracks that are truly
+  // visible around oblique jamb and lintel edges.
+  const makeMaterial = depthTest => new THREE.MeshBasicMaterial({
+    colorWrite: false,
+    depthTest,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    stencilFail: THREE.KeepStencilOp,
+    stencilFunc: THREE.AlwaysStencilFunc,
+    stencilRef,
+    stencilWrite: true,
+    stencilZFail: THREE.KeepStencilOp,
+    stencilZPass: THREE.ReplaceStencilOp,
+  });
+  const coreMaterial = makeMaterial(false);
+  const material = makeMaterial(true);
+  const coreMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(2 * HALL_HALF_WIDTH, DOOR_HEIGHT),
+    coreMaterial,
+  );
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(
+      2 * HALL_HALF_WIDTH + 2 * PORTAL_MASK_OVERDRAW,
+      DOOR_HEIGHT + 2 * PORTAL_MASK_OVERDRAW,
+    ),
+    material,
+  );
+  // Keep the aperture beyond the 20 mm near clip until the same frame in which
+  // crossedPassageExit hands the camera to the destination room.
+  for (const aperture of [coreMesh, mesh]) {
+    aperture.position.copy(transform.doorway).addScaledVector(transform.direction, 0.12);
+    aperture.rotation.y = Math.atan2(-transform.direction.x, -transform.direction.z);
+    aperture.raycast = () => {};
+  }
+  mesh.raycast = () => {};
+  const maskScene = new THREE.Scene();
+  maskScene.add(coreMesh, mesh);
+  return { coreMaterial, coreMesh, maskScene, material, mesh, stencilRef };
+}
+
+function destinationMaterials(root) {
+  const found = new Set();
+  root.traverse(object => {
+    if (!object.material) return;
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    for (const material of materials) found.add(material);
+  });
+  return [...found];
+}
+
+function applyPortalStencil(materials, stencilRef) {
+  const states = materials.map(material => ({
+    material,
+    stencilFail: material.stencilFail,
+    stencilFunc: material.stencilFunc,
+    stencilRef: material.stencilRef,
+    stencilWrite: material.stencilWrite,
+    stencilZFail: material.stencilZFail,
+    stencilZPass: material.stencilZPass,
+  }));
+  for (const material of materials) {
+    material.stencilWrite = true;
+    material.stencilRef = stencilRef;
+    material.stencilFunc = THREE.EqualStencilFunc;
+    material.stencilFail = THREE.KeepStencilOp;
+    material.stencilZFail = THREE.KeepStencilOp;
+    material.stencilZPass = THREE.KeepStencilOp;
+  }
+  return states;
+}
+
+function restoreStencil(states) {
+  for (const state of states) {
+    state.material.stencilWrite = state.stencilWrite;
+    state.material.stencilRef = state.stencilRef;
+    state.material.stencilFunc = state.stencilFunc;
+    state.material.stencilFail = state.stencilFail;
+    state.material.stencilZFail = state.stencilZFail;
+    state.material.stencilZPass = state.stencilZPass;
+  }
+}
+
+function renderPassagePortals() {
+  const previousAutoClear = renderer.autoClear;
+  renderer.autoClear = false;
+  // Into the frame buffer, not onto the canvas: view.js runs the glow over it
+  // once every portal has been composed.
+  renderer.setRenderTarget(sceneTarget);
+  renderer.clear(true, true, true);
+  // A plaque names the chamber at the end of an arm, and it is painted on the
+  // band above that chamber's doorway — the same band the destination's own
+  // lintel has to fill, or a bright strip opens over every side exit. So the
+  // aperture is a whole DOOR_HEIGHT tall and its top lands exactly on the
+  // plaque, which the depth reset below then erases. Only the way back kept its
+  // name, because the way back is the one exit with no portal.
+  //
+  // The marking belongs to the wall, not to the composition, so it is held out
+  // of the ordinary pass and laid over the finished frame instead. It still
+  // tests depth, so a wall between the walker and a plaque still hides it.
+  if (signs) signs.visible = false;
+  renderer.render(scene, camera);
+  if (signs) signs.visible = true;
+
+  if (passageDestinations) {
+    // Do not pay full room draws when their apertures are outside the
+    // camera. This is a projection-only optimisation: it changes neither scene
+    // membership nor which portal exists.
+    portalProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    portalFrustum.setFromProjectionMatrix(portalProjection);
+    for (const destination of passageDestinations.entries.values()) {
+      destination.maskScene.updateMatrixWorld(true);
+      if (!portalFrustum.intersectsObject(destination.mesh)) continue;
+      renderer.clear(false, false, true);
+      renderer.render(destination.maskScene, camera);
+
+      depthResetMaterial.stencilRef = destination.stencilRef;
+      renderer.render(depthResetScene, depthResetCamera);
+
+      const states = applyPortalStencil(
+        destination.materials,
+        destination.stencilRef,
+      );
+      renderer.render(destination.portalScene, camera);
+      restoreStencil(states);
+    }
+    renderer.clear(false, false, true);
+  }
+  // Last, over the composed frame: see the note above the base pass.
+  if (signs) renderer.render(signs, camera);
+  renderer.autoClear = previousAutoClear;
+}
+
+setPortalRenderPass(renderPassagePortals);
+
+function disposePassageDestinations() {
+  destinationPreparationGeneration++;
+  if (destinationPreparationHandle !== null) {
+    clearTimeout(destinationPreparationHandle);
+    destinationPreparationHandle = null;
+  }
+  if (!passageDestinations) return;
+  renderedWorld.remove(passageDestinations.group);
+  for (const destination of passageDestinations.entries.values()) {
+    if (!destination.adopted) disposeRoom(destination.portalRoom);
+    destination.mesh.geometry.dispose();
+    destination.material.dispose();
+    destination.coreMesh.geometry.dispose();
+    destination.coreMaterial.dispose();
+  }
+  passageDestinations = null;
+}
+
+function cloneDestinationVista(template, arrivalWall) {
+  // A doorway previews the exact destination room and its vertical shaft, but
+  // no horizontal passage. The observer-side arm belongs to the base world;
+  // rotating either copied arm into a side portal makes its long walls project
+  // through the room as the obsolete rectangles/diagonals seen at left and
+  // right thresholds. Once adopted, the canonical vista supplies both arms in
+  // the destination frame without keeping six hidden corridor copies alive.
+  const clone = template.clone(true);
+  for (const child of [...clone.children]) {
+    if (child.userData.vistaPassageWall !== undefined) clone.remove(child);
+  }
+  clone.userData.omittedArrivalPassage = arrivalWall;
+  clone.userData.remainingPassageWalls = [];
+  return clone;
+}
+
+function destinationKey(wall, exit) {
+  return `${wall}:${exit}`;
+}
+
+function destinationJobs() {
+  const walls = [...freeWallsForLevel(world.room.level)];
+  // The straight neighbour is visible from the chamber, whereas the two side
+  // destinations only become visible at the crossing. Prepare in that order,
+  // beginning with the passage nearest the current viewpoint.
+  walls.sort((a, b) => {
+    const basisA = wallBasis(a);
+    const basisB = wallBasis(b);
+    const distanceA = basisA.nx * camera.position.x + basisA.nz * camera.position.z;
+    const distanceB = basisB.nx * camera.position.x + basisB.nz * camera.position.z;
+    return distanceB - distanceA;
+  });
+  return walls.flatMap(wall => ['ahead', 'left', 'right'].map(exit => ({ wall, exit })));
+}
+
+function createPassageDestinations() {
+  disposePassageDestinations();
+  const group = new THREE.Group();
+  group.name = 'passage-destinations';
+  group.userData.passageDestinations = true;
+  group.userData.expected = 6;
+  group.userData.ready = 0;
+  group.userData.compiled = 0;
+  group.userData.buildDurations = [];
+  group.userData.maxBuildMs = 0;
+  group.userData.buildsTriggeredInPassage = 0;
+  group.userData.synchronousFallbacks = 0;
+  renderedWorld.add(group);
+  passageDestinations = {
+    entries: new Map(),
+    group,
+    queue: destinationJobs(),
+    roomKey: roomKey(world.room.q, world.room.r, world.room.level),
+    source: { ...world.room },
+  };
+}
+
+function buildDestination(job, synchronousFallback = false) {
+  if (!passageDestinations || !vista) return null;
+  const key = destinationKey(job.wall, job.exit);
+  const existing = passageDestinations.entries.get(key);
+  if (existing) return existing;
+
+  const started = performance.now();
+  const transform = portalTransform(passageDestinations.source, job.wall, job.exit);
+  const mask = portalMaskFor(transform, PORTAL_STENCIL_REF);
+  const destinationVista = cloneDestinationVista(vista, transform.arrival);
+  const sourceRoom = roomRegistry.get(passageDestinations.roomKey);
+  const portalRoom = makePortalRoom(
+    sourceRoom,
+    transform.there.q,
+    transform.there.r,
+    transform.there.level,
+  );
+  const portalRoot = new THREE.Group();
+  portalRoot.position.copy(transform.centre);
+  portalRoot.rotation.y = transform.rotation;
+  portalRoot.add(destinationVista, portalRoom);
+
+  const portalScene = new THREE.Scene();
+  // A separately rendered scene otherwise clears the colour already laid down
+  // by the active room before the stencil can limit it.  With a pale clear
+  // colour that bug was merely a subtle flash; in a dark library it blacked
+  // out the whole frame.  A null background keeps the portal transparent
+  // outside its aperture while fog still gives its contents the same depth.
+  portalScene.background = null;
+  portalScene.fog = new THREE.FogExp2(WORLD_DISTANCE_COLOR, WORLD_FOG_DENSITY);
+  // Must track view.js exactly. A destination is seen through an opening a few
+  // centimetres away, so any difference between the two lightings is a seam
+  // drawn straight down the middle of a doorway.
+  portalScene.add(new THREE.HemisphereLight(0x3a2a1e, 0x1a120c, 0.5));
+  portalScene.add(new THREE.AmbientLight(0xffd9b0, 0.16));
+  // The destination room and its key light share one local frame. Leaving the
+  // light at a fixed world coordinate made the same room brighter or darker
+  // depending on whether it was seen ahead, left or right, and the light then
+  // jumped again when the room was adopted at the threshold.
+  // Straight down, for the same reason the base key is: any horizontal
+  // component makes architecturally identical walls differ by which way they
+  // face, and here it would also disagree with the corridor the walker is
+  // standing in. The old (-28, 42, 24) survived here after the base scene was
+  // corrected, which put a lit wall next to an unlit one across the threshold.
+  const portalKey = new THREE.DirectionalLight(0xffe8cc, 0.18);
+  portalKey.position.set(0, 72, 0);
+  portalRoot.add(portalKey);
+  portalRoot.add(portalKey.target);
+  portalScene.add(portalRoot);
+
+  // These markers contain no drawable geometry. They make it possible to
+  // verify that six exact destinations exist without placing hidden structures
+  // in the ordinary corridor scene.
+  const root = new THREE.Group();
+  root.position.copy(transform.centre);
+  root.rotation.y = transform.rotation;
+  root.userData.portalExit = job.exit;
+  root.userData.portalWall = job.wall;
+  root.userData.destination = transform.there;
+  root.userData.portalRoomId = portalRoom.id;
+  root.userData.bookCount = portalRoom.userData.bookMeshes.reduce(
+    (total, mesh) => total + mesh.count,
+    0,
+  );
+  root.userData.metadataDeferred = Boolean(portalRoom.userData.portalMetadata);
+  root.userData.maskDepthTest = mask.material.depthTest;
+  root.userData.coreMaskDepthTest = mask.coreMaterial.depthTest;
+  root.userData.maskHeight = mask.mesh.geometry.parameters.height;
+  root.userData.maskWidth = mask.mesh.geometry.parameters.width;
+  root.userData.omittedArrivalPassage = destinationVista.userData.omittedArrivalPassage;
+  root.userData.remainingPassageWalls = destinationVista.userData.remainingPassageWalls;
+  root.userData.localLighting = portalKey.parent === portalRoot
+    && portalKey.target.parent === portalRoot;
+  passageDestinations.group.add(root);
+
+  const materials = destinationMaterials(portalRoot);
+  const destination = {
+    ...transform,
+    ...mask,
+    destinationVista,
+    materials,
+    portalRoom,
+    portalRoot,
+    portalScene,
+    root,
+  };
+  passageDestinations.entries.set(key, destination);
+  passageDestinations.queue = passageDestinations.queue.filter(candidate => (
+    destinationKey(candidate.wall, candidate.exit) !== key
+  ));
+  const duration = performance.now() - started;
+  const data = passageDestinations.group.userData;
+  data.ready = passageDestinations.entries.size;
+  data.buildDurations.push(duration);
+  data.maxBuildMs = Math.max(data.maxBuildMs, duration);
+  data.buildsTriggeredInPassage += passageWallAt(camera.position, world.room.level) === null ? 0 : 1;
+  data.synchronousFallbacks += synchronousFallback ? 1 : 0;
+  // Portal scenes use a no-shadow lighting variant that the active room does
+  // not compile. Preparing it now keeps shader compilation away from the first
+  // frame in which the player turns toward an exit. Geometry and instance
+  // attributes are already shared with the active room and therefore warm.
+  void renderer.compileAsync(portalScene, camera).then(() => {
+    if (passageDestinations?.entries.get(key) !== destination) return;
+    destination.compiled = true;
+    passageDestinations.group.userData.compiled++;
+  }).catch(() => {
+    // Rendering remains the fallback on browsers without a working parallel
+    // shader-compile path; a rejected warm-up must not break the world.
+  });
+  return destination;
+}
+
+function scheduleDestinationPreparation() {
+  if (
+    !passageDestinations
+    || destinationPreparationHandle !== null
+    || passageDestinations.queue.length === 0
+  ) return;
+  const generation = destinationPreparationGeneration;
+  const prepareOne = () => {
+    destinationPreparationHandle = null;
+    if (generation !== destinationPreparationGeneration || !passageDestinations) return;
+    const job = passageDestinations.queue[0];
+    if (job) buildDestination(job);
+    scheduleDestinationPreparation();
+  };
+  // requestIdleCallback can starve indefinitely while WebGL keeps the frame
+  // busy. That left only some directions prepared, so a turn in the middle of
+  // a passage exposed a blank or structurally different destination. Each job
+  // measures about one millisecond; one zero-delay task per neighbour yields
+  // between jobs without making correctness depend on browser idleness.
+  destinationPreparationHandle = setTimeout(prepareOne, 0);
+}
+
+function destinationFor(wall, exit) {
+  if (!passageDestinations) createPassageDestinations();
+  const key = destinationKey(wall, exit);
+  return passageDestinations.entries.get(key)
+    ?? buildDestination({ wall, exit }, true);
+}
+
+function resetPassageDestinations() {
+  createPassageDestinations();
+  scheduleDestinationPreparation();
+}
+
+/** Keeps all six exact neighbours prepared independently of camera position. */
+export function syncPassageDestinations() {
+  const currentRoomKey = roomKey(world.room.q, world.room.r, world.room.level);
+  if (!passageDestinations || passageDestinations.roomKey !== currentRoomKey) {
+    resetPassageDestinations();
+  }
+  scheduleDestinationPreparation();
+  return passageDestinations.entries.size;
 }
 
 // The signs over the ways out of the two passages. Unlike the corridor these
@@ -111,78 +648,67 @@ function refreshSigns() {
 }
 
 export function buildCurrentRoom() {
+  // Portal vistas share the current vertical-vista buffers. Release those
+  // dependants before a level change can replace and dispose the source.
+  disposePassageDestinations();
   refreshRoomRecord();
   refreshScene();
   refreshVista();
   refreshSigns();
+  // Start preparing the six views now, while the walker is in the chamber.
+  // Entering either corridor never creates or swaps geometry.
+  resetPassageDestinations();
+  // The other two shafts, while nobody is climbing.
+  warmVistaCache();
   roomChangeListener?.();
 }
 
 /** Selects a different chamber outright; catalogue lookups never call this. */
 export function moveToWorldHex(q, r, level = 0n) {
+  disposePassageDestinations();
   world.arrivedIndirectly = false;
   world.room = { q: BigInt(q), r: BigInt(r), level: BigInt(level) };
-  camera.position.set(0, 1.65, 0);
-  player.yaw = 0;
-  player.pitch = 0;
+  // The chamber centre is now an open well. Exact-address travel returns the
+  // walker to the same safe viewing point used on first load.
+  camera.position.set(PLAYER_START_X, 1.65, PLAYER_START_Z);
+  player.yaw = PLAYER_START_YAW;
+  player.pitch = PLAYER_START_PITCH;
   buildCurrentRoom();
 }
 
-// Three's yaw convention: at yaw 0 the camera looks down -z, so forward is
-// (-sin yaw, -cos yaw). Inverting that gives the heading for a direction.
-function yawFacing(dx, dz) {
-  return Math.atan2(-dx, -dz);
-}
-
 /**
- * Leaves a passage by its far end.
+ * Leaves a passage through any of its three onward openings.
  *
- * The corridor is drawn straight, so the chamber ahead stands exactly
- * CHAMBER_STEP away along the wall normal. Subtracting that leaves the player
- * at the very same point in space, now measured from the new chamber's centre:
- * position, heading and sideways offset in the threshold all carry over with no
- * jump, and the corridor behind them does not move.
+ * The room that becomes current is the exact object that was already visible
+ * through the opening. Ahead and side exits use the same inverse-transform and
+ * adoption path, so no direction can acquire a different threshold behaviour.
  */
-function stepAhead(wall) {
-  world.arrivedIndirectly = false;
-  const there = passageExits(world.room, wall).ahead;
-  const basis = wallBasis(wall);
-  camera.position.x -= basis.nx * CHAMBER_STEP;
-  camera.position.z -= basis.nz * CHAMBER_STEP;
-  world.room = there;
-  buildCurrentRoom();
-  return world.room;
-}
+function stepThrough(wall, exit) {
+  world.arrivedIndirectly = exit !== 'ahead';
+  const transform = destinationFor(wall, exit);
+  portalInverse.makeRotationY(transform.rotation).setPosition(transform.centre).invert();
+  portalPoint.copy(camera.position).applyMatrix4(portalInverse);
+  camera.position.copy(portalPoint);
+  player.yaw -= transform.rotation;
 
-// A walker who arrives this far in stands inside the chamber rather than in the
-// mouth of its doorway, which is where the passage they turned out of would be.
-const ARRIVAL_DEPTH = APOTHEM - 1.7;
-
-/**
- * Leaves a passage by one of its side openings.
- *
- * This cannot be continuous, and is not meant to be: the flanking chamber has
- * no wall facing the passage, because a passage is not in the plane at all. The
- * walker emerges from one of that chamber's own doorways — see arrivalWallFor —
- * so the pose is rebuilt rather than carried over. Their heading relative to
- * the way they were walking is preserved, so turning left still leaves them
- * walking the way a left turn points.
- */
-function stepAside(wall, exit) {
-  world.arrivedIndirectly = true;
-  const from = world.room;
-  const there = passageExits(from, wall)[exit];
-  const arrival = arrivalWallFor(there, from, from.level);
-  const exitBasis = wallBasis(wall);
-  const arrivalBasis = wallBasis(arrival);
-
-  const side = exit === 'right' ? 1 : -1;
-  player.yaw += yawFacing(-arrivalBasis.nx, -arrivalBasis.nz)
-    - yawFacing(side * exitBasis.tx, side * exitBasis.tz);
-
-  camera.position.x = arrivalBasis.nx * ARRIVAL_DEPTH;
-  camera.position.z = arrivalBasis.nz * ARRIVAL_DEPTH;
-  world.room = there;
+  // Adopt the exact room that was visible through the aperture. Detaching it
+  // before disposing the portal worlds preserves geometry, atlas progress and
+  // shadows; refreshScene below disposes only the chamber being left.
+  if (transform.portalRoom && transform.portalRoot) {
+    transform.portalRoot.remove(transform.portalRoom);
+    transform.portalRoom.position.set(0, 0, 0);
+    transform.portalRoom.rotation.set(0, 0, 0);
+    transform.portalRoom.scale.set(1, 1, 1);
+    transform.portalRoom.userData.deferSpines = false;
+    transform.adopted = true;
+    roomRegistry.set(
+      roomKey(transform.there.q, transform.there.r, transform.there.level),
+      transform.portalRoom,
+    );
+    renderedWorld.add(transform.portalRoom);
+  }
+  world.room = transform.there;
+  disposePassageDestinations();
   buildCurrentRoom();
   return world.room;
 }
@@ -220,9 +746,37 @@ export function syncPlace() {
 export function syncDoorways() {
   const crossing = crossedPassageExit(camera.position, world.room.level);
   if (!crossing) return null;
-  return crossing.exit === 'ahead'
-    ? stepAhead(crossing.wall)
-    : stepAside(crossing.wall, crossing.exit);
+  return stepThrough(crossing.wall, crossing.exit);
+}
+
+/**
+ * Called once a frame after movement. Returns +1, -1 or 0.
+ *
+ * A flight spans exactly one storey, so a walker who has risen a whole
+ * WALL_HEIGHT above this chamber's floor is standing on the floor above, and
+ * one who has fallen that far is standing on the floor below. Nothing about
+ * them moves at the crossing except which chamber is called theirs: they keep
+ * their x and z, because the flight stands in the same place on every floor,
+ * and their feet return to zero because the floor under them is now that one.
+ *
+ * The head and foot of the run are both pinned by the collision, so the height
+ * lands on the boundary exactly rather than overshooting past it.
+ */
+export function syncStair() {
+  const footY = camera.position.y - EYE_HEIGHT;
+  // A millimetre of tolerance. The height at the end of the run is exactly a
+  // storey, but the walker is pinned there by a correction applied to x and z
+  // and the height is read back out of them, so it arrives a few bits short.
+  const reached = WALL_HEIGHT - 0.001;
+  if (footY < reached && footY > -reached) return 0;
+  const delta = footY > 0 ? 1n : -1n;
+  // A storey is climbed, not turned aside into: the way back is the same
+  // flight, so this arrival is not one the notice has to warn about.
+  world.arrivedIndirectly = false;
+  world.room = { q: world.room.q, r: world.room.r, level: world.room.level + delta };
+  camera.position.y = EYE_HEIGHT;
+  buildCurrentRoom();
+  return Number(delta);
 }
 
 /**

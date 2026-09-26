@@ -27,8 +27,8 @@
  * should not be mistaken for it.
  */
 
-import { SHELVES_PER_WALL, VOLUMES_PER_SHELF, WALLS_PER_HEX } from '../../babel-v3.js';
-import { freeWallsForLevel } from '../../world-engine.js';
+import { SHELVES_PER_WALL, WALLS_PER_HEX } from '../../babel-v3.js';
+import { WORLD_VOLUMES_PER_SHELF, freeWallsForLevel } from '../../world-engine.js';
 
 // One chamber in six has a volume out of place; one in forty-eight has a tally.
 const DISTURBED_VOLUME_IN = 6;
@@ -71,7 +71,7 @@ export function tracesFor(roomIndex, level) {
     ? {
       wall: draw(seed, 2) % WALLS_PER_HEX,
       shelf: draw(seed, 3) % SHELVES_PER_WALL,
-      volume: draw(seed, 4) % VOLUMES_PER_SHELF,
+      volume: draw(seed, 4) % WORLD_VOLUMES_PER_SHELF,
       // How far it was left standing out, and how far it was left crooked.
       reach: 0.05 + (draw(seed, 5) % 100) / 100 * 0.07,
       lean: ((draw(seed, 6) % 100) / 100 - 0.5) * 0.16,

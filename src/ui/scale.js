@@ -14,7 +14,8 @@
  * enormous.
  */
 
-import { ALPHABET, PAGES_PER_VOLUME, PAGE_LENGTH, VOLUMES_PER_HEX } from '../../babel-v3.js';
+import { ALPHABET, PAGES_PER_VOLUME, PAGE_LENGTH } from '../../babel-v3.js';
+import { WORLD_VOLUMES_PER_ROOM } from '../../world-engine.js';
 
 function digitsOf(log10) {
   return Math.floor(log10) + 1;
@@ -25,7 +26,7 @@ const BOOK_SPACE_LOG10 = PAGES_PER_VOLUME * PAGE_LENGTH * Math.log10(ALPHABET.le
 /** Decimal digits in the number of distinct volumes the catalogue holds. */
 export const BOOK_DIGITS = digitsOf(BOOK_SPACE_LOG10);
 /** Decimal digits in the number of chambers before the catalogue repeats. */
-export const CATALOGUE_HEX_DIGITS = digitsOf(BOOK_SPACE_LOG10 - Math.log10(Number(VOLUMES_PER_HEX)));
+export const CATALOGUE_HEX_DIGITS = digitsOf(BOOK_SPACE_LOG10 - Math.log10(Number(WORLD_VOLUMES_PER_ROOM)));
 
 const groups = value => value.toLocaleString('en-US').replace(/,/g, ' ');
 

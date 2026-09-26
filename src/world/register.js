@@ -20,6 +20,11 @@
 import { WORLD_ALGORITHM_VERSION } from '../../world-engine.js';
 import { exactWorldRoomAddressFor, roomKey, roomTagFor } from '../../world-model.js';
 
+// Deliberately still the project's old name. This key is what a walker's
+// notebook is saved under, and renaming it would not migrate their walk — it
+// would silently hide it and start them at chamber 1 again. The name of the
+// game is not the name of the thing it stores, and only one of them is allowed
+// to change without asking.
 const STORE_KEY = 'archive-chamber.register.' + WORLD_ALGORITHM_VERSION;
 
 // Ordinal by room key, and the rooms in the order they were first entered, so

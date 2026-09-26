@@ -2,7 +2,7 @@
  * Geometry helpers shared by the room builder.
  *
  * Everything here exists to keep a room's draw calls proportional to its
- * materials rather than to its 640 volumes: boxes are merged into per-material
+ * materials rather than to its 3840 volumes: boxes are merged into per-material
  * buffers, outlines into one buffer, and spine labels into one buffer per
  * texture atlas.
  */
@@ -47,7 +47,7 @@ export function axialMapOffset(q, r) {
  * the normal angles here put each line down the middle of a wall instead —
  * invisible until a doorway was cut and one appeared standing in the opening.
  */
-export function hexCorners(scale = 0.975) {
+export function hexCorners(scale = 1) {
   const corners = [];
   for (let index = 0; index < 6; index++) {
     const angle = index * Math.PI / 3;
@@ -99,17 +99,6 @@ export function drawDraftedLabel(context, box, text, fontScale = 0.344) {
   context.restore();
 }
 
-export function ceilingMark(text) {
-  const canvas = document.createElement('canvas');
-  canvas.width = 2048;
-  canvas.height = 512;
-  const context = canvas.getContext('2d');
-  drawDraftedLabel(context, { x: 0, y: 0, width: 2048, height: 512 }, text);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide, depthWrite: false });
-}
-
 // Geometries reused across every room must never be disposed with one.
 export const sharedGeometries = new Set();
 
@@ -133,16 +122,40 @@ const shadeVertex = new THREE.Vector3();
 /**
  * Merges a box into a batch.
  *
- * MeshBasicMaterial ignores normals, so only position, uv and colour are
- * carried over. `shade` receives the vertex in the parent's own space — the
- * cabinet interior, say — and returns a brightness, which is how depth is
- * expressed in a scene that has no lighting to cast it.
+ * Normals are rebuilt once after the static batch is assembled. `shade`
+ * receives the vertex in the parent's own space — the cabinet interior, say —
+ * and returns a brightness for small recesses in addition to scene lighting.
+ */
+// How many texture tiles one world unit gets. Everything merged shares it, so
+// the grain is the same size on a baluster as it is on a floor.
+const WORLD_UV_SCALE = 0.25;
+const mergeNormal = new THREE.Vector3();
+const mergeNormalMatrix = new THREE.Matrix3();
+
+/**
+ * Merges a box into a batch, giving it world-scaled texture coordinates.
+ *
+ * The coordinates cannot come from the source geometry. A box carries uv 0..1
+ * across each face whatever its size, so the forty-five unit rail around the
+ * well and the twenty-centimetre baluster standing under it were each given
+ * exactly one tile of texture. At the sizes this building works at that is a
+ * texel every third of a metre on the small parts and one every three metres on
+ * the large ones — which is why every big surface read as flat paint and no
+ * amount of relighting could give it a material.
+ *
+ * So the position in the world supplies the coordinate instead, projected onto
+ * whichever plane the face most nearly lies in. Three planes rather than one
+ * because a single projection stretches to nothing on any face parallel to it.
+ * The choice is made from the world normal, not the local one: a box turned by
+ * its placement presents different faces to the world than it does to itself.
  */
 export function appendMergedGeometry(batch, geometry, matrix, shade = null, localMatrix = null) {
   const position = geometry.getAttribute('position');
+  const normal = geometry.getAttribute('normal');
   const uv = geometry.getAttribute('uv');
   const index = geometry.getIndex();
   const base = batch.positions.length / 3;
+  if (normal) mergeNormalMatrix.getNormalMatrix(matrix);
   for (let vertex = 0; vertex < position.count; vertex++) {
     mergeVertex.fromBufferAttribute(position, vertex);
     let brightness = 1;
@@ -153,7 +166,27 @@ export function appendMergedGeometry(batch, geometry, matrix, shade = null, loca
     }
     mergeVertex.applyMatrix4(matrix);
     batch.positions.push(mergeVertex.x, mergeVertex.y, mergeVertex.z);
-    batch.uvs.push(uv.getX(vertex), uv.getY(vertex));
+    if (normal) {
+      mergeNormal.fromBufferAttribute(normal, vertex).applyMatrix3(mergeNormalMatrix);
+      const towardsX = Math.abs(mergeNormal.x);
+      const towardsY = Math.abs(mergeNormal.y);
+      const towardsZ = Math.abs(mergeNormal.z);
+      let u;
+      let v;
+      if (towardsY >= towardsX && towardsY >= towardsZ) {
+        u = mergeVertex.x;
+        v = mergeVertex.z;
+      } else if (towardsX >= towardsZ) {
+        u = mergeVertex.z;
+        v = mergeVertex.y;
+      } else {
+        u = mergeVertex.x;
+        v = mergeVertex.y;
+      }
+      batch.uvs.push(u * WORLD_UV_SCALE, v * WORLD_UV_SCALE);
+    } else {
+      batch.uvs.push(uv.getX(vertex), uv.getY(vertex));
+    }
     batch.colors.push(brightness, brightness, brightness);
   }
   for (let element = 0; element < index.count; element++) batch.indices.push(base + index.getX(element));
@@ -173,5 +206,8 @@ export function mergedMesh(batch, material) {
   geometry.setAttribute('uv', new THREE.Float32BufferAttribute(batch.uvs, 2));
   if (batch.colors?.length) geometry.setAttribute('color', new THREE.Float32BufferAttribute(batch.colors, 3));
   geometry.setIndex(batch.indices);
+  if (material.isMeshLambertMaterial || material.isMeshStandardMaterial || material.isMeshPhysicalMaterial) {
+    geometry.computeVertexNormals();
+  }
   return new THREE.Mesh(geometry, material);
 }
