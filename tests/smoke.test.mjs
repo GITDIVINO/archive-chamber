@@ -26,7 +26,12 @@ const CONTENT_TYPES = {
 
 // A draw call per volume is the regression this guards against: a room of 3840
 // books once cost ~1200 calls, and instancing brought it under twenty.
-const MAX_DRAW_CALLS_PER_FRAME = 60;
+//
+// A chamber now also draws its three neighbours again through their doorways,
+// each a full room and shaft, plus the glow passes: about 90-128 calls once the
+// lantern shadow maps stop re-rendering every frame. 140 leaves room for that
+// and still fails an order of magnitude short of a call per volume.
+const MAX_DRAW_CALLS_PER_FRAME = 140;
 const MAX_VISTA_VERTICES = 350000;
 const MAX_VISTA_TRIANGLES = 180000;
 
