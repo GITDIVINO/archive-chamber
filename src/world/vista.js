@@ -50,6 +50,7 @@ import {
   bookMaterials,
   dustMaterial,
   distantFixtureMaterial,
+  lanternGlowMaterial,
   lampMaterial,
   metalMaterial,
   shelfMaterial,
@@ -409,8 +410,13 @@ function addTemplateChamber(
   volumes,
   level,
   roomOffset,
+  glowPositions,
 ) {
   const doorWalls = freeWallsForLevel(level);
+  const glow = position => {
+    const world = position.clone().applyMatrix4(roomOffset);
+    glowPositions.push(world.x, world.y, world.z);
+  };
   addDistantBalustrade(batches, outlinePositions, roomOffset, false);
   // The real lamps are point lights only in the active chamber.  Their distant
   // globes remain visible on every storey as a single batched constellation;
@@ -473,6 +479,7 @@ function addTemplateChamber(
         new THREE.Vector3(position.x + dx, position.y, position.z + dz), 0, null, roomOffset, null, null);
     }
     addBox(batches, lampMaterial, [0.19, 0.28, 0.19], position, 0, null, roomOffset, null, null);
+    glow(position);
   }
   // Repeated cabinet lights turn the shaft into a receding constellation. No
   // point lights are allocated here: these tiny emissive bodies are batched in
@@ -486,6 +493,7 @@ function addTemplateChamber(
         pointOnWall(basis, tangent, CARCASE_HEIGHT - 0.04, 0.42), basis.rotation, null, roomOffset, null);
       addBox(batches, lampMaterial, [0.16, 0.11, 0.12],
         position, basis.rotation, null, roomOffset, null);
+      glow(position);
     }
   }
   for (const index of bookWallsForLevel(level)) {
@@ -521,6 +529,7 @@ export function buildVista(level) {
     count: 0,
   };
   let verticalPassages = 0;
+  const glowPositions = [];
   // A wall index is its own axial direction, so the corridor axis follows
   // straight from which wall carries a doorway.
   const doorWalls = freeWallsForLevel(level);
@@ -544,7 +553,7 @@ export function buildVista(level) {
     if (delta !== 1) {
       addChamberSlab(batches, vistaCeilingMaterial, offsetMatrix, -WELL_SLAB_THICKNESS, Math.PI / 2);
     }
-    addTemplateChamber(batches, outlinePositions, volumes, stackedLevel, offsetMatrix);
+    addTemplateChamber(batches, outlinePositions, volumes, stackedLevel, offsetMatrix, glowPositions);
 
     // One real passage begins behind each visible doorway. That is enough to
     // keep the background from reading as a coloured panel, without growing a
@@ -588,6 +597,19 @@ export function buildVista(level) {
   dust.raycast = () => {};
   dust.userData.atmosphericDust = true;
   group.add(dust);
+
+  // A haze round every flame in the shaft, as the reference has: each lantern
+  // is a soft warm point hanging in dark air rather than a pixel of colour.
+  // All of them are one point cloud, so the whole constellation costs a single
+  // draw. Fog never reaches them, which is what keeps the floors far down
+  // readable as lights after the timber itself has gone into the dark.
+  const glowGeometry = new THREE.BufferGeometry();
+  glowGeometry.setAttribute('position', new THREE.Float32BufferAttribute(glowPositions, 3));
+  const glows = new THREE.Points(glowGeometry, lanternGlowMaterial);
+  glows.raycast = () => {};
+  glows.frustumCulled = false;
+  glows.userData.lanternGlows = glowPositions.length / 3;
+  group.add(glows);
 
   // Finish the vertical shaft before adding the two walkable passages. Those
   // passages deliberately remain separate children: a portal destination must

@@ -71,6 +71,15 @@ function timberTexture() {
     }
     context.stroke();
   }
+  // Board seams and a darker pore line along each: the casework in the
+  // reference is built from separate boards, and a lantern glancing along a
+  // shelf front only reads as timber when it has joints to catch on.
+  for (let seam = 0; seam < 256; seam += 64) {
+    context.fillStyle = 'rgba(10, 10, 10, 0.28)';
+    context.fillRect(0, seam, 256, 2);
+    context.fillStyle = 'rgba(255, 255, 255, 0.10)';
+    context.fillRect(0, seam + 2, 256, 1);
+  }
   for (let knot = 0; knot < 7; knot++) {
     const x = 24 + (knot * 83) % 214;
     const y = 18 + (knot * 47) % 220;
@@ -100,12 +109,12 @@ export function pencilMaterial(texture, color = 0xffffff) {
 // One paper colour is shared by the whole architecture. Soft scene lighting
 // separates planes by direction, while vertex colour keeps the small recesses
 // inside shelves legible without introducing differently coloured panels.
-function shadedMaterial(texture, color = 0xffffff) {
+function shadedMaterial(texture, color = 0xffffff, roughness = 0.9) {
   return new THREE.MeshStandardMaterial({
     color,
     map: texture,
     vertexColors: true,
-    roughness: 0.9,
+    roughness,
     metalness: 0,
   });
 }
@@ -148,8 +157,11 @@ export const vistaCeilingMaterial = ceilingMaterial;
 // the texture is unchanged and still does the drawing; only what it is drawn on
 // has a colour now. Keeping the same texture is what stops the wood reading as
 // a flat paint chip: the grain is the same pencil the rest of the room is in.
-export const shelfMaterial = shadedMaterial(woodTexture, WOOD_COLOR);
-export const trimMaterial = shadedMaterial(graphiteTexture, TRIM_WOOD_COLOR);
+// Old varnish, not raw board: rough enough to stay wood, smooth enough that
+// every lantern leaves a small warm glint along a rail or a shelf edge. Those
+// glints are most of what draws the timber in the reference.
+export const shelfMaterial = shadedMaterial(woodTexture, WOOD_COLOR, 0.68);
+export const trimMaterial = shadedMaterial(graphiteTexture, TRIM_WOOD_COLOR, 0.6);
 export const wallMaterial = shellMaterial(WORLD_SURFACE_COLOR);
 export const metalMaterial = new THREE.MeshStandardMaterial({
   color: 0x171514,
@@ -193,7 +205,10 @@ export const roomLineMaterial = new THREE.LineBasicMaterial({
 // A lantern is the only thing here that emits rather than receives, so it is
 // the only unlit material in the room: it must stay at its own brightness when
 // everything around it has been let down far enough for its pool to show.
-export const lampMaterial = new THREE.MeshBasicMaterial({ color: LAMP_GLOBE_COLOR, toneMapped: false });
+// Fog does not reach it. Haze swallows the timber a few floors down, but a
+// flame is still a point of light at the bottom of the shaft: that is how the
+// reference shows its depth, as hundreds of lanterns hanging in dark air.
+export const lampMaterial = new THREE.MeshBasicMaterial({ color: LAMP_GLOBE_COLOR, toneMapped: false, fog: false });
 // Distant fixtures occupy only a few pixels and receive no useful modelling
 // from a lit metal shader. Sharing the emissive material with their flame keeps
 // the constellation in one draw call. This alias belongs after lampMaterial:
@@ -222,14 +237,44 @@ function dustTexture() {
   return new THREE.CanvasTexture(canvas);
 }
 
+function glowTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 64;
+  const context = canvas.getContext('2d');
+  const gradient = context.createRadialGradient(32, 32, 0, 32, 32, 31);
+  gradient.addColorStop(0, 'rgba(255, 236, 196, 1)');
+  gradient.addColorStop(0.08, 'rgba(255, 196, 112, .85)');
+  gradient.addColorStop(0.3, 'rgba(255, 150, 64, .22)');
+  gradient.addColorStop(1, 'rgba(255, 120, 40, 0)');
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, 64, 64);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+// The halo a lantern makes in hazy air. Sized in world units so that a flame
+// across the well is a soft bead of light and one forty floors down a spark.
+export const lanternGlowMaterial = new THREE.PointsMaterial({
+  color: 0xffb566,
+  map: glowTexture(),
+  transparent: true,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending,
+  size: 2.6,
+  sizeAttenuation: true,
+  fog: false,
+  toneMapped: false,
+});
+
 export const dustMaterial = new THREE.PointsMaterial({
   color: 0xe4a361,
   map: dustTexture(),
   transparent: true,
-  opacity: 0.22,
+  opacity: 0.3,
   depthWrite: false,
   blending: THREE.AdditiveBlending,
-  size: 0.16,
+  size: 0.18,
   sizeAttenuation: true,
   toneMapped: false,
 });
