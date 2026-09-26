@@ -43,6 +43,11 @@ canvas { display: block; filter: contrast(1.035) saturate(.88); }
 .panel { position: absolute; width: min(480px, calc(100vw - 42px)); left: 50%; top: 50%; padding: 34px 36px 30px; text-align: center; transform: translate(-50%, -50%); transition: opacity 220ms var(--ease-out), transform 220ms var(--ease-out); pointer-events: auto; font-family: "Courier New", monospace; }
 .panel.gone { opacity: 0; transform: translate(-50%, -47%); pointer-events: none; }
 /* The game's own name, in the same drafted hand as everything else. */
+/* The ouroboros and Sisyphus above the title (src/ui/emblem.js). It overrides
+   the full-screen sizing and filter every other canvas gets, and gives way on
+   short screens so the enter button never drops below the fold. */
+#emblem { display: block; width: min(184px, 26vh); height: auto; aspect-ratio: 1; margin: -8px auto 14px; filter: none; }
+@media (max-height: 520px) { #emblem { display: none; } }
 .game-title { margin: 0 0 10px; color: var(--ink); font: 700 17px/1.2 "Courier New", monospace; letter-spacing: .13em; }
 /* What the work owes and what it does not claim. Set quietly, below the
    controls: it belongs on the first screen, but it is not the first thing to
