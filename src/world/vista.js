@@ -103,6 +103,70 @@ import {
 // inside the 320 far plane. Keeping twenty-eight would build 400 units of
 // chamber, half of it invisible, at twice the cost.
 export const VERTICAL_VISTA_DEPTH = 14;
+
+// How far up and down the shaft the shelves carry volumes. Every storey holds
+// 3840 of them, so the full stack was over a hundred thousand instances, and
+// the shaft is drawn once for the chamber and again through every doorway that
+// shows a neighbour: the books alone were nine tenths of a frame. They are lit
+// by nothing but the ambient fill once they are out of the walker's chamber,
+// and leather that dark is gone into the fog within a few storeys. Compared
+// frame for frame with the full stack, looking straight up and straight down
+// the well, the difference is under 10 of 255 on any pixel. The boards,
+// lanterns and rails of every storey are still built.
+//
+// The storey directly above and below keeps whole volumes. The next keeps only
+// the two faces that can be seen from the well: a volume's sides face its
+// neighbours across a three-centimetre gap and its underside rests on the board.
+export const VISTA_WHOLE_BOOK_STOREYS = 1;
+export const VISTA_BOOK_STOREYS = 2;
+
+// The spine (-z) and top (+y) faces of bookGeometry, with its own normals,
+// texture coordinates and three-stop tone, so a distant volume is shaded
+// exactly as a near one wherever a near one could be seen.
+const BOX_FACE_POSITIVE_Y = 2;
+const BOX_FACE_NEGATIVE_Z = 5;
+const distantBookGeometry = (() => {
+  const geometry = new THREE.BufferGeometry();
+  const index = bookGeometry.getIndex();
+  const attributes = Object.entries(bookGeometry.attributes);
+  const values = Object.fromEntries(attributes.map(([name]) => [name, []]));
+  const indices = [];
+  const remap = new Map();
+  for (const face of [BOX_FACE_POSITIVE_Y, BOX_FACE_NEGATIVE_Z]) {
+    const group = bookGeometry.groups[face];
+    for (let element = group.start; element < group.start + group.count; element++) {
+      const vertex = index.getX(element);
+      if (!remap.has(vertex)) {
+        remap.set(vertex, remap.size);
+        for (const [name, attribute] of attributes) {
+          for (let component = 0; component < attribute.itemSize; component++) {
+            values[name].push(attribute.array[vertex * attribute.itemSize + component]);
+          }
+        }
+      }
+      indices.push(remap.get(vertex));
+    }
+  }
+  for (const [name, attribute] of attributes) {
+    geometry.setAttribute(name, new THREE.Float32BufferAttribute(values[name], attribute.itemSize));
+  }
+  geometry.setIndex(indices);
+  return geometry;
+})();
+
+function instancedVolumes(geometry, volumes) {
+  const mesh = new THREE.InstancedMesh(geometry, bookMaterials[0], volumes.count);
+  mesh.instanceMatrix = new THREE.InstancedBufferAttribute(
+    volumes.matrices.subarray(0, volumes.count * 16),
+    16,
+  );
+  mesh.instanceMatrix.needsUpdate = true;
+  mesh.castShadow = false;
+  mesh.receiveShadow = true;
+  mesh.frustumCulled = false;
+  mesh.raycast = () => {};
+  return mesh;
+}
 // The corridor runs along the axis shared by the two doorways, and that axis
 // turns with the level: what shows through a doorway on the floor above runs a
 // different way, which is the whole reason a stair is worth climbing.
@@ -289,6 +353,7 @@ function addDistantBookWall(batches, volumes, index, roomOffset) {
   // library rather than a library, and it showed the moment a walker looked
   // down. Instancing makes the honest version cost one draw call for the whole
   // stack, so there was never a reason to fake it.
+  if (!volumes) return;
   const basisFrame = wallBasis(index);
   for (let section = 0; section < CABINET_SECTIONS_PER_WALL; section++) {
     const tangent = (section - (CABINET_SECTIONS_PER_WALL - 1) / 2) * CABINET_SECTION_PITCH;
@@ -539,12 +604,13 @@ export function* vistaBuilder(level) {
   const outlinePositions = [];
   // Four shelved walls, six sections, five shelves, thirty-two volumes: 3840 a
   // chamber, for every floor of the shaft above and below.
-  const stackedChambers = VERTICAL_VISTA_DEPTH * 2;
   const volumesPerChamber = SHELVED_WALLS * CABINET_SECTIONS_PER_WALL * SHELVES_PER_WALL * VOLUMES_PER_SHELF;
-  const volumes = {
-    matrices: new Float32Array(stackedChambers * volumesPerChamber * 16),
+  const storeyVolumes = storeys => ({
+    matrices: new Float32Array(2 * storeys * volumesPerChamber * 16),
     count: 0,
-  };
+  });
+  const volumes = storeyVolumes(VISTA_WHOLE_BOOK_STOREYS);
+  const distantVolumes = storeyVolumes(VISTA_BOOK_STOREYS - VISTA_WHOLE_BOOK_STOREYS);
   let verticalPassages = 0;
   // A wall index is its own axial direction, so the corridor axis follows
   // straight from which wall carries a doorway.
@@ -569,7 +635,11 @@ export function* vistaBuilder(level) {
     if (delta !== 1) {
       addChamberSlab(batches, vistaCeilingMaterial, offsetMatrix, -WELL_SLAB_THICKNESS, Math.PI / 2);
     }
-    addTemplateChamber(batches, outlinePositions, volumes, stackedLevel, offsetMatrix);
+    const storeys = Math.abs(delta);
+    const shelvedVolumes = storeys <= VISTA_WHOLE_BOOK_STOREYS ? volumes
+      : storeys <= VISTA_BOOK_STOREYS ? distantVolumes
+        : null;
+    addTemplateChamber(batches, outlinePositions, shelvedVolumes, stackedLevel, offsetMatrix);
 
     // One real passage begins behind each visible doorway. That is enough to
     // keep the background from reading as a coloured panel, without growing a
@@ -622,19 +692,8 @@ export function* vistaBuilder(level) {
   // lets its near wall cross the portal plane and hang inside the visible hex.
   // Once the threshold is crossed the ordinary vista, with both passages, is
   // still present and becomes canonical without a visual substitute.
-  if (volumes.count) {
-    const shelved = new THREE.InstancedMesh(bookGeometry, bookMaterials[0], volumes.count);
-    shelved.instanceMatrix = new THREE.InstancedBufferAttribute(
-      volumes.matrices.subarray(0, volumes.count * 16),
-      16,
-    );
-    shelved.instanceMatrix.needsUpdate = true;
-    shelved.castShadow = false;
-    shelved.receiveShadow = true;
-    shelved.frustumCulled = false;
-    shelved.raycast = () => {};
-    group.add(shelved);
-  }
+  if (volumes.count) group.add(instancedVolumes(bookGeometry, volumes));
+  if (distantVolumes.count) group.add(instancedVolumes(distantBookGeometry, distantVolumes));
   yield* finishVistaGeometryInSteps(group, batches, outlinePositions);
 
   for (let n = -1; n < 1; n++) {
