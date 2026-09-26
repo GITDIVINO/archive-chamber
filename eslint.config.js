@@ -41,7 +41,7 @@ export default [
     // The smoke test is a Node script whose page.evaluate/addInitScript
     // callbacks are serialised and run inside the browser, so it legitimately
     // references both environments.
-    files: ['tests/smoke.test.mjs'],
+    files: ['tests/smoke.test.mjs', 'tests/stairs.test.mjs'],
     languageOptions: {
       globals: { ...globals.node, ...globals.browser },
     },
