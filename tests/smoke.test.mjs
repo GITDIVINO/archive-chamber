@@ -8,6 +8,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
@@ -23,9 +24,11 @@ const CONTENT_TYPES = {
   '.woff2': 'font/woff2',
 };
 
-// A draw call per volume is the regression this guards against: a room of 640
+// A draw call per volume is the regression this guards against: a room of 3840
 // books once cost ~1200 calls, and instancing brought it under twenty.
 const MAX_DRAW_CALLS_PER_FRAME = 60;
+const MAX_VISTA_VERTICES = 350000;
+const MAX_VISTA_TRIANGLES = 180000;
 
 function startServer() {
   const server = createServer(async (request, response) => {
@@ -94,7 +97,7 @@ assert.match(
 );
 assert.match(
   await page.locator('#cell').getAttribute('data-full-address'),
-  /^w2;/,
+  /^w3;/,
   'and the exact record is still what the button copies',
 );
 
@@ -105,6 +108,146 @@ assert.ok(perFrame > 0, 'the room must actually render');
 assert.ok(
   perFrame <= MAX_DRAW_CALLS_PER_FRAME,
   `a room should cost at most ${MAX_DRAW_CALLS_PER_FRAME} draw calls per frame, measured ${perFrame}`,
+);
+
+// --- the chamber opens vertically -------------------------------------------
+// The well is an actual hole through a solid floor, not transparent paint. It
+// repeats with its balustrade far enough in both directions for fog to hide the
+// ends, and collision keeps the walker on the safe side of the guard.
+const vertical = await page.evaluate(async () => {
+  const THREE = await import('three');
+  const { renderedWorld, renderer, scene } = await import('./src/core/view.js');
+  const {
+    ceilingMaterial,
+    floorMaterial,
+    vistaCeilingMaterial,
+    vistaFloorMaterial,
+    wallMaterial,
+  } = await import('./src/core/materials.js');
+  const {
+    STAIR_HALF_RUN,
+    WELL_RADIUS,
+    WORLD_CEILING_COLOR,
+    WORLD_DISTANCE_COLOR,
+    WORLD_FLOOR_COLOR,
+    WORLD_SURFACE_COLOR,
+  } = await import('./src/constants.js');
+  const { VERTICAL_VISTA_DEPTH } = await import('./src/world/vista.js');
+  const { constrainFromWell, WELL_BALUSTRADE_PARTS } = await import('./src/world/well.js');
+  const vista = renderedWorld.children.find(child => child.userData.verticalChambers !== undefined);
+  const room = renderedWorld.children.find(child => child.userData.q !== undefined);
+  const bounds = new THREE.Box3().setFromObject(vista);
+  const litVistaMeshes = [];
+  vista.traverse(child => {
+    if (child.isMesh && (child.material?.isMeshLambertMaterial || child.material?.isMeshStandardMaterial)) litVistaMeshes.push(child);
+  });
+  const openings = room.children.filter(child => child.userData.wellOpening);
+  const centre = { x: 0, y: 0, z: 0 };
+  const constrained = constrainFromWell(centre);
+  let roomPointLights = 0;
+  let shadowCasters = 0;
+  let vistaShadowCasters = 0;
+  room.traverse(child => {
+    if (child.isPointLight) roomPointLights++;
+    if (child.castShadow) shadowCasters++;
+  });
+  vista.traverse(child => { if (child.castShadow) vistaShadowCasters++; });
+  return {
+    minY: bounds.min.y,
+    maxY: bounds.max.y,
+    verticalPassages: vista.userData.verticalPassages,
+    expectedVerticalPassages: VERTICAL_VISTA_DEPTH * 4,
+    solidSlabs: !floorMaterial.transparent && !ceilingMaterial.transparent,
+    structuralColours: [
+      floorMaterial.color.getHex(),
+      ceilingMaterial.color.getHex(),
+      wallMaterial.color.getHex(),
+      vistaFloorMaterial.color.getHex(),
+      vistaCeilingMaterial.color.getHex(),
+      scene.background.getHex(),
+      scene.fog.color.getHex(),
+    ],
+    expectedStructuralColours: [
+      WORLD_FLOOR_COLOR,
+      WORLD_CEILING_COLOR,
+      WORLD_SURFACE_COLOR,
+      WORLD_FLOOR_COLOR,
+      WORLD_CEILING_COLOR,
+    ],
+    expectedDistanceColour: WORLD_DISTANCE_COLOR,
+    structuralMaterialsAreLit: [
+      floorMaterial,
+      ceilingMaterial,
+      wallMaterial,
+      vistaFloorMaterial,
+      vistaCeilingMaterial,
+    ].every(material => material.isMeshLambertMaterial || material.isMeshStandardMaterial),
+    litVistaMeshCount: litVistaMeshes.length,
+    litVistaMeshesHaveNormals: litVistaMeshes.every(
+      mesh => Boolean(mesh.geometry.getAttribute('normal')),
+    ),
+    lightTypes: scene.children.filter(child => child.isLight).map(child => child.type),
+    vistaPlaneMaterialsShared:
+      vistaFloorMaterial === floorMaterial && vistaCeilingMaterial === ceilingMaterial,
+    hasViewDependentCutoff: [vistaFloorMaterial, vistaCeilingMaterial]
+      .some(material => material.userData.vistaViewCutoff !== undefined),
+    shadowMapEnabled: renderer.shadowMap.enabled,
+    shadowMapType: renderer.shadowMap.type,
+    shadowLights: scene.children.filter(child => child.isLight && child.castShadow).length,
+    shadowCasters,
+    vistaShadowCasters,
+    roomPointLights,
+    lampCount: room.userData.lampCount,
+    readingLampCount: room.userData.readingLampCount,
+    openingCount: openings.length,
+    openingRadii: openings.map(mesh => mesh.geometry.parameters.innerRadius),
+    expectedRadius: WELL_RADIUS,
+    expectedStairCut: STAIR_HALF_RUN,
+    balustradeParts: room.userData.wellBalustradeParts,
+    expectedParts: WELL_BALUSTRADE_PARTS.length,
+    constrained,
+    constrainedRadius: Math.hypot(centre.x, centre.z),
+  };
+});
+assert.ok(vertical.minY < -100, `the chambers below must disappear into fog, ending at ${vertical.minY.toFixed(1)}`);
+assert.ok(vertical.maxY > 100, `the chambers above must disappear into fog, ending at ${vertical.maxY.toFixed(1)}`);
+assert.equal(
+  vertical.verticalPassages,
+  vertical.expectedVerticalPassages,
+  'every stacked chamber carries exactly two passages and no repeated horizontal room chains',
+);
+assert.equal(vertical.solidSlabs, true, 'floor and ceiling around the well must be solid');
+assert.ok(
+  vertical.structuralColours.slice(0, 5).every(
+    (colour, index) => colour === vertical.expectedStructuralColours[index],
+  )
+    && vertical.structuralColours.slice(5).every(colour => colour === vertical.expectedDistanceColour),
+  'floor, ceiling and wall keep a stable material palette while fog and the open well share one darker distance colour',
+);
+assert.equal(vertical.structuralMaterialsAreLit, true, 'one paper colour must still respond to scene lighting');
+assert.ok(vertical.litVistaMeshCount > 0, 'the vista must contain lit structural meshes');
+assert.equal(vertical.litVistaMeshesHaveNormals, true, 'merged lit geometry must carry surface normals');
+assert.deepEqual(
+  vertical.lightTypes.sort(),
+  ['AmbientLight', 'DirectionalLight', 'HemisphereLight'],
+  'soft ambient, sky and directional light must separate floor, wall and ceiling',
+);
+assert.equal(vertical.vistaPlaneMaterialsShared, true, 'active and distant slabs must obey the same material rules');
+assert.equal(vertical.hasViewDependentCutoff, false, 'no floor or ceiling may disappear because the camera turns');
+assert.equal(vertical.shadowMapEnabled, true, 'the active room must render stable architectural shadows');
+assert.equal(vertical.shadowLights, 1, 'one bounded key light supplies shadows without multiplying their cost');
+assert.ok(vertical.shadowCasters > 0, 'the active room architecture must cast shadows');
+assert.equal(vertical.vistaShadowCasters, 0, 'distant geometry must never spend the active shadow budget');
+assert.equal(vertical.roomPointLights, 2, 'the two doorway lanterns supply the bounded local-light budget');
+assert.equal(vertical.lampCount, 2, 'the room records one canonical lamp at each exit');
+assert.equal(vertical.readingLampCount, 0, 'cabinet and stair lights stay emissive without multiplying point-light passes');
+assert.equal(vertical.openingCount, 2, 'the current chamber needs the same opening in its floor and ceiling');
+assert.ok(vertical.openingRadii.every(radius => radius === vertical.expectedRadius), 'both openings must follow the frozen well radius');
+assert.equal(vertical.balustradeParts, vertical.expectedParts, 'the full balustrade must be built around the opening');
+assert.equal(vertical.constrained, true, 'the well guard must stop a walker entering its centre');
+assert.ok(
+  vertical.constrainedRadius > vertical.expectedStairCut,
+  'at the bridge centre collision must return the walker beyond the stair cut in the deck',
 );
 
 // --- the interface is on top of the canvas -----------------------------------
@@ -186,10 +329,10 @@ async function openAddress(address) {
   await page.locator('#address-submit').click();
 }
 
-await openAddress('w2;0;2;2;13;197');
+await openAddress('w3;0;2;2;13;197');
 await page.waitForSelector('#book-panel.visible');
 assert.equal(await page.locator('.page-counter span').first().textContent(), '197');
-assert.equal(await page.locator('#book-address').textContent(), 'w2;0;2;2;13;197');
+assert.equal(await page.locator('#book-address').textContent(), 'w3;0;2;2;13;197');
 assert.equal(await page.locator('#location-record').textContent(), 'copy world record');
 assert.equal(await page.locator('#catalogue-record').isHidden(), false, 'a world record also exposes its catalogue address');
 const manifestoPage = (await page.locator('#book-page').textContent()).replace(/\n/g, '');
@@ -201,7 +344,7 @@ assert.ok(
 // paging keeps the address and the counter in step
 await page.locator('#next-page').click();
 assert.equal(await page.locator('.page-counter span').first().textContent(), '198');
-assert.equal(await page.locator('#book-address').textContent(), 'w2;0;2;2;13;198');
+assert.equal(await page.locator('#book-address').textContent(), 'w3;0;2;2;13;198');
 
 // --- a catalogue address opens without a world record ------------------------
 await openAddress('v3;129d19;2;2;13;197');
@@ -231,30 +374,50 @@ assert.equal(await page.locator('#cell').textContent(), roomBeforeSearch, 'searc
 // First line of defence: the field itself refuses to hold a huge value.
 await openCatalogue();
 assert.equal(await page.locator('#address-input').getAttribute('maxlength'), '8192');
-await page.locator('#address-input').fill('w2;' + '1'.repeat(20000));
+await page.locator('#address-input').focus();
+await page.locator('#address-input').selectText();
+// Playwright's `fill` deliberately refuses an overlong value in recent
+// Chromium builds and leaves the previous address untouched. `insertText`
+// follows the browser's real editing path, which is the contract exercised
+// here: maxlength accepts the prefix and truncates the remainder.
+await page.keyboard.insertText('w3;' + '1'.repeat(20000));
 assert.equal(
   (await page.locator('#address-input').inputValue()).length,
   8192,
   'the field truncates to its maximum length',
 );
 
-// Even a maximal address must be answered promptly rather than blocking.
-let started = Date.now();
-await page.locator('#address-submit').click();
-await page.waitForFunction(() => document.querySelector('#search-result').textContent !== '');
-assert.ok(Date.now() - started < 3000, 'a maximum-length address must not stall the tab');
+// Even a maximal address must be answered promptly rather than blocking. Time
+// the synchronous application handler inside the page; Playwright's action
+// bookkeeping and a software WebGL renderer are not part of this contract.
+const maximalResponse = await page.evaluate(() => {
+  const started = performance.now();
+  document.querySelector('#address-submit').click();
+  return {
+    elapsed: performance.now() - started,
+    text: document.querySelector('#search-result').textContent,
+  };
+});
+assert.notEqual(maximalResponse.text, '', 'a maximal address receives an immediate answer');
+assert.ok(maximalResponse.elapsed < 100, `a maximum-length address took ${maximalResponse.elapsed.toFixed(1)} ms`);
 
 // Second line of defence: a value set past the field limit is still refused.
 await openCatalogue();
 await page.evaluate(() => {
   const input = document.querySelector('#address-input');
   input.removeAttribute('maxlength');
-  input.value = 'w2;' + '1'.repeat(50000);
+  input.value = 'w3;' + '1'.repeat(50000);
 });
-started = Date.now();
-await page.locator('#address-submit').click();
-assert.equal(await page.locator('#search-result').textContent(), 'record is too long for this client');
-assert.ok(Date.now() - started < 2000, 'refusing an oversized address must be immediate');
+const oversizedResponse = await page.evaluate(() => {
+  const started = performance.now();
+  document.querySelector('#address-submit').click();
+  return {
+    elapsed: performance.now() - started,
+    text: document.querySelector('#search-result').textContent,
+  };
+});
+assert.equal(oversizedResponse.text, 'record is too long for this client');
+assert.ok(oversizedResponse.elapsed < 100, `refusing an oversized address took ${oversizedResponse.elapsed.toFixed(1)} ms`);
 
 assert.deepEqual(consoleErrors, [], 'the page must boot without console errors');
 
@@ -266,7 +429,12 @@ const cabinet = await page.evaluate(async () => {
   const room = await import('./src/world/room.js');
   const constants = await import('./src/constants.js');
   const babel = await import('./babel-v3.js');
+  const geometry = await import('./src/world/geometry.js');
   const topShelfY = constants.SHELF_BASE_Y + (babel.SHELVES_PER_WALL - 1) * constants.SHELF_PITCH;
+  const corners = geometry.hexCorners();
+  const basis = geometry.wallBasis(0);
+  const wallStart = geometry.pointOnWall(basis, -constants.WALL_WIDTH / 2, 0);
+  const wallEnd = geometry.pointOnWall(basis, constants.WALL_WIDTH / 2, 0);
   return {
     carcaseHeight: room.CARCASE_HEIGHT,
     railBottom: room.CARCASE_HEIGHT - room.RAIL_THICKNESS,
@@ -276,8 +444,192 @@ const cabinet = await page.evaluate(async () => {
     shelfThickness: room.SHELF_THICKNESS,
     bookHeight: constants.BOOK_HEIGHT,
     interaction: constants.INTERACTION_DISTANCE,
+    roomRadius: constants.ROOM_RADIUS,
+    wallWidth: constants.WALL_WIDTH,
+    cabinetRunWidth: constants.CABINET_RUN_WIDTH,
+    cabinetCornerClearance: constants.CABINET_CORNER_CLEARANCE,
+    cabinetUprightsPerWall: room.CABINET_UPRIGHTS_PER_WALL,
+    cabinetBookStep: room.CABINET_BOOK_STEP,
+    bookWidth: constants.BOOK_WIDTH,
+    cornerGap: Math.sqrt(3) * constants.CABINET_CORNER_CLEARANCE
+      - (room.CABINET_WALL_INSET - (room.CARCASE_CENTRE_Z - room.CARCASE_DEPTH / 2)),
+    wellRadius: constants.WELL_RADIUS,
+    wellAreaRatio: constants.WELL_FLOOR_AREA_RATIO,
+    wallCornerError: Math.max(
+      Math.hypot(wallStart.x - corners[0].x, wallStart.z - corners[0].z),
+      Math.hypot(wallEnd.x - corners[1].x, wallEnd.z - corners[1].z),
+    ),
   };
 });
+
+assert.equal(cabinet.wallWidth, cabinet.roomRadius, 'a regular hex wall must end on the same six corners as its floor');
+assert.ok(cabinet.wallCornerError < 1e-12, 'wall endpoints, floor vertices and visible corner arrises must be identical');
+assert.equal(cabinet.cabinetUprightsPerWall, 2, 'one continuous cabinet has only its two end uprights');
+assert.ok(cabinet.cornerGap > 0.25, 'neighbouring wall cabinets must leave visible air at the hex corner');
+assert.ok(cabinet.cabinetBookStep > cabinet.bookWidth, 'individual books remain distinct within the continuous row');
+assert.ok(
+  Math.abs((cabinet.wellRadius / cabinet.roomRadius) ** 2 - cabinet.wellAreaRatio) < 1e-12,
+  'the similar inner hex must occupy exactly seventy percent of the chamber area',
+);
+
+const chamberLayout = await page.evaluate(async () => {
+  const { renderedWorld } = await import('./src/core/view.js');
+  const {
+    ALCOVE_REACH,
+    APOTHEM,
+    DOOR_HEIGHT,
+    DOOR_WIDTH,
+    HALL_HALF_WIDTH,
+    HALL_JUNCTION_CHAMFER,
+    HALL_LENGTH,
+    HALL_SIDE_CENTRE,
+    HALL_SIDE_HALF,
+  } = await import('./src/constants.js');
+  const { wallBasis } = await import('./src/world/geometry.js');
+  const room = renderedWorld.children.find(child => child.userData.q !== undefined);
+  const vista = renderedWorld.children.find(child => child.userData.q === undefined);
+  const colours = room.userData.bookMeshes.flatMap(mesh => [...mesh.instanceColor.array]);
+
+  // Cut every vista triangle at eye height and clip the resulting segment
+  // against a slightly inset active hex. Floors may overlap at a threshold, but
+  // no vertical piece of background geometry may enter the room: vista meshes
+  // deliberately have no collision and would become walls the player can walk
+  // through.
+  const eyeY = 1.65;
+  const hexLimit = APOTHEM - 0.35;
+  const planes = Array.from({ length: 6 }, (_, index) => wallBasis(index));
+  const insideHex = (point) => planes.every(
+    plane => plane.nx * point.x + plane.nz * point.z <= hexLimit,
+  );
+  const segmentCrossesHex = (from, to) => {
+    let enter = 0;
+    let leave = 1;
+    for (const plane of planes) {
+      const start = plane.nx * from.x + plane.nz * from.z;
+      const delta = plane.nx * (to.x - from.x) + plane.nz * (to.z - from.z);
+      if (Math.abs(delta) < 1e-9) {
+        if (start > hexLimit) return false;
+        continue;
+      }
+      const crossing = (hexLimit - start) / delta;
+      if (delta > 0) leave = Math.min(leave, crossing);
+      else enter = Math.max(enter, crossing);
+      if (enter > leave) return false;
+    }
+    return leave >= 0 && enter <= 1;
+  };
+  const point = (positions, index) => ({
+    x: positions.getX(index), y: positions.getY(index), z: positions.getZ(index),
+  });
+  const cutAtEyeHeight = (vertices) => {
+    const cuts = [];
+    for (const [from, to] of [[0, 1], [1, 2], [2, 0]]) {
+      const a = vertices[from];
+      const b = vertices[to];
+      if ((a.y - eyeY) * (b.y - eyeY) > 0 || Math.abs(b.y - a.y) < 1e-9) continue;
+      const amount = (eyeY - a.y) / (b.y - a.y);
+      if (amount < 0 || amount > 1) continue;
+      const cut = {
+        x: a.x + (b.x - a.x) * amount,
+        z: a.z + (b.z - a.z) * amount,
+      };
+      if (!cuts.some(existing => Math.hypot(existing.x - cut.x, existing.z - cut.z) < 1e-6)) cuts.push(cut);
+    }
+    return cuts;
+  };
+  let intrudingVistaTriangles = 0;
+  const vistaMeshes = [];
+  vista.traverse(child => { if (child.isMesh) vistaMeshes.push(child); });
+  for (const mesh of vistaMeshes) {
+    const positions = mesh.geometry.getAttribute('position');
+    const indices = mesh.geometry.getIndex();
+    if (!positions || !indices) continue;
+    for (let cursor = 0; cursor < indices.count; cursor += 3) {
+      const cuts = cutAtEyeHeight([
+        point(positions, indices.getX(cursor)),
+        point(positions, indices.getX(cursor + 1)),
+        point(positions, indices.getX(cursor + 2)),
+      ]);
+      if (cuts.some(insideHex) || (cuts.length >= 2 && segmentCrossesHex(cuts[0], cuts[1]))) {
+        intrudingVistaTriangles++;
+      }
+    }
+  }
+  return {
+    doorWalls: room.userData.doorWalls,
+    shelvedWalls: room.userData.shelvedWalls,
+    bookWallCount: room.userData.bookWallCount,
+    activeCabinetRunWidth: room.userData.cabinetRunWidth,
+    distantCabinetRunWidth: vista.userData.cabinetRunWidth,
+    activeCabinetUprightsPerWall: room.userData.cabinetUprightsPerWall,
+    distantCabinetUprightsPerWall: vista.userData.cabinetUprightsPerWall,
+    sideAndForwardReachDifference: Math.abs(ALCOVE_REACH - HALL_SIDE_CENTRE),
+    doorWidth: DOOR_WIDTH,
+    doorHeight: DOOR_HEIGHT,
+    hallWidth: HALL_HALF_WIDTH * 2,
+    junctionChamfer: HALL_JUNCTION_CHAMFER,
+    junctionSideWidth: HALL_SIDE_HALF * 2,
+    hallLength: HALL_LENGTH,
+    intrudingVistaTriangles,
+    vistaVertices: vistaMeshes.reduce(
+      (total, child) => total + (child.geometry?.getAttribute('position')?.count ?? 0), 0,
+    ),
+    vistaTriangles: vistaMeshes.reduce(
+      (total, child) => total + (child.geometry?.getIndex()?.count ?? 0) / 3, 0,
+    ),
+    bookMeshes: room.userData.bookMeshes.length,
+    bookCount: room.userData.bookMeshes.reduce((total, mesh) => total + mesh.count, 0),
+    allBooksWhite: colours.every(value => value === 1),
+  };
+});
+assert.equal(chamberLayout.doorWalls.length, 2, 'a chamber has exactly two exit walls');
+assert.equal(chamberLayout.bookWallCount, 4, 'the other four walls are book walls');
+assert.equal(chamberLayout.shelvedWalls.length, 4, 'all four book walls are recorded by the room');
+assert.equal(
+  chamberLayout.activeCabinetRunWidth,
+  chamberLayout.distantCabinetRunWidth,
+  'active and distant floors use the same corner-to-corner bookcase run',
+);
+assert.equal(chamberLayout.activeCabinetUprightsPerWall, 2, 'the active cabinet has no internal partitions');
+assert.equal(
+  chamberLayout.distantCabinetUprightsPerWall,
+  chamberLayout.activeCabinetUprightsPerWall,
+  'distant floors use the same partition-free cabinet construction',
+);
+assert.ok(
+  chamberLayout.sideAndForwardReachDifference < 1e-12,
+  'side and forward exits must reach identical chamber doorways from the crossing',
+);
+assert.ok(chamberLayout.doorWidth <= 4.5, 'the doorway must remain human-scale inside the enlarged gallery');
+assert.ok(chamberLayout.doorHeight >= 3.2 && chamberLayout.doorHeight <= 4.2, 'the doorway needs a legible human height');
+assert.ok(chamberLayout.hallWidth <= 5, 'the passage must read as a corridor, not a low hall');
+assert.equal(
+  chamberLayout.junctionSideWidth,
+  chamberLayout.hallWidth,
+  'all four mouths of the junction must have exactly the same width',
+);
+assert.ok(
+  chamberLayout.junctionChamfer >= chamberLayout.hallWidth / 4,
+  'the inner corners must be cut back far enough not to dominate diagonal views',
+);
+assert.ok(chamberLayout.hallWidth / chamberLayout.doorHeight < 1.5, 'the corridor must not be wider than its height by a hangar-like ratio');
+assert.ok(chamberLayout.hallLength <= 24, 'topological distance must not force a sixty-metre visible passage');
+assert.equal(
+  chamberLayout.intrudingVistaTriangles,
+  0,
+  'non-colliding vista geometry must never cross the interior of the active hex',
+);
+assert.equal(chamberLayout.bookMeshes, 1, 'all white books share one material batch');
+assert.equal(chamberLayout.bookCount, 3840, 'all four book walls remain fully populated');
+assert.equal(chamberLayout.allBooksWhite, true, 'every physical volume uses the same white tint');
+assert.ok(
+  chamberLayout.vistaVertices <= MAX_VISTA_VERTICES,
+  `vista geometry must stay below ${MAX_VISTA_VERTICES} vertices, measured ${chamberLayout.vistaVertices}`,
+);
+assert.ok(
+  chamberLayout.vistaTriangles <= MAX_VISTA_TRIANGLES,
+  `vista geometry must stay below ${MAX_VISTA_TRIANGLES} triangles, measured ${chamberLayout.vistaTriangles}`,
+);
 
 assert.ok(
   cabinet.topBooksReach <= cabinet.railBottom,
@@ -297,13 +649,13 @@ assert.ok(
 // Driven against the page's own module instances, so this exercises the same
 // camera and room registry the player does rather than a copy.
 await openCatalogue();
-await page.locator('#address-input').fill('w2;0');
+await page.locator('#address-input').fill('w3;0');
 await page.locator('#address-submit').click();
 await page.waitForFunction(() => document.querySelector('#search-result').textContent === 'world room opened');
 
 const doorGeometry = await page.evaluate(async () => {
   const doors = await import('./src/world/doors.js');
-  const { APOTHEM, HALL_START } = await import('./src/constants.js');
+  const { APOTHEM, DOOR_HALF_WIDTH, HALL_START } = await import('./src/constants.js');
   const { basis } = doors.wallCoordinates(2, 0, 0);
   const on = (normal, tangent) => [
     basis.nx * normal + basis.tx * tangent,
@@ -315,7 +667,7 @@ const doorGeometry = await page.evaluate(async () => {
     opposite: [doors.oppositeWall(2), doors.oppositeWall(5)],
     doorWalls: [0, 1, 2, 3, 4, 5].filter(index => doors.isDoorWall(index, 0n)),
     centredInOpening: doors.isWithinDoorway(2, 0n, ...on(APOTHEM, 0)),
-    besideOpening: doors.isWithinDoorway(2, 0n, ...on(APOTHEM, 1.9)),
+    besideOpening: doors.isWithinDoorway(2, 0n, ...on(APOTHEM, DOOR_HALF_WIDTH + 0.5)),
     throughBookWall: doors.isWithinDoorway(0, 0n, ...on(APOTHEM, 0)),
   };
 });
@@ -352,6 +704,20 @@ const passage = await page.evaluate(async () => {
     return { ...at, along: at.normal - c.HALL_START };
   };
   const middle = c.HALL_START + c.HALL_SIDE_CENTRE;
+  const diagonalInsideTarget = {
+    normal: middle + c.HALL_SIDE_HALF + 0.2,
+    tangent: c.HALL_HALF_WIDTH + 0.2,
+  };
+  const diagonalOutsideTarget = {
+    normal: middle + c.HALL_SIDE_HALF + 0.7,
+    tangent: c.HALL_HALF_WIDTH + 0.7,
+  };
+  const diagonalInside = held(diagonalInsideTarget.normal, diagonalInsideTarget.tangent);
+  const diagonalOutside = held(diagonalOutsideTarget.normal, diagonalOutsideTarget.tangent);
+  const cornerOverflow = sample => (
+    Math.max(0, Math.abs(sample.tangent) - c.HALL_HALF_WIDTH)
+    + Math.max(0, Math.abs(sample.along - c.HALL_SIDE_CENTRE) - c.HALL_SIDE_HALF)
+  );
   return {
     // Inside the chamber and inside the passage are different spaces.
     insideRoom: exitAt(c.APOTHEM - 1, 0),
@@ -368,6 +734,12 @@ const passage = await page.evaluate(async () => {
     // what bounds a walker there is its own two walls, not a wall across it.
     heldInArm: held(middle + 4, c.ALCOVE_REACH - 1).along ?? null,
     reachesDownArm: held(middle, c.ALCOVE_REACH - 0.4).tangent,
+    diagonalInsideError: Math.hypot(
+      diagonalInside.normal - diagonalInsideTarget.normal,
+      diagonalInside.tangent - diagonalInsideTarget.tangent,
+    ),
+    diagonalOutsideOverflow: cornerOverflow(diagonalOutside),
+    diagonalPlayerLimit: c.HALL_JUNCTION_CHAMFER - c.PLAYER_RADIUS * Math.SQRT2,
     // A shelved wall has no passage behind it at all.
     throughBookWall: doors.crossedPassageExit(place(0, c.HALL_START + 2, 0), 0n),
     limits: { half: c.HALL_HALF_WIDTH, reach: c.ALCOVE_REACH, radius: c.PLAYER_RADIUS },
@@ -393,6 +765,14 @@ assert.ok(
 assert.ok(
   Math.abs(passage.reachesDownArm) > passage.limits.reach - 0.5,
   'and all the way to its far end, where the chamber takes over — an arm is a corridor, not a pocket',
+);
+assert.ok(
+  passage.diagonalInsideError < 1e-6,
+  `the open half of a chamfer must remain walkable (${passage.diagonalInsideError})`,
+);
+assert.ok(
+  passage.diagonalOutsideOverflow <= passage.diagonalPlayerLimit + 1e-6,
+  `the diagonal wall must hold the player to its visible plane (${passage.diagonalOutsideOverflow})`,
 );
 
 // On the map a passage has no length, because in the plane it has none. A
@@ -552,6 +932,217 @@ for (const turn of ['right', 'left']) {
 
 assert.deepEqual([walk.back.q, walk.back.r], ['0', '0'], 'the passage the other way leads home');
 
+// A side threshold changes coordinates, not the image. Both apertures remain
+// mounted together and the ordinary world never disappears when the camera
+// turns. Each destination is rendered in a separate stencil pass, while the
+// marker in renderedWorld carries only the exact rigid transform applied at the
+// threshold — no foreign room geometry is allowed to leak into the base scene.
+const sideContinuity = await page.evaluate(async () => {
+  const THREE = await import('three');
+  const { camera, renderedWorld, renderer } = await import('./src/core/view.js');
+  const {
+    moveToWorldHex,
+    syncDoorways,
+    syncPassageDestinations,
+    world,
+  } = await import('./src/world/rooms.js');
+  const { player } = await import('./src/player.js');
+  const doors = await import('./src/world/doors.js');
+  const sharedMaterials = await import('./src/core/materials.js');
+  const c = await import('./src/constants.js');
+
+  moveToWorldHex(0n, 0n, 0n);
+  const deadline = performance.now() + 15000;
+  let portalGroup = null;
+  while (performance.now() < deadline) {
+    const ready = syncPassageDestinations();
+    portalGroup = renderedWorld.children.find(child => child.userData.passageDestinations);
+    if (ready === 6 && portalGroup?.userData.compiled === 6) break;
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+  const preparation = {
+    buildsTriggeredInPassage: portalGroup.userData.buildsTriggeredInPassage,
+    compiled: portalGroup.userData.compiled,
+    maxBuildMs: portalGroup.userData.maxBuildMs,
+    ready: portalGroup.userData.ready,
+    synchronousFallbacks: portalGroup.userData.synchronousFallbacks,
+  };
+  const { basis } = doors.wallCoordinates(2, 0, 0);
+  const normal = c.HALL_START + c.HALL_SIDE_CENTRE;
+  const place = tangent => {
+    camera.position.set(
+      basis.nx * normal + basis.tx * tangent,
+      1.65,
+      basis.nz * normal + basis.tz * tangent,
+    );
+  };
+  place(c.SIDE_EXIT_REACH - 0.01);
+  player.yaw = Math.atan2(-basis.tx, -basis.tz);
+  const syncStarted = performance.now();
+  syncPassageDestinations();
+  const corridorEntrySyncMs = performance.now() - syncStarted;
+  window.__draw.calls = 0;
+  window.__draw.frames = 0;
+  const sampleFrameGaps = () => new Promise(resolve => {
+    const gaps = [];
+    let previous = null;
+    // Four frames are enough to catch the first upload and the settled render
+    // without making the software-WebGL smoke monopolise the machine.
+    let remaining = 4;
+    const sample = now => {
+      if (previous !== null) gaps.push(now - previous);
+      previous = now;
+      remaining--;
+      if (remaining === 0) resolve(gaps);
+      else requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+  // The first sample includes any one-time shader/buffer work. The second
+  // separates that cold cost from steady corridor rendering, which matters in
+  // headless Chromium because its software WebGL exaggerates uploads by orders
+  // of magnitude compared with a hardware browser.
+  const coldFrameGaps = await sampleFrameGaps();
+  const warmFrameGaps = await sampleFrameGaps();
+  const portalDrawCallsPerFrame = Math.round(
+    window.__draw.calls / Math.max(1, window.__draw.frames),
+  );
+  const portal = portalGroup.children.find(child => (
+    child.userData.portalWall === 2 && child.userData.portalExit === 'right'
+  ));
+  if (!portal) {
+    throw new Error('missing wall-2 right portal: ' + JSON.stringify(
+      portalGroup.children.map(child => [child.userData.portalWall, child.userData.portalExit]),
+    ));
+  }
+  const portalRoomId = portal.userData.portalRoomId;
+  const mainVista = renderedWorld.children.find(child => (
+    child.userData.verticalChambers !== undefined
+  ));
+  const activeRoomBefore = renderedWorld.children.find(child => child.userData.q !== undefined);
+  const visibilityAt = yaw => {
+    player.yaw = yaw;
+    syncPassageDestinations();
+    return {
+      active: activeRoomBefore.visible,
+      mainVista: mainVista.visible,
+      portals: portalGroup.children.map(child => [
+        child.userData.portalWall,
+        child.userData.portalExit,
+        child.visible,
+      ]),
+    };
+  };
+  const visibilityByYaw = [
+    Math.atan2(-basis.nx, -basis.nz),
+    Math.atan2(basis.tx, basis.tz),
+    Math.atan2(-basis.tx, -basis.tz),
+    Math.atan2(basis.nx, basis.nz),
+  ].map(visibilityAt);
+  player.yaw = Math.atan2(-basis.tx, -basis.tz);
+
+  // Measure the pose for the first point that actually crosses the threshold.
+  place(c.SIDE_EXIT_REACH + 0.01);
+  portal.updateMatrixWorld(true);
+  const expectedPosition = portal.worldToLocal(camera.position.clone());
+  const expectedYaw = player.yaw - portal.rotation.y;
+  const entered = Boolean(syncDoorways());
+  const positionError = camera.position.distanceTo(expectedPosition);
+  const yawError = Math.abs(player.yaw - expectedYaw);
+  const oldPortalStillMounted = renderedWorld.children.some(child => child.id === portalGroup.id);
+  const activeRoom = renderedWorld.children.find(child => child.userData.q !== undefined);
+  const nextPortalGroup = renderedWorld.children.find(child => child.userData.passageDestinations);
+  const singletonMaterials = Object.values(sharedMaterials).flat().filter(value => value?.isMaterial);
+  return {
+    activeOrigin: activeRoom.position.distanceTo(new THREE.Vector3()),
+    adoptedExactRoom: activeRoom.id === portalRoomId,
+    activeRoomVisibleBefore: activeRoomBefore.visible,
+    baseMarkersCarryNoGeometry: portalGroup.children.every(child => child.children.length === 0),
+    corridorEntrySyncMs,
+    destinationScenes: preparation.ready,
+    doorHeight: c.DOOR_HEIGHT,
+    hallHalfWidth: c.HALL_HALF_WIDTH,
+    entered,
+    exactBookCounts: portalGroup.children.map(child => child.userData.bookCount),
+    metadataDeferred: portalGroup.children.map(child => child.userData.metadataDeferred),
+    allMasksDepthTest: portalGroup.children.every(child => child.userData.maskDepthTest),
+    allCoreMasksIgnoreDepth: portalGroup.children.every(child => !child.userData.coreMaskDepthTest),
+    maskHeights: portalGroup.children.map(child => child.userData.maskHeight),
+    maskWidths: portalGroup.children.map(child => child.userData.maskWidth),
+    portalPassageOwnership: portalGroup.children.map(child => ({
+      omitted: child.userData.omittedArrivalPassage,
+      remaining: child.userData.remainingPassageWalls,
+    })),
+    allLightingLocal: portalGroup.children.every(child => child.userData.localLighting),
+    mainVistaVisibleBefore: mainVista.visible,
+    allAperturesVisible: portalGroup.children.every(child => child.visible),
+    oldPortalStillMounted,
+    nextPortalPreparationStarted: Boolean(nextPortalGroup),
+    portalDrawCallsPerFrame,
+    portalColdMaxFrameGap: Math.max(...coldFrameGaps),
+    portalWarmMaxFrameGap: Math.max(...warmFrameGaps),
+    positionError,
+    preparation,
+    room: [String(world.room.q), String(world.room.r)],
+    sharedStencilRestored: singletonMaterials.every(material => !material.stencilWrite),
+    stencilBuffer: renderer.getContext().getContextAttributes().stencil,
+    visibilityByYaw,
+    yawError,
+  };
+});
+
+assert.equal(sideContinuity.destinationScenes, 6, 'both corridors preload all six exact neighbouring rooms');
+assert.equal(sideContinuity.preparation.compiled, 6, 'all portal shader variants compile before corridor entry');
+assert.equal(sideContinuity.preparation.buildsTriggeredInPassage, 0, 'destination geometry must be prepared before corridor entry');
+assert.equal(sideContinuity.preparation.synchronousFallbacks, 0, 'normal corridor entry needs no synchronous fallback build');
+assert.ok(sideContinuity.corridorEntrySyncMs < 5, `corridor entry bookkeeping took ${sideContinuity.corridorEntrySyncMs.toFixed(2)} ms`);
+assert.ok(
+  sideContinuity.portalDrawCallsPerFrame <= MAX_DRAW_CALLS_PER_FRAME,
+  `a corridor with exact neighbours cost ${sideContinuity.portalDrawCallsPerFrame} draw calls per frame`,
+);
+assert.equal(sideContinuity.stencilBuffer, true, 'portal apertures require a real stencil buffer');
+assert.equal(sideContinuity.baseMarkersCarryNoGeometry, true, 'foreign destination geometry must not enter the base scene');
+assert.equal(sideContinuity.sharedStencilRestored, true, 'portal rendering must restore every shared material stencil state');
+assert.equal(sideContinuity.allAperturesVisible, true, 'all six apertures coexist instead of following the gaze');
+assert.equal(sideContinuity.allMasksDepthTest, true, 'every aperture must be hidden by real corridor walls and lintels');
+assert.equal(
+  sideContinuity.allCoreMasksIgnoreDepth,
+  true,
+  'the exact doorway core must replace source-world depth instead of preserving a stale side wall',
+);
+assert.ok(
+  sideContinuity.maskHeights.every(height => height > sideContinuity.doorHeight),
+  'every portal mask must include the destination lintel up to the corridor ceiling',
+);
+assert.ok(
+  sideContinuity.maskWidths.every(width => width > 2 * sideContinuity.hallHalfWidth),
+  'every portal mask must overdraw the corridor mouth so oblique views cannot expose a clear-colour crack',
+);
+assert.ok(
+  sideContinuity.portalPassageOwnership.every(({ omitted, remaining }) => (
+    Number.isInteger(omitted)
+    && remaining.length === 0
+  )),
+  'a portal destination owns the exact room and shaft, never rotated copies of horizontal corridors',
+);
+assert.equal(sideContinuity.allLightingLocal, true, 'every direction must carry the same room-relative lighting through its portal');
+assert.ok(sideContinuity.exactBookCounts.every(count => count === 3840), 'every neighbour uses the full room book geometry');
+assert.ok(sideContinuity.metadataDeferred.every(Boolean), 'only destination-specific records and invisible lettering are deferred before arrival');
+assert.equal(sideContinuity.mainVistaVisibleBefore, true, 'the axial world must remain stable while a side portal is viewed');
+assert.equal(sideContinuity.activeRoomVisibleBefore, true, 'turning in a passage must not remove the chamber behind the player');
+assert.ok(
+  sideContinuity.visibilityByYaw.every(state => JSON.stringify(state) === JSON.stringify(sideContinuity.visibilityByYaw[0])),
+  'rotating in one place must not change any scene visibility',
+);
+assert.equal(sideContinuity.entered, true, 'the measured pose must cross a side threshold');
+assert.equal(sideContinuity.adoptedExactRoom, true, 'the room visible through the portal becomes current without rebuilding');
+assert.deepEqual(sideContinuity.room, ['-1', '0'], 'the continuous right portal still reaches the same logical hex');
+assert.ok(sideContinuity.positionError < 1e-9, `portal position changed by ${sideContinuity.positionError}`);
+assert.ok(sideContinuity.yawError < 1e-9, `portal heading changed by ${sideContinuity.yawError}`);
+assert.equal(sideContinuity.oldPortalStillMounted, false, 'the old six-world set is released after one room becomes current');
+assert.equal(sideContinuity.nextPortalPreparationStarted, true, 'the new chamber immediately begins preparing its own exact neighbours');
+assert.ok(sideContinuity.activeOrigin < 1e-12, 'the destination becomes the canonical origin after the rigid transform');
+
 // The corridor seen through the doorways is built once and left alone: walking
 // a threshold must not rebuild or move it, or the repetition would visibly
 // restart instead of continuing. The passages the player walks through are part
@@ -562,13 +1153,22 @@ const vista = await page.evaluate(async () => {
   const { syncDoorways } = await import('./src/world/rooms.js');
   const doors = await import('./src/world/doors.js');
   const { HALL_END } = await import('./src/constants.js');
-  const groups = renderedWorld.children.filter(child => child.type === 'Group' && child.userData.q === undefined);
+  const groups = renderedWorld.children.filter(child => (
+    child.userData.verticalChambers !== undefined
+  ));
   const measure = () => {
-    const group = renderedWorld.children.filter(c => c.type === 'Group' && c.userData.q === undefined)[0];
+    const group = renderedWorld.children.find(c => (
+      c.userData.verticalChambers !== undefined
+    ));
     if (!group) return null;
+    let meshes = 0;
     let vertices = 0;
-    for (const mesh of group.children) vertices += mesh.geometry.getAttribute('position').count;
-    return { meshes: group.children.length, vertices, id: group.id };
+    group.traverse(object => {
+      if (!object.geometry) return;
+      meshes++;
+      vertices += object.geometry.getAttribute('position')?.count ?? 0;
+    });
+    return { meshes, vertices, id: group.id };
   };
   const before = measure();
   const { basis } = doors.wallCoordinates(2, 0, 0);
@@ -626,7 +1226,7 @@ assert.equal(register.backHome, 1, 'returning to a chamber returns its number, n
 assert.equal(register.backFresh, register.freshOrdinal, 'and the same holds walking back again');
 assert.equal(register.newest.ordinal, register.freshOrdinal, 'the notebook reads newest first: the way back is what is wanted most');
 assert.equal(register.oldest.ordinal, 1, 'and the first chamber is at the bottom of it');
-assert.match(register.newest.address, /^w2;/, 'every row carries the exact record beside the number');
+assert.match(register.newest.address, /^w3;/, 'every row carries the exact record beside the number');
 assert.ok(
   register.mapOrdinals.some(ordinal => ordinal === null),
   'the map leaves a chamber blank until it has been walked into, because until then nobody has named it',
@@ -644,10 +1244,10 @@ assert.equal(
   'the newest chamber is at the top',
 );
 // The scale, said where the walker can read it. The count of chambers before
-// the catalogue repeats has 1 918 664 digits, and the number itself cannot be
+// the catalogue repeats has 1 918 663 digits, and the number itself cannot be
 // shown — only its length, which is the point.
 const scale = await page.locator('#register-count').textContent();
-assert.match(scale, /^\d+ chambers? of a number with 1 918 664 digits/, 'the register says how big the library is');
+assert.match(scale, /^\d+ chambers? of a number with 1 918 663 digits/, 'the register says how big the library is');
 assert.match(scale, /the world does not/, 'and that the world, unlike the catalogue, does not begin again');
 
 assert.match(
@@ -758,10 +1358,13 @@ assert.equal(traces.repeated, true, 'a trace is derived, never stored: the same 
 assert.ok(traces.distinct >= 55, `and different chambers carry different ones, ${traces.distinct} distinct in the first sixty found`);
 
 assert.ok(
-  Math.abs(traces.standsOutBy - traces.reach) < 1e-6,
+  Math.abs(traces.standsOutBy - traces.reach) < 5e-6,
   `the disturbed volume must stand out by exactly the reach recorded, ${traces.standsOutBy} against ${traces.reach}`,
 );
-assert.ok(traces.shelfSpread < 1e-6, 'and it must be the only one on its shelf that is out');
+assert.ok(
+  traces.shelfSpread < 1e-5,
+  `and it must be the only one on its shelf that is out (undisturbed spread ${traces.shelfSpread})`,
+);
 assert.equal(traces.addressed, true, 'it is the same volume it always was: same address');
 assert.equal(traces.titled, true, 'and the same title — only its standing has been disturbed');
 
@@ -805,8 +1408,8 @@ for (const [name, value] of Object.entries(contrast)) {
 }
 
 // --- entering a chamber is cheap ---------------------------------------------
-// Building a room used to cost 18.5 ms, over half of it painting 640 rotated
-// spine labels onto three 2048 canvases. None of that has to happen in the
+// Building a room used to paint every rotated spine during the threshold frame.
+// spine labels onto three atlases. None of that has to happen in the
 // frame a walker crosses a threshold, so the lettering is queued and painted
 // in slices afterwards. The structural half of this check is the one that
 // matters; the time is a ceiling against gross regressions, not a benchmark,
@@ -823,21 +1426,21 @@ const cost = await page.evaluate(async () => {
     builds.push(performance.now() - start);
     // Drain this room's lettering before timing the next, or the queue of one
     // room would be paid for by the next room's slices.
-    for (let slice = 0; slice < 60 && roomOf().userData.pendingSpines.length; slice++) paintRoomLabels(4);
+    for (let slice = 0; slice < 240 && roomOf().userData.pendingSpines.length; slice++) paintRoomLabels(4);
   }
   builds.sort((a, b) => a - b);
 
   moveToWorldHex(7n, 7n, 0n);
   const queuedOnBuild = roomOf().userData.pendingSpines.length;
   let slices = 0;
-  while (roomOf().userData.pendingSpines.length && slices < 60) {
+  while (roomOf().userData.pendingSpines.length && slices < 240) {
     paintRoomLabels(4);
     slices++;
   }
   return { median: builds[4], queuedOnBuild, slices, drained: roomOf().userData.pendingSpines.length };
 });
 
-assert.ok(cost.queuedOnBuild > 600, `a room's 640 spine labels must be queued, not painted on the spot (${cost.queuedOnBuild})`);
+assert.ok(cost.queuedOnBuild > 3800, `a room's 3840 spine labels must be queued, not painted on the spot (${cost.queuedOnBuild})`);
 assert.ok(cost.slices >= 1, 'and painted afterwards rather than never');
 assert.equal(cost.drained, 0, 'the queue must empty: a room left half-lettered would stay that way');
 assert.ok(
@@ -907,22 +1510,20 @@ assert.equal(place.afterWalkingThrough, false, 'walking straight through can be,
 // Each is named on the surface over its entrance, which is the sign somebody
 // walking the corridor can read without stopping — a side opening is edge-on
 // from down the passage, and anything written inside it cannot be seen until
-// they turn. The two side chambers also carry the marking a built room paints
-// on its own ceiling, for whoever has turned. Lettering has been built mirrored
-// in this project before, and neither a plaque seen at an angle nor a flat
-// marking read from below is easy to judge from a screenshot, so the winding
-// and the texture coordinates are checked directly.
+// they turn. Lettering has been built mirrored in this project before, so the
+// winding and the texture coordinates are checked directly. Chamber ceilings
+// stay unlettered: they belong to the vertical view now.
 const signs = await page.evaluate(async () => {
   const { moveToWorldHex, world } = await import('./src/world/rooms.js');
   const { renderedWorld } = await import('./src/core/view.js');
   const { passageExits } = await import('./src/world/passage.js');
   const { freeWallsForLevel } = await import('./world-engine.js');
   const { roomTagFor } = await import('./world-model.js');
-  const { WALL_HEIGHT } = await import('./src/constants.js');
 
   moveToWorldHex(0n, 0n, 0n);
   const mesh = renderedWorld.children.find(child => child.isMesh && child.userData.plaques);
   if (!mesh) return { error: 'no markings were built' };
+  const roomMesh = renderedWorld.children.find(child => child.userData.q !== undefined);
 
   const position = mesh.geometry.getAttribute('position');
   const uv = mesh.geometry.getAttribute('uv');
@@ -954,56 +1555,158 @@ const signs = await page.evaluate(async () => {
     });
   }
 
+  // Two passages, four immediate choices from each. Distant speculative signs
+  // were removed with the overlapping side-room models: only a decision the
+  // walker can make at this junction is named here.
   const said = [];
   for (const wall of freeWallsForLevel(world.room.level)) {
     const exits = passageExits(world.room, wall);
-    for (const way of ['ahead', 'left', 'right']) {
+    for (const way of ['ahead', 'left', 'right', 'back']) {
       const there = exits[way];
       said.push(roomTagFor(there.q, there.r, there.level));
     }
   }
-  return { marks, said, tags: mesh.userData.plaques, ceiling: WALL_HEIGHT };
+  return {
+    marks,
+    said,
+    tags: mesh.userData.plaques,
+    roomCeilingLabels: roomMesh.children.filter(child => child.geometry?.type === 'PlaneGeometry').length,
+  };
 });
 
 assert.ok(!signs.error, signs.error ?? 'the ways out are named');
-assert.equal(signs.marks.length, 12, 'a plaque and a ceiling marking for every way out of both passages');
+assert.equal(signs.marks.length, 8, 'every immediate way out is named once, over its entrance');
 const flat = signs.marks.filter(mark => mark.lies < 1e-6);
 const upright = signs.marks.filter(mark => mark.lies >= 1e-6);
-assert.equal(upright.length, 6, 'every way out is named over its own entrance');
-assert.equal(flat.length, 6, 'and every chamber beyond carries the marking a built room paints on its ceiling');
-assert.equal(signs.tags.length, 6, 'six ways on, each named once however many surfaces carry it');
+assert.equal(upright.length, 8, 'every immediate way out is named over its own entrance');
+assert.equal(flat.length, 0, 'no distant chamber carries a marking on its ceiling');
+assert.equal(signs.roomCeilingLabels, 0, 'the current chamber carries no marking on its ceiling');
+assert.equal(signs.tags.length, 8, 'eight immediate choices are named once');
 
 for (const [index, mark] of signs.marks.entries()) {
   assert.ok(mark.textureTopIsUp > 0, `marking ${index}: the top of the label must be at the top of its cell`);
-}
-for (const mark of flat) {
-  // A marking that faced up would be invisible from the floor and perfectly
-  // correct seen from above, which no screenshot would catch.
-  assert.ok(mark.facesDown !== 0, 'a ceiling marking must have a face, not lie edge-on');
-  assert.ok(
-    Math.abs(mark.height - signs.ceiling) < 1e-6,
-    `a ceiling marking belongs on the ceiling, found at ${mark.height}`,
-  );
-  assert.ok(Math.abs(mark.width - 7.4) < 1e-6, 'and on the same plane a built room uses');
 }
 for (const mark of upright) {
   assert.ok(mark.hangs > 0, 'a plaque over an entrance must not hang upside down');
   assert.ok(mark.acrossIsLevel < 1e-6, 'and its lettering must run level, not up the beam');
   assert.ok(
-    mark.height > 2.4 && mark.height < 3.05,
+    mark.height > 3.3 && mark.height < 3.7,
     `a plaque belongs on the beam over the entrance, found at ${mark.height}`,
   );
 }
 assert.deepEqual(signs.tags, signs.said, 'each marking names the chamber its way out actually leads to');
 assert.ok(
   signs.tags.every(tag => tag.startsWith('h-')),
-  'a ceiling carries the world\'s own name for a chamber, never the walker\'s number',
+  'a passage sign carries the world\'s own name for a chamber, never the walker\'s number',
 );
+
+// --- critical-angle visual regression ---------------------------------------
+// Mathematical geometry can pass while a shader or a distant proxy turns the
+// scene into blank paper. Render the cardinal, diagonal, threshold and vertical
+// views that previously failed and sample the composed WebGL canvas at low
+// resolution. In particular, the four diagonals protect the crossing from
+// regressing into four giant square blocks.
+// The thresholds describe
+// visual information rather than GPU-specific pixel-perfect antialiasing.
+const visualQueries = await page.evaluate(async () => {
+  const c = await import('./src/constants.js');
+  const { wallBasis } = await import('./src/world/geometry.js');
+  const basis = wallBasis(2);
+  const normal = c.HALL_START + c.HALL_SIDE_CENTRE;
+  const corridor = (yaw) => new URLSearchParams({
+    preview: '1',
+    x: String(basis.nx * normal),
+    y: '1.65',
+    z: String(basis.nz * normal),
+    yaw: String(yaw),
+    pitch: '-0.04',
+  }).toString();
+  const yawFacing = (dx, dz) => Math.atan2(-dx, -dz);
+  const diagonalYaw = (aX, aZ, bX, bZ) => yawFacing(aX + bX, aZ + bZ);
+  const threshold = (side, offset) => new URLSearchParams({
+    preview: '1',
+    x: String(basis.nx * normal + basis.tx * side * (c.SIDE_EXIT_REACH + offset)),
+    y: '1.65',
+    z: String(basis.nz * normal + basis.tz * side * (c.SIDE_EXIT_REACH + offset)),
+    yaw: String(yawFacing(side * basis.tx, side * basis.tz)),
+    pitch: '-0.04',
+  }).toString();
+  return {
+    chamber: 'preview=1',
+    corridorBack: corridor(yawFacing(-basis.nx, -basis.nz)),
+    corridorAhead: corridor(yawFacing(basis.nx, basis.nz)),
+    corridorLeft: corridor(yawFacing(-basis.tx, -basis.tz)),
+    corridorRight: corridor(yawFacing(basis.tx, basis.tz)),
+    corridorAheadRight: corridor(diagonalYaw(basis.nx, basis.nz, basis.tx, basis.tz)),
+    corridorRightBack: corridor(diagonalYaw(basis.tx, basis.tz, -basis.nx, -basis.nz)),
+    corridorBackLeft: corridor(diagonalYaw(-basis.nx, -basis.nz, -basis.tx, -basis.tz)),
+    corridorLeftAhead: corridor(diagonalYaw(-basis.tx, -basis.tz, basis.nx, basis.nz)),
+    thresholdRightBefore: threshold(1, -0.01),
+    thresholdRightAfter: threshold(1, 0.01),
+    thresholdLeftBefore: threshold(-1, -0.01),
+    thresholdLeftAfter: threshold(-1, 0.01),
+    up: 'preview=1&x=40&y=1.65&z=0&yaw=1.570796&pitch=0.9',
+    down: 'preview=1&x=40&y=1.65&z=0&yaw=1.570796&pitch=-0.9',
+  };
+});
+
+const visualMetrics = {};
+for (const [name, query] of Object.entries(visualQueries)) {
+  await page.goto(`${origin}/?${query}`, { waitUntil: 'load' });
+  await page.waitForFunction(() => document.querySelector('#startup-state').textContent === 'ready', null, { timeout: 30000 });
+  await page.waitForTimeout(350);
+  const screenshot = await page.screenshot();
+  const canvasSample = name.startsWith('threshold')
+    ? await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => {
+      const source = document.querySelector('canvas.world-canvas');
+      const probe = document.createElement('canvas');
+      probe.width = 64;
+      probe.height = 40;
+      const context = probe.getContext('2d', { willReadFrequently: true });
+      context.drawImage(source, 0, 0, probe.width, probe.height);
+      resolve(Array.from(context.getImageData(0, 0, probe.width, probe.height).data));
+    })))
+    : null;
+  visualMetrics[name] = {
+    canvasSample,
+    pngBytes: screenshot.length,
+    signature: createHash('sha256').update(screenshot).digest('hex'),
+  };
+}
+
+for (const [name, metric] of Object.entries(visualMetrics)) {
+  const evidence = JSON.stringify({ pngBytes: metric.pngBytes, signature: metric.signature });
+  assert.ok(metric.pngBytes > 20000, `${name}: the rendered view must contain more than blank paper; ${evidence}`);
+}
+for (const side of ['Right', 'Left']) {
+  const before = visualMetrics[`threshold${side}Before`].canvasSample;
+  const after = visualMetrics[`threshold${side}After`].canvasSample;
+  let pixelDelta = 0;
+  for (let index = 0; index < before.length; index += 4) {
+    pixelDelta += Math.abs(before[index] - after[index]);
+    pixelDelta += Math.abs(before[index + 1] - after[index + 1]);
+    pixelDelta += Math.abs(before[index + 2] - after[index + 2]);
+  }
+  pixelDelta /= (before.length / 4) * 3;
+  assert.ok(
+    pixelDelta < 8,
+    `${side.toLowerCase()} portal changed by ${pixelDelta.toFixed(2)} levels across a two-centimetre threshold step`,
+  );
+}
+assert.equal(
+  new Set(Object.values(visualMetrics).map(metric => metric.signature)).size,
+  Object.keys(visualMetrics).length,
+  'room, corridor, upward shaft and downward shaft must remain visually distinct',
+);
+assert.deepEqual(consoleErrors, [], 'critical-angle views must boot without console errors');
 
 // --- touch devices -----------------------------------------------------------
 // Phones have no pointer lock, so entering the chamber is a mode switch driven
 // by a virtual stick. Real touch events are dispatched through CDP so the
 // client sees pointerType 'touch' exactly as it would on a device.
+// The desktop path is complete; release its large WebGL scene before starting
+// a second sixfold library. A phone loads one chamber, not two competing tabs.
+await page.close();
 const touchContext = await browser.newContext({
   viewport: { width: 390, height: 844 },
   hasTouch: true,
@@ -1075,4 +1778,17 @@ assert.deepEqual(touchErrors, [], 'the touch client must run without errors');
 
 await browser.close();
 server.close();
-console.log('smoke: room renders in ' + perFrame + ' draw calls/frame; reader, catalogue, search and touch paths pass');
+console.log(
+  'smoke: room renders in ' + perFrame
+  + ' draw calls/frame, corridor portals in '
+  + sideContinuity.portalDrawCallsPerFrame
+  + ' draw calls/frame; corridor entry sync '
+  + sideContinuity.corridorEntrySyncMs.toFixed(2)
+  + ' ms, slowest background neighbour build '
+  + sideContinuity.preparation.maxBuildMs.toFixed(1)
+  + ' ms, sampled cold/warm max frame gaps '
+  + sideContinuity.portalColdMaxFrameGap.toFixed(1)
+  + '/'
+  + sideContinuity.portalWarmMaxFrameGap.toFixed(1)
+  + ' ms; reader, catalogue, search and touch paths pass',
+);

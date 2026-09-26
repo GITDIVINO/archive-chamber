@@ -1,6 +1,7 @@
 {
-  "name": "archive-chamber-prototype",
+  "name": "borges-dream",
   "private": true,
+  "description": "Сон Борхеса — a first-person library of every possible book. Inspired by Jorge Luis Borges's The Library of Babel (1941); an independent work, not affiliated with or endorsed by the Borges estate.",
   "type": "module",
   "scripts": {
     "start": "python3 launch.py",
@@ -8,7 +9,7 @@
     "test": "node tests/babel-v3.test.mjs && node tests/world-engine.test.mjs && node tests/world-model.test.mjs && node tests/passage.test.mjs",
     "test:smoke": "node tests/smoke.test.mjs",
     "test:route": "node tests/route.test.mjs",
-    "test:all": "npm test && npm run test:route && npm run test:smoke"
+    "test:all": "npm run lint && npm test && npm run test:route && npm run test:smoke"
   },
   "devDependencies": {
     "eslint": "^9.39.5",

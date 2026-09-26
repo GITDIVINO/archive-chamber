@@ -2,7 +2,7 @@
  * A long walk out and the same walk home, in a real browser.
  *
  * The passage suite proves on paper that every step has a way back. This one
- * walks it: forty thresholds out through whichever exits a fixed sequence
+ * walks it: thirty thresholds out through whichever exits a fixed sequence
  * picks, then the same chambers in reverse, crossing each threshold the way a
  * player would, against the page's own camera, room registry and renderer.
  *
@@ -11,7 +11,7 @@
  * - only one chamber is ever in the scene, so the one left behind is released;
  * - the renderer holds no more geometry or textures in a chamber on the way
  *   home than it did in that chamber on the way out, so nothing leaks;
- * - every chamber shows the same 640 volumes, tag and address both times.
+ * - every chamber shows the same 3840 volumes, tag and address both times.
  *
  * It runs apart from the smoke suite and touches no interface control, so it
  * says something about walking even while a click elsewhere is broken.
@@ -33,7 +33,9 @@ const CONTENT_TYPES = {
   '.woff2': 'font/woff2',
 };
 
-const STEPS = 40;
+// Each crossing builds a whole chamber of 3840 volumes in a software renderer,
+// so the walk is as long as it needs to be to wander, and no longer.
+const STEPS = 30;
 
 function startServer() {
   const server = createServer(async (request, response) => {
@@ -199,10 +201,9 @@ async function walk(level) {
 for (const level of [0, 1]) {
   const { start, out, back, route, end } = await walk(level);
   const label = step => `level ${level}, step ${step}`;
-  if (process.env.DEBUG_ROUTE) console.log(level, start.geometries, start.textures, [...out, ...back].map(s => s.room + ':' + s.geometries + '/' + s.textures).join(' '));
 
   assert.equal(start.chambers, 1, `level ${level}: one chamber in the scene at the start`);
-  assert.equal(start.volumes, 640, `level ${level}: the starting chamber holds 640 volumes`);
+  assert.equal(start.volumes, 3840, `level ${level}: the starting chamber holds 3840 volumes`);
 
   for (const [index, step] of [...out, ...back].entries()) {
     assert.ok(!step.missing, `${label(index)}: no one-step way from ${step.from} back to ${step.to}`);
@@ -210,12 +211,12 @@ for (const level of [0, 1]) {
     assert.equal(step.room, step.expected, `${label(index)}: lands where the passage model says`);
     assert.equal(step.chambers, 1, `${label(index)}: the chamber left behind is released`);
     assert.equal(step.sceneChildren, start.sceneChildren, `${label(index)}: nothing else accumulates in the scene`);
-    assert.equal(step.volumes, 640, `${label(index)}: a whole chamber is built`);
+    assert.equal(step.volumes, 3840, `${label(index)}: a whole chamber is built`);
   }
 
   // The route really goes somewhere, and not along one line.
   const visited = new Set(route);
-  assert.ok(visited.size >= 15, `level ${level}: the walk reaches at least fifteen chambers, reached ${visited.size}`);
+  assert.ok(visited.size >= 12, `level ${level}: the walk reaches at least twelve chambers, reached ${visited.size}`);
 
   // Walking home passes the same chambers in the opposite order, and each
   // is exactly as it was: same name, same shelves, same cost in memory.

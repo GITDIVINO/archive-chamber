@@ -15,6 +15,7 @@ import {
   APOTHEM,
   DOOR_HALF_WIDTH,
   HALL_HALF_WIDTH,
+  HALL_JUNCTION_CHAMFER,
   HALL_LENGTH,
   HALL_SIDE_CENTRE,
   HALL_SIDE_HALF,
@@ -22,9 +23,11 @@ import {
   PLAYER_BOUNDARY,
   PLAYER_RADIUS,
   SIDE_EXIT_REACH,
-  DOOR_WALL_THICKNESS,
+  STAIR_MOUNT_REACH,
+  WALL_THICKNESS,
 } from '../constants.js';
 import { wallBasis } from './geometry.js';
+import { constrainFromWell, stairSurfaceAt } from './well.js';
 
 // Half-width the player's centre may reach before the jambs stop them.
 const DOOR_CLEAR_HALF_WIDTH = DOOR_HALF_WIDTH - PLAYER_RADIUS;
@@ -64,14 +67,15 @@ export function isWithinDoorway(index, level, x, z) {
 // the room, where a player is exactly boundary-far from both adjacent walls but
 // several units off to one side. It clamped that sideways offset to the width
 // of the opening and threw them bodily into the doorway.
-const DOOR_THRESHOLD_DEPTH = APOTHEM - DOOR_WALL_THICKNESS / 2;
+const DOOR_THRESHOLD_DEPTH = APOTHEM - WALL_THICKNESS / 2;
 
 /**
  * Keeps the player inside the room, letting them pass only where a doorway
  * actually is. Beyond the wall line the opening also acts as jambs, so stepping
  * sideways in the threshold cannot pop them back into the room.
  */
-function constrainToRoom(position, level) {
+function constrainToRoom(position, level, footY) {
+  constrainFromWell(position, footY);
   const free = freeWallsForLevel(level);
   for (let index = 0; index < 6; index++) {
     const { basis, normal, tangent } = wallCoordinates(index, position.x, position.z);
@@ -118,11 +122,47 @@ function constrainToHall(position, hall) {
   const { basis, along, tangent } = hall;
   const atCrossing = Math.abs(along - HALL_SIDE_CENTRE) <= OPENING_CLEAR_HALF;
 
-  if (Math.abs(tangent) > HALL_HALF_WIDTH && atCrossing) {
-    // Down a side arm. Its own walls bound how far along the passage the walker
-    // may drift; sideways it is open at the far end, exactly as the passage is
-    // at both of its own, and the crossing there hands them to a chamber.
-    const offset = along - HALL_SIDE_CENTRE;
+  // Past the line of the passage wall, and level with the opening, there is
+  // only one place to be: a side arm. Its own two walls bound how far along the
+  // passage the walker may drift; sideways it is open at the far end, exactly
+  // as the passage is at both of its own, and the crossing there hands them to
+  // a chamber.
+  //
+  // The two questions are asked against different lines, and they have to be.
+  // Being in an arm is measured against the arm's own walls; being held off
+  // those walls is measured a body's radius inside them. Asked against the same
+  // line, each condition became the other's negation: the correction below
+  // could never run, and a walker who put a foot past it stopped counting as
+  // being in an arm at all — falling to the rule for the corridor, which
+  // measured them against a half-width of a metre and threw them the whole
+  // depth of the arm back into the passage. Hugging an arm's wall is exactly
+  // what sits a walker on that line, which is why it happened there and
+  // nowhere else.
+  //
+  // The gap between the two lines is one PLAYER_RADIUS, 0.28, and it cannot be
+  // stepped over: the fastest anybody moves is RUN_SPEED against a frame time
+  // held to 0.05, which is 0.275 in total and less than that along any one
+  // axis.
+  const offset = along - HALL_SIDE_CENTRE;
+  const tangentOverflow = Math.abs(tangent) - HALL_HALF_WIDTH;
+  const offsetOverflow = Math.abs(offset) - HALL_SIDE_HALF;
+  if (
+    tangentOverflow > 0
+    && offsetOverflow > 0
+    && tangentOverflow < HALL_JUNCTION_CHAMFER
+    && offsetOverflow < HALL_JUNCTION_CHAMFER
+  ) {
+    const centreLimit = HALL_JUNCTION_CHAMFER - PLAYER_RADIUS * Math.SQRT2;
+    const correction = (centreLimit - tangentOverflow - offsetOverflow) / 2;
+    if (correction < 0) {
+      position.x += basis.tx * Math.sign(tangent) * correction;
+      position.z += basis.tz * Math.sign(tangent) * correction;
+      position.x += basis.nx * Math.sign(offset) * correction;
+      position.z += basis.nz * Math.sign(offset) * correction;
+    }
+    return;
+  }
+  if (Math.abs(tangent) > HALL_HALF_WIDTH && Math.abs(offset) <= HALL_SIDE_HALF) {
     if (Math.abs(offset) > OPENING_CLEAR_HALF) {
       const correction = Math.sign(offset) * OPENING_CLEAR_HALF - offset;
       position.x += basis.nx * correction;
@@ -151,10 +191,27 @@ export function passageWallAt(position, level) {
  * applying the moment the player is inside one: several of them are edge-on to
  * a passage and would shove a walker sideways out of it.
  */
-export function constrainToPlace(position, level) {
+/**
+ * Keeps the player inside whichever space they are actually in, and reports how
+ * high the ground under them now is.
+ *
+ * `footY` is where their feet were before this step, measured from the floor of
+ * the chamber they are in. It is an input because the shaft carries a flight
+ * every storey and the same x/z sits under two of them: which one is holding a
+ * walker up cannot be read from the plan, only from where they already were.
+ *
+ * A passage has no well and no flight, so it always answers zero.
+ */
+export function constrainToPlace(position, level, footY = 0) {
   const hall = hallAt(position, level);
-  if (hall) constrainToHall(position, hall);
-  else constrainToRoom(position, level);
+  if (hall) {
+    constrainToHall(position, hall);
+    return 0;
+  }
+  constrainToRoom(position, level, footY);
+  const surface = stairSurfaceAt(position.x, position.z, footY);
+  if (!surface) return 0;
+  return Math.abs(surface.height - footY) <= STAIR_MOUNT_REACH ? surface.height : 0;
 }
 
 /**

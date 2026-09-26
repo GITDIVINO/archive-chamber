@@ -6,7 +6,7 @@
  */
 
 import * as THREE from 'three';
-import { INTERACTION_DISTANCE } from '../constants.js';
+import { EYE_HEIGHT, INTERACTION_DISTANCE } from '../constants.js';
 import { camera, renderer } from '../core/view.js';
 import { isEngaged, keys, player } from '../player.js';
 import { constrainToPlace } from '../world/doors.js';
@@ -48,9 +48,14 @@ export function movePlayer(delta, forwardAxis, strafeAxis, running) {
   const speed = (running ? RUN_SPEED : WALK_SPEED) * delta;
   forwardVector.set(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
   rightVector.set(Math.cos(player.yaw), 0, -Math.sin(player.yaw));
+  // Walking stays in the plane. Nobody aims up a flight: they walk at it and
+  // the tread carries them. Where their feet were is what settles which of the
+  // shaft's two coincident flights is the one holding them up, so it is read
+  // before the step and handed to the constraint.
+  const footY = camera.position.y - EYE_HEIGHT;
   camera.position.addScaledVector(forwardVector, forwardAxis * speed);
   camera.position.addScaledVector(rightVector, strafeAxis * speed);
-  constrainToPlace(camera.position, world.room.level);
+  camera.position.y = constrainToPlace(camera.position, world.room.level, footY) + EYE_HEIGHT;
 }
 
 export function keyboardAxes() {

@@ -3,10 +3,19 @@
  *
  * All of these are module-level singletons.  Rooms are built and torn down
  * constantly, so materials must outlive them; only per-room canvases such as
- * spine atlases and the ceiling mark are disposed with their room.
+ * spine atlases are disposed with their room.
  */
 
 import * as THREE from 'three';
+import {
+  BOOK_COLOR,
+  LAMP_GLOBE_COLOR,
+  TRIM_WOOD_COLOR,
+  WOOD_COLOR,
+  WORLD_CEILING_COLOR,
+  WORLD_FLOOR_COLOR,
+  WORLD_SURFACE_COLOR,
+} from '../constants.js';
 
 function pencilTexture(base, ink, density = 130) {
   const canvas = document.createElement('canvas');
@@ -42,42 +51,196 @@ function pencilTexture(base, ink, density = 130) {
   return texture;
 }
 
+/** Neutral long grain and knots; tinting it happens exactly once in material. */
+function timberTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 256;
+  const context = canvas.getContext('2d');
+  context.fillStyle = '#c9c9c9';
+  context.fillRect(0, 0, 256, 256);
+  for (let line = 0; line < 92; line++) {
+    const y = (line * 37) % 256;
+    const wave = 1.5 + (line % 5) * 0.7;
+    context.strokeStyle = `rgba(18, 18, 18, ${0.065 + (line % 7) * 0.012})`;
+    context.lineWidth = line % 9 === 0 ? 1.4 : 0.65;
+    context.beginPath();
+    for (let x = -8; x <= 264; x += 8) {
+      const grainY = y + Math.sin((x + line * 11) * 0.045) * wave;
+      if (x === -8) context.moveTo(x, grainY);
+      else context.lineTo(x, grainY);
+    }
+    context.stroke();
+  }
+  for (let knot = 0; knot < 7; knot++) {
+    const x = 24 + (knot * 83) % 214;
+    const y = 18 + (knot * 47) % 220;
+    for (let ring = 1; ring <= 4; ring++) {
+      context.strokeStyle = `rgba(18, 18, 18, ${0.12 - ring * 0.015})`;
+      context.beginPath();
+      context.ellipse(x, y, ring * 4.5, ring * 1.9, 0.12, 0, Math.PI * 2);
+      context.stroke();
+    }
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(4, 3);
+  return texture;
+}
+
 export function pencilMaterial(texture, color = 0xffffff) {
-  return new THREE.MeshBasicMaterial({ color, map: texture });
+  return new THREE.MeshStandardMaterial({
+    color,
+    map: texture,
+    roughness: 0.96,
+    metalness: 0,
+  });
 }
 
-// The scene is unlit, so depth cannot come from a light. Surfaces that need to
-// read as recessed carry their tone in the vertex colour instead, in the spirit
-// of an architectural drawing where a recess is darker hatching rather than a
-// cast shadow. Only geometry that supplies a colour attribute may use these.
+// One paper colour is shared by the whole architecture. Soft scene lighting
+// separates planes by direction, while vertex colour keeps the small recesses
+// inside shelves legible without introducing differently coloured panels.
 function shadedMaterial(texture, color = 0xffffff) {
-  return new THREE.MeshBasicMaterial({ color, map: texture, vertexColors: true });
+  return new THREE.MeshStandardMaterial({
+    color,
+    map: texture,
+    vertexColors: true,
+    roughness: 0.9,
+    metalness: 0,
+  });
 }
 
-const paperTexture = pencilTexture('#ffffff', '#141414', 95);
-const woodTexture = pencilTexture('#ffffff', '#141414', 105);
-const graphiteTexture = pencilTexture('#ffffff', '#141414', 115);
+// The floor/ceiling/wall shell has no per-vertex authored recess tones, but it
+// still needs the same broad material response as the built-ins. Using the
+// unlit-looking colour multiplication of pencilMaterial twice darkened the
+// procedural texture; this neutral shell texture leaves the palette to the
+// constants and the form to actual lighting.
+function shellMaterial(color, roughness = 0.94) {
+  return new THREE.MeshStandardMaterial({
+    color,
+    vertexColors: true,
+    roughness,
+    metalness: 0,
+  });
+}
 
-export const floorMaterial = pencilMaterial(paperTexture, 0xc8c8c4);
-export const ceilingMaterial = pencilMaterial(paperTexture, 0xd8d8d4);
+const woodTexture = timberTexture();
+const graphiteTexture = timberTexture();
+const leatherTexture = pencilTexture('#c4c4c4', '#171717', 145);
+
+// Floor, ceiling and wall are one continuous paper architecture. Their former
+// three greys made the opening of the well and every change of plane read as
+// inserted panels when seen from a passage.
+export const floorMaterial = shellMaterial(WORLD_FLOOR_COLOR, 0.88);
+export const ceilingMaterial = shellMaterial(WORLD_CEILING_COLOR);
+
+// Distance may remove a floor through fog, but direction never may. Earlier
+// vista shaders discarded horizontal surfaces at shallow viewing angles. That
+// made the same slab appear and disappear as the player turned their head and
+// broke the premise of one continuous architecture. Vista and active rooms now
+// share the exact materials; thickness at the well lip supplies the edge-on
+// reading instead of camera-dependent deletion.
+export const vistaFloorMaterial = floorMaterial;
+export const vistaCeilingMaterial = ceilingMaterial;
 // Everything below is built through the merged static batches, which always
 // supply a colour attribute.
-export const shelfMaterial = shadedMaterial(woodTexture);
-export const trimMaterial = shadedMaterial(graphiteTexture);
-export const wallMaterial = shadedMaterial(paperTexture, 0xdfdfdb);
-export const outlineMaterial = new THREE.LineBasicMaterial({ color: 0x141414, transparent: true, opacity: 0.82 });
-export const roomLineMaterial = new THREE.LineBasicMaterial({ color: 0x242424, transparent: true, opacity: 0.7 });
+// Casework, treads and rails are the warm half of the world. The hatching in
+// the texture is unchanged and still does the drawing; only what it is drawn on
+// has a colour now. Keeping the same texture is what stops the wood reading as
+// a flat paint chip: the grain is the same pencil the rest of the room is in.
+export const shelfMaterial = shadedMaterial(woodTexture, WOOD_COLOR);
+export const trimMaterial = shadedMaterial(graphiteTexture, TRIM_WOOD_COLOR);
+export const wallMaterial = shellMaterial(WORLD_SURFACE_COLOR);
+export const metalMaterial = new THREE.MeshStandardMaterial({
+  color: 0x171514,
+  map: graphiteTexture,
+  vertexColors: true,
+  roughness: 0.66,
+  metalness: 0.62,
+});
+export const brassMaterial = new THREE.MeshStandardMaterial({
+  color: 0x7d4b22,
+  map: woodTexture,
+  vertexColors: true,
+  roughness: 0.56,
+  metalness: 0.45,
+});
+// An arris is drawn, not inked. At near-black the lines read as a border round
+// every surface — a drawn outline of a room rather than the room itself — and
+// in a passage, where the same few edges converge and repeat down the whole
+// corridor, they were the loudest thing in view. Taken to graphite and let down
+// in opacity, they do the one job they are actually for: telling a white wall
+// from a white ceiling. They cannot go further than this. The world is white on
+// white and these edges are the only thing separating one surface from another;
+// without them a chamber is a set of shelves floating in a pale field, which is
+// exactly what it looked like the one time they were dropped.
+export const outlineMaterial = new THREE.LineBasicMaterial({
+  color: 0x291b14,
+  transparent: true,
+  opacity: 0.11,
+  depthWrite: false,
+});
+// The six vertical corners of the hexagon, and most of what says "hexagon" at
+// all. Kept a touch lighter still: they are long, they run the full height, and
+// they are the lines a walker sees edge-on from every position in the room.
+export const roomLineMaterial = new THREE.LineBasicMaterial({
+  color: 0x4a352b,
+  transparent: true,
+  opacity: 0.16,
+  depthWrite: false,
+});
 
-// Volumes are instanced per texture, so this array also defines how many
-// instanced draw calls a wall of books costs. The shared box geometry carries
-// per-face tone so a volume reads as a solid rather than a flat card, and the
-// instance colour tints each copy on top of that.
-export const bookMaterials = [
-  shadedMaterial(paperTexture),
-  shadedMaterial(woodTexture),
-  shadedMaterial(graphiteTexture),
-];
+// A lantern is the only thing here that emits rather than receives, so it is
+// the only unlit material in the room: it must stay at its own brightness when
+// everything around it has been let down far enough for its pool to show.
+export const lampMaterial = new THREE.MeshBasicMaterial({ color: LAMP_GLOBE_COLOR, toneMapped: false });
+// Distant fixtures occupy only a few pixels and receive no useful modelling
+// from a lit metal shader. Sharing the emissive material with their flame keeps
+// the constellation in one draw call. This alias belongs after lampMaterial:
+// module initialisation must never read the binding before it exists.
+export const distantFixtureMaterial = lampMaterial;
+export const lampHaloMaterial = new THREE.MeshBasicMaterial({
+  color: 0xffaa62,
+  transparent: true,
+  opacity: 0.05,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending,
+  side: THREE.DoubleSide,
+  toneMapped: false,
+});
 
-// Physical copies of the manifesto keep the paper texture and are tinted gold
-// through the instance colour, so they need no separate draw call.
-export const MANIFESTO_TINT = new THREE.Color(0xd4af37).toArray();
+function dustTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 32;
+  const context = canvas.getContext('2d');
+  const gradient = context.createRadialGradient(16, 16, 0, 16, 16, 15);
+  gradient.addColorStop(0, 'rgba(255, 226, 172, .95)');
+  gradient.addColorStop(0.18, 'rgba(255, 184, 98, .42)');
+  gradient.addColorStop(1, 'rgba(255, 154, 64, 0)');
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, 32, 32);
+  return new THREE.CanvasTexture(canvas);
+}
+
+export const dustMaterial = new THREE.PointsMaterial({
+  color: 0xe4a361,
+  map: dustTexture(),
+  transparent: true,
+  opacity: 0.22,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending,
+  size: 0.16,
+  sizeAttenuation: true,
+  toneMapped: false,
+});
+
+export const vistaOutlineMaterial = new THREE.LineBasicMaterial({
+  color: 0x4b3326,
+  transparent: true,
+  opacity: 0.035,
+  depthWrite: false,
+});
+
+// Every volume is the same paper white. Shape comes from the shared face tones,
+// outlines and spine lettering, never from alternating coloured materials.
+export const bookMaterials = [shadedMaterial(leatherTexture, BOOK_COLOR)];

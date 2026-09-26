@@ -8,9 +8,24 @@
  */
 
 import { camera, render, renderer, resizeView } from './core/view.js';
+import {
+  PLAYER_START_PITCH,
+  PLAYER_START_X,
+  PLAYER_START_YAW,
+  PLAYER_START_Z,
+} from './constants.js';
 import { isEngaged, keys, player } from './player.js';
 import { startAudio, toggleAudio } from './audio.js';
-import { buildCurrentRoom, onRoomChange, paintRoomLabels, syncDoorways, syncPlace, world } from './world/rooms.js';
+import {
+  buildCurrentRoom,
+  onRoomChange,
+  paintRoomLabels,
+  syncDoorways,
+  syncPassageDestinations,
+  syncPlace,
+  syncStair,
+  world,
+} from './world/rooms.js';
 import {
   applyLook,
   clearTarget,
@@ -238,6 +253,11 @@ function animate(now) {
     const forward = keyboard.forward || pad?.forward || touch?.forward || 0;
     const strafe = keyboard.strafe || pad?.strafe || touch?.strafe || 0;
     movePlayer(delta, forward, strafe, keyboard.running || Boolean(pad?.running));
+    // Reaching the head or the foot of the flight is a change of floor, and it
+    // is the only one there is: no doorway leads up or down. The walker keeps
+    // where they stand and only the storey under them changes.
+    const climbed = syncStair();
+    if (climbed) showNotice('chamber ' + world.ordinal);
     // Stepping over a threshold swaps the room under the player without
     // moving them: the neighbour is built and the old one released.
     const entered = syncDoorways();
@@ -252,6 +272,10 @@ function animate(now) {
       applyLook(look.x, look.y, player.lookSensitivity * 1.6);
     }
   }
+  // Destination preparation is independent of input and panels. Keeping it
+  // outside the engaged branch lets the loading/intro frame and idle moments
+  // prepare every neighbouring room before a corridor can be entered.
+  syncPassageDestinations();
   // The room the walker just entered still owes its spine lettering. A slice a
   // frame keeps it off the frame that built the room, where it would show.
   paintRoomLabels(3);
@@ -263,12 +287,37 @@ function animate(now) {
 
 // --- boot --------------------------------------------------------------------
 
+// A deterministic, input-free camera for visual regression and architectural
+// review. It is opt-in through the URL and never changes ordinary play.
+const previewParameters = new URLSearchParams(location.search);
+const previewMode = previewParameters.has('preview');
+function previewNumber(name, fallback) {
+  const raw = previewParameters.get(name);
+  if (raw === null) return fallback;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : fallback;
+}
+
 function initializeLibrary() {
   startButton.disabled = true;
   setStartupState('building chamber…');
   try {
     buildCurrentRoom();
-    camera.position.set(0, 1.65, 5.2);
+    camera.position.set(
+      previewMode ? previewNumber('x', PLAYER_START_X) : PLAYER_START_X,
+      previewMode ? previewNumber('y', 1.65) : 1.65,
+      previewMode ? previewNumber('z', PLAYER_START_Z) : PLAYER_START_Z,
+    );
+    if (previewMode) {
+      player.yaw = previewNumber('yaw', PLAYER_START_YAW);
+      player.pitch = previewNumber('pitch', PLAYER_START_PITCH);
+      player.touchMode = true;
+      intro.classList.add('gone');
+      reticle.style.display = 'block';
+    } else {
+      player.yaw = PLAYER_START_YAW;
+      player.pitch = PLAYER_START_PITCH;
+    }
     resizeMapCanvas();
     player.ready = true;
     startButton.disabled = false;
