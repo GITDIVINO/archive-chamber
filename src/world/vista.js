@@ -102,7 +102,11 @@ import {
 // floors reach 202 units — past the distance the fog has already erased and
 // inside the 320 far plane. Keeping twenty-eight would build 400 units of
 // chamber, half of it invisible, at twice the cost.
-export const VERTICAL_VISTA_DEPTH = 14;
+// Nine, not fourteen, by the same reasoning taken one step further: the ninth
+// storey is 130 units off and the fog has already taken nineteen parts in
+// twenty of it. The five beyond cost over a third of the shaft's geometry and
+// changed well under a pixel in a thousand of a view straight up or down.
+export const VERTICAL_VISTA_DEPTH = 9;
 
 // How far up and down the shaft the shelves carry volumes. Every storey holds
 // 3840 of them, so the full stack was over a hundred thousand instances, and
@@ -119,6 +123,9 @@ export const VERTICAL_VISTA_DEPTH = 14;
 // neighbours across a three-centimetre gap and its underside rests on the board.
 export const VISTA_WHOLE_BOOK_STOREYS = 1;
 export const VISTA_BOOK_STOREYS = 2;
+
+// How far up and down the shaft a storey keeps its bars. See isThinPart.
+export const VISTA_DETAIL_STOREYS = 3;
 
 // The spine (-z) and top (+y) faces of bookGeometry, with its own normals,
 // texture coordinates and three-stop tone, so a distant volume is shaded
@@ -244,13 +251,21 @@ function addChamberSlab(batches, material, roomOffset, y, rotationX) {
   geometry.dispose();
 }
 
+// A bar thinner than eight centimetres both ways: a baluster, a newel rod, a
+// lantern's cage. Past VISTA_DETAIL_STOREYS (43 m) it is about a pixel wide
+// and in the fog, and those bars were over half the shaft's vertices. The
+// rails, posts, treads and lantern bodies they stand between are all kept.
+function isThinPart(size) {
+  return size[0] < 0.08 && size[2] < 0.08;
+}
+
 function addDistantBalustrade(batches, outlinePositions, roomOffset, simplified = false) {
   for (const part of WELL_BALUSTRADE_PARTS) {
     // At vertical vista distance the thin balusters collapse into a grey block
     // and account for most of the shaft geometry. Keep the two continuous rails
     // and the six corner posts; they preserve the exact hex without thousands
     // of sub-pixel boxes.
-    if (simplified && part.size[0] < 0.08 && part.size[2] < 0.08) continue;
+    if (simplified && isThinPart(part.size)) continue;
     addBox(
       batches,
       metalMaterial,
@@ -482,9 +497,10 @@ function addTemplateChamber(
   volumes,
   level,
   roomOffset,
+  distant = false,
 ) {
   const doorWalls = freeWallsForLevel(level);
-  addDistantBalustrade(batches, outlinePositions, roomOffset, false);
+  addDistantBalustrade(batches, outlinePositions, roomOffset, distant);
   // The real lamps are point lights only in the active chamber.  Their distant
   // globes remain visible on every storey as a single batched constellation;
   // this is what lets darkness communicate scale instead of simply erasing it.
@@ -515,6 +531,7 @@ function addTemplateChamber(
   // above and below were a cheaper building than this one. A shaft whose whole
   // subject is that every storey is the same storey cannot afford that.
   for (const part of [...WELL_BRIDGE_PARTS, ...WELL_STAIR_PARTS]) {
+    if (distant && isThinPart(part.size)) continue;
     addBox(
       batches,
       part.trim ? metalMaterial : (part.wood ? shelfMaterial : wallMaterial),
@@ -541,7 +558,7 @@ function addTemplateChamber(
       new THREE.Vector3(position.x, position.y - 0.19, position.z), 0, null, roomOffset, null, null);
     addBox(batches, metalMaterial, [0.29, 0.07, 0.29],
       new THREE.Vector3(position.x, position.y + 0.19, position.z), 0, null, roomOffset, null, null);
-    for (const [dx, dz] of [[-0.13, -0.13], [-0.13, 0.13], [0.13, -0.13], [0.13, 0.13]]) {
+    for (const [dx, dz] of distant ? [] : [[-0.13, -0.13], [-0.13, 0.13], [0.13, -0.13], [0.13, 0.13]]) {
       addBox(batches, metalMaterial, [0.035, 0.34, 0.035],
         new THREE.Vector3(position.x + dx, position.y, position.z + dz), 0, null, roomOffset, null, null);
     }
@@ -639,7 +656,14 @@ export function* vistaBuilder(level) {
     const shelvedVolumes = storeys <= VISTA_WHOLE_BOOK_STOREYS ? volumes
       : storeys <= VISTA_BOOK_STOREYS ? distantVolumes
         : null;
-    addTemplateChamber(batches, outlinePositions, shelvedVolumes, stackedLevel, offsetMatrix);
+    addTemplateChamber(
+      batches,
+      outlinePositions,
+      shelvedVolumes,
+      stackedLevel,
+      offsetMatrix,
+      storeys > VISTA_DETAIL_STOREYS,
+    );
 
     // One real passage begins behind each visible doorway. That is enough to
     // keep the background from reading as a coloured panel, without growing a
