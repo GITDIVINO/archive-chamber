@@ -153,11 +153,30 @@ for (const id of ['open-search', 'open-register', 'cell']) {
 // --- the physical manifesto opens on its fixed page --------------------------
 // The reader covers the status bar, so it has to be dismissed the way a player
 // would before the catalogue can be reached again.
+//
+// Closing a panel returns the walker to the chamber, and on a desktop that
+// means pointer lock on the world canvas. While the lock holds, every click
+// goes to the canvas whatever is drawn over it; that is what "canvas intercepts
+// pointer events" meant on Linux CI, where headless Chromium grants the lock
+// (macOS headless does not, which is why it passed locally). A player gets the
+// cursor back with Escape, which the browser handles itself and a synthetic key
+// press never reaches, so release it the same way the browser would.
+async function takeBackCursor() {
+  const locked = await page.evaluate(() => document.pointerLockElement?.className ?? null);
+  if (locked === null) return;
+  assert.equal(locked, 'world-canvas', 'returning to the chamber locks the pointer to the world, not to a panel');
+  await page.evaluate(() => new Promise(resolve => {
+    document.addEventListener('pointerlockchange', resolve, { once: true });
+    document.exitPointerLock();
+  }));
+}
+
 async function openCatalogue() {
   if (await page.locator('#book-panel.visible').count()) {
     await page.locator('#close-book').click();
     await page.waitForSelector('#book-panel.visible', { state: 'detached' });
   }
+  await takeBackCursor();
   await page.locator('#open-search').click();
 }
 
@@ -614,6 +633,7 @@ assert.ok(
 );
 
 // The panel decodes a number back into a place, and walks the player to it.
+await takeBackCursor();
 await page.locator('#open-register').click();
 await page.waitForSelector('#register-panel.visible');
 const rows = page.locator('.register-row');
