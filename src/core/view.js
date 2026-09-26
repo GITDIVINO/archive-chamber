@@ -109,7 +109,7 @@ scene.add(new THREE.AmbientLight(0xffd9b0, 0.16));
 // their arrises, never by their tone. What is kept is the separation of floor
 // from wall from ceiling, which depends only on how far a surface is turned
 // from the vertical, and the shadow the cabinets drop on the floor.
-const keyLight = new THREE.DirectionalLight(0xffe8cc, 0.18);
+export const keyLight = new THREE.DirectionalLight(0xffe8cc, 0.18);
 keyLight.position.set(0, 72, 0);
 keyLight.castShadow = true;
 keyLight.shadow.mapSize.set(1536, 1536);
