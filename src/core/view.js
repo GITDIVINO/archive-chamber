@@ -27,7 +27,7 @@ scene.background = new THREE.Color(DISTANCE);
 // the shaft was dark rather than deep. At this density the far side of the well
 // is visibly hazed and the shaft fades out around nine floors, which is where
 // the reference loses its own distance too.
-export const WORLD_FOG_DENSITY = 0.013;
+export const WORLD_FOG_DENSITY = 0.016;
 scene.fog = new THREE.FogExp2(DISTANCE, WORLD_FOG_DENSITY);
 
 // The portal stencil lies only a few centimetres behind a side threshold.  A
