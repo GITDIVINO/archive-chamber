@@ -4,13 +4,15 @@
  *
  * Every relief in every chamber is the same drawing at the same moment, so they
  * all share one canvas, one texture and one material. The canvas is redrawn a
- * few times a second and uploaded once, however many rooms show it; each room
- * adds a single mesh, one draw call, holding a quad per cabinet wall.
+ * few times a second and uploaded once. Only the walker's own chamber shows it
+ * (neighbours seen through doorways leave it out), as a single mesh, one draw
+ * call, holding a quad per cabinet wall.
  */
 
 import * as THREE from 'three';
 import { WALL_THICKNESS } from '../constants.js';
 import { drawOuroboros, SIZE } from '../art/ouroboros.js';
+import { renderedWorld } from '../core/view.js';
 import { pointOnWall, wallBasis } from './geometry.js';
 
 // Pale stone cut into the wall's own darker stone, with the lines sunk in.
@@ -76,12 +78,23 @@ function sharedMaterial() {
   let last = 0;
   const tick = now => {
     requestAnimationFrame(tick);
+    showActiveReliefs();
     if (still?.matches || now - last < FRAME_INTERVAL_MS) return;
     last = now;
     paint(now / 1000);
   };
   requestAnimationFrame(tick);
   return material;
+}
+
+// The chambers directly under renderedWorld are the walker's own; portal
+// copies live in their own scene. A handful of children, checked each tick.
+function showActiveReliefs() {
+  for (const room of renderedWorld.children) {
+    for (const child of room.children) {
+      if (child.userData.chamberOnly) child.visible = true;
+    }
+  }
 }
 
 /**
@@ -120,5 +133,10 @@ export function addRelief(room, walls, bottom, top) {
   mesh.receiveShadow = true;
   // Never in the way of a click on a book or the reader's aim.
   mesh.raycast = () => {};
+  // Only in the chamber the walker stands in. Through a doorway it is a few
+  // pixels on a far wall, and a copy in every neighbour cost a draw call each:
+  // room.js hides it in portal copies and showActiveReliefs brings it back
+  // when the walker steps through and the copy becomes their chamber.
+  mesh.userData.chamberOnly = true;
   room.add(mesh);
 }

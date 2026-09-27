@@ -847,6 +847,8 @@ function cloneVisualChild(source) {
     clone = source.clone(false);
   }
   copyVisualTransform(clone, source);
+  // Shown again by world/relief.js if this room becomes the walker's own.
+  if (source.userData.chamberOnly) clone.visible = false;
   if (source.isInstancedMesh) clone.userData.records = [];
   if (source.geometry) sharedGeometries.add(source.geometry);
   return clone;
