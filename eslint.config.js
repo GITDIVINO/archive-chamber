@@ -38,10 +38,10 @@ export default [
     },
   },
   {
-    // The smoke test is a Node script whose page.evaluate/addInitScript
-    // callbacks are serialised and run inside the browser, so it legitimately
-    // references both environments.
-    files: ['tests/smoke.test.mjs'],
+    // The browser tests are Node scripts whose page.evaluate/addInitScript
+    // callbacks are serialised and run inside the browser, so they
+    // legitimately reference both environments.
+    files: ['tests/smoke.test.mjs', 'tests/route.test.mjs'],
     languageOptions: {
       globals: { ...globals.node, ...globals.browser },
     },

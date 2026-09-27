@@ -1418,6 +1418,11 @@ export function disposeRoom(room) {
     // Instanced volumes own their matrix and colour buffers even though the box
     // geometry itself is shared across every room.
     if (object.isInstancedMesh) object.dispose();
+    // A lantern that casts shadows owns its shadow map, a render target the
+    // renderer keeps until the light itself is disposed. Removing the room
+    // from the scene does not release it, so without this every chamber
+    // walked through left its lanterns' shadow maps behind.
+    if (object.isLight) object.dispose();
   });
   for (const geometry of geometries) geometry.dispose();
   for (const material of room.userData.disposableMaterials) {
