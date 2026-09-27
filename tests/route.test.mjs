@@ -104,7 +104,10 @@ async function walk(level) {
     // renderer uploads only what the camera can see, and the pose after a turn
     // aside differs from the pose after walking straight, so culling is lifted
     // for that one frame: otherwise the count would measure the view, not what
-    // is still held.
+    // is still held. render() skips a frame while the last one is still on the
+    // GPU, and a WebGL fence reports done only once the page yields, which this
+    // walk never does. So the GPU is drained first and the fence is taken as
+    // done for this one frame, and every measured frame is really drawn.
     const settle = () => {
       for (let pass = 0; pass < 50; pass++) paintRoomLabels(1000);
       const culled = [];
@@ -112,7 +115,12 @@ async function walk(level) {
         if (object.frustumCulled) culled.push(object);
         object.frustumCulled = false;
       });
+      const gl = renderer.getContext();
+      const status = gl.getSyncParameter;
+      gl.finish();
+      gl.getSyncParameter = (sync, name) => (name === gl.SYNC_STATUS ? gl.SIGNALED : status.call(gl, sync, name));
       render();
+      gl.getSyncParameter = status;
       for (const object of culled) object.frustumCulled = true;
     };
 
