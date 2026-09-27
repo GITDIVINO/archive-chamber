@@ -27,7 +27,7 @@ scene.background = new THREE.Color(DISTANCE);
 // the shaft was dark rather than deep. At this density the far side of the well
 // is visibly hazed and the shaft fades out around nine floors, which is where
 // the reference loses its own distance too.
-export const WORLD_FOG_DENSITY = 0.016;
+export const WORLD_FOG_DENSITY = 0.012;
 scene.fog = new THREE.FogExp2(DISTANCE, WORLD_FOG_DENSITY);
 
 // The portal stencil lies only a few centimetres behind a side threshold.  A
@@ -74,7 +74,7 @@ renderer.shadowMap.render = function (lights, shadowScene, shadowCamera) {
   drawShadows.call(this, lights, shadowScene, shadowCamera);
 };
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.22;
+renderer.toneMappingExposure = 2.4;
 document.body.prepend(renderer.domElement);
 
 // Warmed, and left near its old strength rather than cut. A vertical wall takes
@@ -92,8 +92,8 @@ document.body.prepend(renderer.domElement);
 // held close together on purpose — a hemisphere with a bright sky lights every
 // upward face at full strength, and that is what made the floor the brightest
 // thing in the frame when it should be among the darkest.
-scene.add(new THREE.HemisphereLight(0x3a2a1e, 0x1a120c, 0.5));
-scene.add(new THREE.AmbientLight(0xffd9b0, 0.16));
+scene.add(new THREE.HemisphereLight(0x8a6240, 0x3a2818, 1.6));
+scene.add(new THREE.AmbientLight(0xffd9b0, 0.5));
 // Straight down, and it has to be. A crossing is the same corridor four times
 // and a chamber is the same wall six times, so the world claims two symmetries:
 // a quarter turn about the passage axis and a sixth turn about the room. The
