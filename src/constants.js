@@ -7,29 +7,29 @@
 
 export const ROOM_SCALE = 6;
 export const ROOM_RADIUS = 8.9 * ROOM_SCALE;
-// The library is built out of smoke-darkened timber and brown plaster.  The
+// The library is built out of smoke-darkened timber and dark umber plaster.  The
 // opening of the well is deliberately darker than a lit surface: it is depth,
 // not another panel inserted into the floor.  Earlier versions made both
 // colours nearly white to hide seams, which also erased every useful plane.
-export const WORLD_SURFACE_COLOR = 0x8b7b70;
-export const WORLD_FLOOR_COLOR = 0x57463b;
-export const WORLD_CEILING_COLOR = 0x5a5350;
-// Brighter than an unlit wall, deliberately. An unlit surface here now sits
-// around 0x161311; haze at 0x2e1e12 is above that, so each further plane comes
-// up rather than going down and the shaft gains depth instead of losing it.
-// Held at near-black the fog only subtracted, and five planes back everything
-// merged into one void.
-export const WORLD_DISTANCE_COLOR = 0x2e1e12;
+export const WORLD_SURFACE_COLOR = 0x5b4a3e;
+export const WORLD_FLOOR_COLOR = 0x3e2c20;
+export const WORLD_CEILING_COLOR = 0x3a2c24;
+// Dark amber, as in the reference: the haze is where the timber goes, and only
+// the lanterns come back out of it. It used to sit brighter than an unlit wall
+// (0x2e1e12) so each further plane came up out of the dark; that gave depth,
+// but it turned the whole shaft into one flat brown field. Depth is now carried
+// by the lantern glows, which fog does not touch (see lanternGlowMaterial).
+export const WORLD_DISTANCE_COLOR = 0x160c06;
 
 // --- the warm palette ---------------------------------------------------------
 // Everything a hand touches is wood; everything that holds the building up is
 // paper. The distinction is the whole colour scheme: shelves, treads and rails
 // are warm because people made and use them, and the shell stays pale because
 // it is architecture and was always there.
-export const WOOD_COLOR = 0x744a31;
+export const WOOD_COLOR = 0x6a3b20;
 // Rails and newels a shade deeper than the casework, so a handrail crossing a
 // cabinet still reads as a separate thing at distance.
-export const TRIM_WOOD_COLOR = 0x2b2420;
+export const TRIM_WOOD_COLOR = 0x24170f;
 // All bindings belong to one catalogue and therefore keep one colour.  Their
 // lettering is stamped in warm metal rather than printed in black, so it stays
 // legible in the pools of lantern light without turning the wall into a white
