@@ -1760,6 +1760,27 @@ for (const [name, query] of Object.entries(visualQueries)) {
     };
     state.camera = [camera.position.x, camera.position.y, camera.position.z, camera.rotation.x, camera.rotation.y].map(v => Math.round(v * 1000) / 1000);
     state.composed = brightest();
+    // And the step from that buffer to the canvas, with the GL state it inherits.
+    const context = renderer.getContext();
+    state.gl = {
+      colorMask: context.getParameter(context.COLOR_WRITEMASK),
+      scissorTest: context.getParameter(context.SCISSOR_TEST),
+      scissor: Array.from(context.getParameter(context.SCISSOR_BOX)),
+      viewport: Array.from(context.getParameter(context.VIEWPORT)),
+      stencilTest: context.getParameter(context.STENCIL_TEST),
+      blend: context.getParameter(context.BLEND),
+    };
+    const { composeFrame } = await import('./src/core/bloom.js');
+    composeFrame(renderer);
+    const pixel = new Uint8Array(4);
+    let canvasPeak = 0;
+    for (let y = 1; y < 8; y++) {
+      for (let x = 1; x < 8; x++) {
+        context.readPixels(Math.floor(context.drawingBufferWidth * x / 8), Math.floor(context.drawingBufferHeight * y / 8), 1, 1, context.RGBA, context.UNSIGNED_BYTE, pixel);
+        canvasPeak = Math.max(canvasPeak, pixel[0], pixel[1], pixel[2]);
+      }
+    }
+    state.canvasPeak = canvasPeak;
     renderer.setRenderTarget(sceneTarget);
     renderer.clear(true, true, true);
     renderer.render(scene, camera);
