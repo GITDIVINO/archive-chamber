@@ -64,6 +64,10 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 const consoleErrors = [];
 page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
 page.on('pageerror', error => consoleErrors.push(String(error)));
+// WebGL reports a skipped draw (a feedback loop, an incomplete texture) as a
+// warning; a blank view is read against these.
+const consoleWarnings = [];
+page.on('console', message => { if (message.type() === 'warning') consoleWarnings.push(message.text()); });
 
 // Count real GPU submissions rather than trusting three.js bookkeeping.
 await page.addInitScript(() => {
@@ -1815,13 +1819,14 @@ for (const [name, query] of Object.entries(visualQueries)) {
     canvasSample,
     state,
     errors: consoleErrors.slice(),
+    warnings: consoleWarnings.splice(0).slice(-6),
     pngBytes: screenshot.length,
     signature: createHash('sha256').update(screenshot).digest('hex'),
   };
 }
 
 for (const [name, metric] of Object.entries(visualMetrics)) {
-  const evidence = JSON.stringify({ pngBytes: metric.pngBytes, signature: metric.signature, ...metric.state, errors: metric.errors });
+  const evidence = JSON.stringify({ pngBytes: metric.pngBytes, signature: metric.signature, ...metric.state, errors: metric.errors, warnings: metric.warnings });
   // A blank view is easier to diagnose when the log shows what was drawn.
   const picture = metric.canvasSample ? '\n' + sketch(metric.canvasSample, 64, 40) : '';
   const others = Object.entries(visualMetrics)
