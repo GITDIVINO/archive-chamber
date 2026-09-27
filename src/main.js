@@ -7,7 +7,7 @@
  * from importing one another in a circle.
  */
 
-import { camera, render, renderer, resizeView } from './core/view.js';
+import { camera, nextFrameShown, render, renderer, resizeView } from './core/view.js';
 import {
   PLAYER_START_PITCH,
   PLAYER_START_X,
@@ -321,7 +321,9 @@ function initializeLibrary() {
     resizeMapCanvas();
     player.ready = true;
     startButton.disabled = false;
-    setStartupState('ready');
+    // Ready means the chamber is on screen, not merely built: on a slow chip
+    // the first frame can still be drawing long after the build returns.
+    void nextFrameShown().then(() => setStartupState('ready'));
   } catch (error) {
     console.error(error);
     setStartupState('library unavailable', true);

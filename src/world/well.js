@@ -231,7 +231,7 @@ for (const [from, to] of DECK_RUNS) {
         size: [length, WELL_RAIL_THICKNESS, WELL_RAIL_THICKNESS],
         position: bridgePoint(centre, v, height),
         rotation: BRIDGE_ROTATION,
-        trim: true,
+        wood: true,
       };
       bridgeParts.push(rail);
       distantBridgeParts.push(rail);
@@ -248,7 +248,7 @@ for (const [from, to] of DECK_RUNS) {
           (WELL_GUARD_HEIGHT - WELL_RAIL_THICKNESS) / 2,
         ),
         rotation: 0,
-        trim: true,
+        wood: true,
       });
     }
   }
@@ -290,7 +290,7 @@ for (const side of [-1, 1]) {
     position: bridgePoint(0, side * (BRIDGE_HALF_WIDTH - 0.19), STAIR_RISE / 2 - 0.34),
     rotation: BRIDGE_ROTATION,
     rotationZ: STAIR_SLOPE,
-    trim: true,
+    wood: true,
   });
 }
 
@@ -307,6 +307,16 @@ for (let step = 0; step < STAIR_STEPS; step++) {
     position: bridgePoint(u, 0, top - STAIR_SOFFIT_DEPTH / 2),
     rotation: BRIDGE_ROTATION,
     wood: true,
+  });
+  // A rounded-over nose on every tread catches a lantern as one bright line,
+  // the way a worn oak stair does. Only in the chamber itself: down the shaft
+  // it is below a pixel.
+  stairParts.push({
+    size: [0.07, 0.045, STAIR_WIDTH + 0.04],
+    position: bridgePoint(-STAIR_HALF_RUN + step * STAIR_TREAD - 0.015, 0, top - 0.0225),
+    rotation: BRIDGE_ROTATION,
+    wood: true,
+    near: true,
   });
   if (step % 4 === 0) {
     // A darker riser every four steps breaks the flight into a readable human
@@ -356,14 +366,14 @@ for (const side of [-1, 1]) {
     position: bridgePoint(0, v, STAIR_MIDPOINT_HEIGHT + STAIR_HANDRAIL_HEIGHT),
     rotation: BRIDGE_ROTATION,
     rotationZ: STAIR_SLOPE,
-    trim: true,
+    wood: true,
   });
   stairParts.push({
     size: [STAIR_STRINGER_LENGTH, 0.06, 0.05],
     position: bridgePoint(0, v, STAIR_MIDPOINT_HEIGHT + STAIR_HANDRAIL_HEIGHT * 0.52),
     rotation: BRIDGE_ROTATION,
     rotationZ: STAIR_SLOPE,
-    trim: true,
+    wood: true,
   });
 
   // Newels are vertical, not square to the slope — which is how a stair is
@@ -374,7 +384,24 @@ for (const side of [-1, 1]) {
       size: [WELL_POST_WIDTH * (end ? 1.6 : 1.15), STAIR_HANDRAIL_HEIGHT, WELL_POST_WIDTH * (end ? 1.6 : 1.15)],
       position: bridgePoint(u, v, top + STAIR_HANDRAIL_HEIGHT / 2),
       rotation: 0,
-      trim: true,
+      wood: true,
+    });
+    // A turned cap and a moulded base, as on the carved newels of the
+    // reference. Chamber only, like the tread noses.
+    const girth = WELL_POST_WIDTH * (end ? 2.1 : 1.6);
+    stairParts.push({
+      size: [girth, 0.08, girth],
+      position: bridgePoint(u, v, top + STAIR_HANDRAIL_HEIGHT + 0.04),
+      rotation: 0,
+      wood: true,
+      near: true,
+    });
+    stairParts.push({
+      size: [girth, 0.14, girth],
+      position: bridgePoint(u, v, top + 0.07),
+      rotation: 0,
+      wood: true,
+      near: true,
     });
   }
 
@@ -389,8 +416,18 @@ for (const side of [-1, 1]) {
       size: [WELL_POST_WIDTH * 0.55, STAIR_HANDRAIL_HEIGHT - 0.12, WELL_POST_WIDTH * 0.55],
       position: bridgePoint(u, v, top + (STAIR_HANDRAIL_HEIGHT - 0.12) / 2),
       rotation: 0,
-      trim: true,
+      wood: true,
     });
+    // Two collars make a square baluster read as a turned one.
+    for (const height of [0.16, STAIR_HANDRAIL_HEIGHT - 0.3]) {
+      stairParts.push({
+        size: [WELL_POST_WIDTH * 0.9, 0.06, WELL_POST_WIDTH * 0.9],
+        position: bridgePoint(u, v, top + height),
+        rotation: 0,
+        wood: true,
+        near: true,
+      });
+    }
   }
 
   // A lantern every third newel, and the two sides offset from one another so

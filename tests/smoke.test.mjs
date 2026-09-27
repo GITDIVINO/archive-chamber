@@ -26,7 +26,12 @@ const CONTENT_TYPES = {
 
 // A draw call per volume is the regression this guards against: a room of 3840
 // books once cost ~1200 calls, and instancing brought it under twenty.
-const MAX_DRAW_CALLS_PER_FRAME = 60;
+//
+// A chamber now also draws its three neighbours again through their doorways,
+// each a full room and shaft, plus the glow passes: about 90-128 calls once the
+// lantern shadow maps stop re-rendering every frame. 140 leaves room for that
+// and still fails an order of magnitude short of a call per volume.
+const MAX_DRAW_CALLS_PER_FRAME = 140;
 const MAX_VISTA_VERTICES = 350000;
 const MAX_VISTA_TRIANGLES = 180000;
 
@@ -62,7 +67,7 @@ page.on('pageerror', error => consoleErrors.push(String(error)));
 
 // Count real GPU submissions rather than trusting three.js bookkeeping.
 await page.addInitScript(() => {
-  window.__draw = { calls: 0, frames: 0 };
+  window.__draw = { calls: 0, frames: 0, drew: false };
   const patch = (proto) => {
     if (!proto) return;
     for (const name of ['drawElements', 'drawArrays', 'drawElementsInstanced', 'drawArraysInstanced']) {
@@ -70,6 +75,7 @@ await page.addInitScript(() => {
       if (!original) continue;
       proto[name] = function (...args) {
         window.__draw.calls++;
+        window.__draw.drew = true;
         return original.apply(this, args);
       };
     }
@@ -77,7 +83,13 @@ await page.addInitScript(() => {
   patch(window.WebGL2RenderingContext?.prototype);
   patch(window.WebGLRenderingContext?.prototype);
   const raf = window.requestAnimationFrame.bind(window);
-  const tick = () => { window.__draw.frames++; raf(tick); };
+  // The game skips a tick while the chip is still busy with its last frame,
+  // so only ticks that actually drew count as frames.
+  const tick = () => {
+    if (window.__draw.drew) window.__draw.frames++;
+    window.__draw.drew = false;
+    raf(tick);
+  };
   raf(tick);
 });
 
@@ -102,7 +114,13 @@ assert.match(
 );
 
 // --- the room is drawn, and drawn cheaply ------------------------------------
-await page.waitForFunction(() => window.__draw.frames > 4, null, { timeout: 15000 });
+// The first frames bake the static shadow maps once; the budget is for the
+// frames after that, which is what walking costs. A settled room draws the
+// same calls every frame, so two frames are a full sample even when software
+// WebGL takes seconds over each.
+await page.waitForFunction(() => window.__draw.frames > 2, null, { timeout: 15000 });
+await page.evaluate(() => Object.assign(window.__draw, { calls: 0, frames: 0, drew: false }));
+await page.waitForFunction(() => window.__draw.frames > 1, null, { timeout: 15000 });
 const perFrame = await page.evaluate(() => Math.round(window.__draw.calls / window.__draw.frames));
 assert.ok(perFrame > 0, 'the room must actually render');
 assert.ok(
@@ -199,6 +217,8 @@ const vertical = await page.evaluate(async () => {
     roomPointLights,
     lampCount: room.userData.lampCount,
     readingLampCount: room.userData.readingLampCount,
+    bookWallCount: room.userData.bookWallCount,
+    litLanternCount: room.userData.litLanternCount,
     openingCount: openings.length,
     openingRadii: openings.map(mesh => mesh.geometry.parameters.innerRadius),
     expectedRadius: WELL_RADIUS,
@@ -238,9 +258,16 @@ assert.equal(vertical.shadowMapEnabled, true, 'the active room must render stabl
 assert.equal(vertical.shadowLights, 1, 'one bounded key light supplies shadows without multiplying their cost');
 assert.ok(vertical.shadowCasters > 0, 'the active room architecture must cast shadows');
 assert.equal(vertical.vistaShadowCasters, 0, 'distant geometry must never spend the active shadow budget');
-assert.equal(vertical.roomPointLights, 2, 'the two doorway lanterns supply the bounded local-light budget');
+// The library is lit by its own lanterns (see a68af94): one at each exit, five
+// sconces to every cabinet wall, and the lit lanterns of the well. Nothing else
+// in a chamber may add a point light.
 assert.equal(vertical.lampCount, 2, 'the room records one canonical lamp at each exit');
-assert.equal(vertical.readingLampCount, 0, 'cabinet and stair lights stay emissive without multiplying point-light passes');
+assert.equal(vertical.readingLampCount, 5 * vertical.bookWallCount, 'five sconces to every cabinet wall, each a real light');
+assert.equal(
+  vertical.roomPointLights,
+  vertical.lampCount + vertical.readingLampCount + vertical.litLanternCount,
+  'the exit lamps, the sconces and the lit well lanterns are the only local lights',
+);
 assert.equal(vertical.openingCount, 2, 'the current chamber needs the same opening in its floor and ceiling');
 assert.ok(vertical.openingRadii.every(radius => radius === vertical.expectedRadius), 'both openings must follow the frozen well radius');
 assert.equal(vertical.balustradeParts, vertical.expectedParts, 'the full balustrade must be built around the opening');
@@ -321,6 +348,9 @@ async function openCatalogue() {
   }
   await takeBackCursor();
   await page.locator('#open-search').click();
+  // The panel hands focus to the search field on its next task. Waiting for
+  // it keeps that hand-off from landing after a test has focused another field.
+  await page.waitForFunction(() => document.activeElement?.id === 'search-input');
 }
 
 async function openAddress(address) {
@@ -983,16 +1013,22 @@ const sideContinuity = await page.evaluate(async () => {
   const corridorEntrySyncMs = performance.now() - syncStarted;
   window.__draw.calls = 0;
   window.__draw.frames = 0;
+  window.__draw.drew = false;
   const sampleFrameGaps = () => new Promise(resolve => {
     const gaps = [];
     let previous = null;
     // Four frames are enough to catch the first upload and the settled render
     // without making the software-WebGL smoke monopolise the machine.
     let remaining = 4;
+    // Ticks in which the game drew nothing are not frames: see the draw count.
+    let drawn = window.__draw.frames;
     const sample = now => {
-      if (previous !== null) gaps.push(now - previous);
-      previous = now;
-      remaining--;
+      if (window.__draw.frames !== drawn) {
+        drawn = window.__draw.frames;
+        if (previous !== null) gaps.push(now - previous);
+        previous = now;
+        remaining--;
+      }
       if (remaining === 0) resolve(gaps);
       else requestAnimationFrame(sample);
     };
@@ -1416,8 +1452,17 @@ for (const [name, value] of Object.entries(contrast)) {
 // because CI runs on shared machines with a software rasteriser.
 const cost = await page.evaluate(async () => {
   const { moveToWorldHex, paintRoomLabels } = await import('./src/world/rooms.js');
-  const { renderedWorld } = await import('./src/core/view.js');
+  const { renderedWorld, renderer } = await import('./src/core/view.js');
   const roomOf = () => renderedWorld.children.find(child => child.userData.q !== undefined);
+
+  // Time the build, not the rasteriser. A frame handed to the GPU just before
+  // this runs is still being drawn in software on the same few CPU cores, and
+  // on a two-core runner it doubles every build it overlaps. Reading a pixel
+  // back waits for that frame to finish; the loop below then holds the main
+  // thread, so no further frame starts until it is done.
+  await new Promise(resolve => requestAnimationFrame(() => resolve()));
+  const gl = renderer.getContext();
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
 
   const builds = [];
   for (let index = 1; index <= 9; index++) {
@@ -1650,33 +1695,62 @@ const visualQueries = await page.evaluate(async () => {
   };
 });
 
+// Render an RGBA sample as rows of characters, dark to light, for failure logs.
+function sketch(rgba, width, height) {
+  const ramp = ' .:-=+*#%@';
+  // The chamber is dark, so scale to the brightest pixel rather than to white.
+  let peak = 1;
+  for (let i = 0; i < rgba.length; i += 4) peak = Math.max(peak, rgba[i] + rgba[i + 1] + rgba[i + 2]);
+  const rows = [`peak ${Math.round(peak / 3)}/255`];
+  for (let y = 0; y < height; y += 2) {
+    let row = '';
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      const light = (rgba[i] + rgba[i + 1] + rgba[i + 2]) / peak;
+      row += ramp[Math.min(ramp.length - 1, Math.floor(light * ramp.length))];
+    }
+    rows.push('|' + row + '|');
+  }
+  return rows.join('\n');
+}
+
 const visualMetrics = {};
 for (const [name, query] of Object.entries(visualQueries)) {
   await page.goto(`${origin}/?${query}`, { waitUntil: 'load' });
   await page.waitForFunction(() => document.querySelector('#startup-state').textContent === 'ready', null, { timeout: 30000 });
-  await page.waitForTimeout(350);
+  // Frames are paced to the chip, so a fixed pause can end before the view is
+  // drawn. At a doorway the first frames can still show black in CI's browser
+  // while the view settles; four drawn frames show the finished view.
+  await page.waitForFunction(() => window.__draw.frames > 3, null, { timeout: 30000 });
   const screenshot = await page.screenshot();
+  // Sampled from what is on screen, not from the WebGL canvas: without a
+  // preserved drawing buffer, current Chrome hands a script a cleared buffer.
   const canvasSample = name.startsWith('threshold')
-    ? await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => {
-      const source = document.querySelector('canvas.world-canvas');
+    ? await page.evaluate(async png => {
+      const image = new Image();
+      image.src = `data:image/png;base64,${png}`;
+      await image.decode();
       const probe = document.createElement('canvas');
       probe.width = 64;
       probe.height = 40;
       const context = probe.getContext('2d', { willReadFrequently: true });
-      context.drawImage(source, 0, 0, probe.width, probe.height);
-      resolve(Array.from(context.getImageData(0, 0, probe.width, probe.height).data));
-    })))
+      context.drawImage(image, 0, 0, probe.width, probe.height);
+      return Array.from(context.getImageData(0, 0, probe.width, probe.height).data);
+    }, screenshot.toString('base64'))
     : null;
   visualMetrics[name] = {
     canvasSample,
+    frames: await page.evaluate(() => window.__draw.frames),
     pngBytes: screenshot.length,
     signature: createHash('sha256').update(screenshot).digest('hex'),
   };
 }
 
 for (const [name, metric] of Object.entries(visualMetrics)) {
-  const evidence = JSON.stringify({ pngBytes: metric.pngBytes, signature: metric.signature });
-  assert.ok(metric.pngBytes > 20000, `${name}: the rendered view must contain more than blank paper; ${evidence}`);
+  const evidence = JSON.stringify({ pngBytes: metric.pngBytes, signature: metric.signature, frames: metric.frames });
+  // A blank view is easier to diagnose when the log shows what was drawn.
+  const picture = metric.canvasSample ? '\n' + sketch(metric.canvasSample, 64, 40) : '';
+  assert.ok(metric.pngBytes > 20000, `${name}: the rendered view must contain more than blank paper; ${evidence}${picture}`);
 }
 for (const side of ['Right', 'Left']) {
   const before = visualMetrics[`threshold${side}Before`].canvasSample;
