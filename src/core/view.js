@@ -168,15 +168,7 @@ export function render() {
     if (gl.getSyncParameter(frameInFlight, gl.SYNC_STATUS) !== gl.SIGNALED) return;
     gl.deleteSync(frameInFlight);
     frameInFlight = null;
-    // A finished frame still has to be composited onto the page, and on a
-    // software chip that waits behind whatever is drawn next. Someone waiting
-    // to see this frame gets a couple of idle ticks for it first.
-    if (framesAwaited.length) idleTicks = 2;
-  }
-  if (idleTicks > 0) {
-    idleTicks--;
-    if (idleTicks === 0) for (const shown of framesAwaited.splice(0)) shown();
-    return;
+    for (const shown of framesAwaited.splice(0)) shown();
   }
   if (portalRenderPass) portalRenderPass();
   else {
@@ -191,7 +183,6 @@ export function render() {
 }
 
 let frameInFlight = null;
-let idleTicks = 0;
 const framesRequested = [];
 const framesAwaited = [];
 
