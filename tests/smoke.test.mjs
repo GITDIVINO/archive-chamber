@@ -1692,6 +1692,25 @@ const visualQueries = await page.evaluate(async () => {
   };
 });
 
+// Render an RGBA sample as rows of characters, dark to light, for failure logs.
+function sketch(rgba, width, height) {
+  const ramp = ' .:-=+*#%@';
+  // The chamber is dark, so scale to the brightest pixel rather than to white.
+  let peak = 1;
+  for (let i = 0; i < rgba.length; i += 4) peak = Math.max(peak, rgba[i] + rgba[i + 1] + rgba[i + 2]);
+  const rows = [`peak ${Math.round(peak / 3)}/255`];
+  for (let y = 0; y < height; y += 2) {
+    let row = '';
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      const light = (rgba[i] + rgba[i + 1] + rgba[i + 2]) / peak;
+      row += ramp[Math.min(ramp.length - 1, Math.floor(light * ramp.length))];
+    }
+    rows.push('|' + row + '|');
+  }
+  return rows.join('\n');
+}
+
 const visualMetrics = {};
 for (const [name, query] of Object.entries(visualQueries)) {
   await page.goto(`${origin}/?${query}`, { waitUntil: 'load' });
@@ -1720,7 +1739,9 @@ for (const [name, query] of Object.entries(visualQueries)) {
 
 for (const [name, metric] of Object.entries(visualMetrics)) {
   const evidence = JSON.stringify({ pngBytes: metric.pngBytes, signature: metric.signature });
-  assert.ok(metric.pngBytes > 20000, `${name}: the rendered view must contain more than blank paper; ${evidence}`);
+  // A blank view is easier to diagnose when the log shows what was drawn.
+  const picture = metric.canvasSample ? '\n' + sketch(metric.canvasSample, 64, 40) : '';
+  assert.ok(metric.pngBytes > 20000, `${name}: the rendered view must contain more than blank paper; ${evidence}${picture}`);
 }
 for (const side of ['Right', 'Left']) {
   const before = visualMetrics[`threshold${side}Before`].canvasSample;
