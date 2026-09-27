@@ -1721,17 +1721,15 @@ for (const [name, query] of Object.entries(visualQueries)) {
       resolve(Array.from(context.getImageData(0, 0, probe.width, probe.height).data));
     })))
     : null;
-  const contextLost = await page.evaluate(() => document.querySelector('canvas.world-canvas').getContext('webgl2').isContextLost());
   visualMetrics[name] = {
     canvasSample,
-    contextLost,
     pngBytes: screenshot.length,
     signature: createHash('sha256').update(screenshot).digest('hex'),
   };
 }
 
 for (const [name, metric] of Object.entries(visualMetrics)) {
-  const evidence = JSON.stringify({ pngBytes: metric.pngBytes, signature: metric.signature, contextLost: metric.contextLost });
+  const evidence = JSON.stringify({ pngBytes: metric.pngBytes, signature: metric.signature });
   // A blank view is easier to diagnose when the log shows what was drawn.
   const picture = metric.canvasSample ? '\n' + sketch(metric.canvasSample, 64, 40) : '';
   const errors = consoleErrors.length ? '\nconsole: ' + consoleErrors.join('\n') : '';
