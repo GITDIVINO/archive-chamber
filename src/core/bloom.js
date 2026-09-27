@@ -124,7 +124,15 @@ const compositeScene = quadPass(compositeMaterial);
 // Half float, because the scene is tone-mapped but not clamped and a lantern
 // core sits well above one. Stencil and depth are required: the whole portal
 // composition happens inside this buffer.
+//
+// Multisampled, because this buffer and not the canvas is where the world is
+// drawn: the canvas's own antialiasing never touched it, and every shelf edge,
+// rail and spine stepped and crawled as the walker moved. Only colour is
+// resolved for the glow; depth and stencil stay in the samples.
 export const sceneTarget = new THREE.WebGLRenderTarget(1, 1, {
+  samples: 4,
+  resolveDepthBuffer: false,
+  resolveStencilBuffer: false,
   depthBuffer: true,
   stencilBuffer: true,
   type: THREE.HalfFloatType,
