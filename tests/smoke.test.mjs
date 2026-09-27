@@ -1452,8 +1452,17 @@ for (const [name, value] of Object.entries(contrast)) {
 // because CI runs on shared machines with a software rasteriser.
 const cost = await page.evaluate(async () => {
   const { moveToWorldHex, paintRoomLabels } = await import('./src/world/rooms.js');
-  const { renderedWorld } = await import('./src/core/view.js');
+  const { renderedWorld, renderer } = await import('./src/core/view.js');
   const roomOf = () => renderedWorld.children.find(child => child.userData.q !== undefined);
+
+  // Time the build, not the rasteriser. A frame handed to the GPU just before
+  // this runs is still being drawn in software on the same few CPU cores, and
+  // on a two-core runner it doubles every build it overlaps. Reading a pixel
+  // back waits for that frame to finish; the loop below then holds the main
+  // thread, so no further frame starts until it is done.
+  await new Promise(resolve => requestAnimationFrame(() => resolve()));
+  const gl = renderer.getContext();
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
 
   const builds = [];
   for (let index = 1; index <= 9; index++) {
@@ -1709,36 +1718,36 @@ const visualMetrics = {};
 for (const [name, query] of Object.entries(visualQueries)) {
   await page.goto(`${origin}/?${query}`, { waitUntil: 'load' });
   await page.waitForFunction(() => document.querySelector('#startup-state').textContent === 'ready', null, { timeout: 30000 });
-  // Frames are paced to the chip, so a fixed pause can end before the view
-  // is drawn; wait until two frames have actually reached the canvas.
-  await page.waitForFunction(() => window.__draw.frames > 1, null, { timeout: 15000 });
+  // Frames are paced to the chip, so a fixed pause can end before the view is
+  // drawn. At a doorway the first frames can still show black in CI's browser
+  // while the view settles; four drawn frames show the finished view.
+  await page.waitForFunction(() => window.__draw.frames > 3, null, { timeout: 30000 });
   const screenshot = await page.screenshot();
+  // Sampled from what is on screen, not from the WebGL canvas: without a
+  // preserved drawing buffer, current Chrome hands a script a cleared buffer.
   const canvasSample = name.startsWith('threshold')
-    ? await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => {
-      const source = document.querySelector('canvas.world-canvas');
+    ? await page.evaluate(async png => {
+      const image = new Image();
+      image.src = `data:image/png;base64,${png}`;
+      await image.decode();
       const probe = document.createElement('canvas');
       probe.width = 64;
       probe.height = 40;
       const context = probe.getContext('2d', { willReadFrequently: true });
-      context.drawImage(source, 0, 0, probe.width, probe.height);
-      resolve(Array.from(context.getImageData(0, 0, probe.width, probe.height).data));
-    })))
+      context.drawImage(image, 0, 0, probe.width, probe.height);
+      return Array.from(context.getImageData(0, 0, probe.width, probe.height).data);
+    }, screenshot.toString('base64'))
     : null;
-  const state = await page.evaluate(() => {
-    const gl = document.querySelector('canvas.world-canvas')?.getContext('webgl2');
-    return { frames: window.__draw.frames, calls: window.__draw.calls, contextLost: gl ? gl.isContextLost() : 'no webgl2' };
-  });
   visualMetrics[name] = {
     canvasSample,
-    state,
-    errors: consoleErrors.slice(),
+    frames: await page.evaluate(() => window.__draw.frames),
     pngBytes: screenshot.length,
     signature: createHash('sha256').update(screenshot).digest('hex'),
   };
 }
 
 for (const [name, metric] of Object.entries(visualMetrics)) {
-  const evidence = JSON.stringify({ pngBytes: metric.pngBytes, signature: metric.signature, ...metric.state, errors: metric.errors });
+  const evidence = JSON.stringify({ pngBytes: metric.pngBytes, signature: metric.signature, frames: metric.frames });
   // A blank view is easier to diagnose when the log shows what was drawn.
   const picture = metric.canvasSample ? '\n' + sketch(metric.canvasSample, 64, 40) : '';
   assert.ok(metric.pngBytes > 20000, `${name}: the rendered view must contain more than blank paper; ${evidence}${picture}`);
