@@ -1730,15 +1730,21 @@ for (const [name, query] of Object.entries(visualQueries)) {
       resolve(Array.from(context.getImageData(0, 0, probe.width, probe.height).data));
     })))
     : null;
+  const state = await page.evaluate(() => {
+    const gl = document.querySelector('canvas.world-canvas')?.getContext('webgl2');
+    return { frames: window.__draw.frames, calls: window.__draw.calls, contextLost: gl ? gl.isContextLost() : 'no webgl2' };
+  });
   visualMetrics[name] = {
     canvasSample,
+    state,
+    errors: consoleErrors.slice(),
     pngBytes: screenshot.length,
     signature: createHash('sha256').update(screenshot).digest('hex'),
   };
 }
 
 for (const [name, metric] of Object.entries(visualMetrics)) {
-  const evidence = JSON.stringify({ pngBytes: metric.pngBytes, signature: metric.signature });
+  const evidence = JSON.stringify({ pngBytes: metric.pngBytes, signature: metric.signature, ...metric.state, errors: metric.errors });
   // A blank view is easier to diagnose when the log shows what was drawn.
   const picture = metric.canvasSample ? '\n' + sketch(metric.canvasSample, 64, 40) : '';
   assert.ok(metric.pngBytes > 20000, `${name}: the rendered view must contain more than blank paper; ${evidence}${picture}`);
