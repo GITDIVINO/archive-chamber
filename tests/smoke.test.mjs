@@ -1744,6 +1744,16 @@ for (const [name, query] of Object.entries(visualQueries)) {
   // is drawn; wait until two frames have actually reached the canvas.
   await page.waitForFunction(() => window.__draw.frames > 1, null, { timeout: 15000 });
   const screenshot = await page.screenshot();
+  const later = {};
+  if (name.startsWith('threshold')) {
+    // Whether the game's own later frames stay blank, and whether letting the
+    // chip finish its queue, with nothing redrawn, changes what is shown.
+    const drawn = await page.evaluate(() => window.__draw.frames);
+    await page.waitForFunction(drawn => window.__draw.frames > drawn + 1, drawn, { timeout: 30000 });
+    later.twoFramesLaterPngBytes = (await page.screenshot()).length;
+    await page.evaluate(() => document.querySelector('canvas.world-canvas').getContext('webgl2').finish());
+    later.afterFinishPngBytes = (await page.screenshot()).length;
+  }
   const canvasSample = name.startsWith('threshold')
     ? await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => {
       const source = document.querySelector('canvas.world-canvas');
@@ -1810,6 +1820,7 @@ for (const [name, query] of Object.entries(visualQueries)) {
     state.worldOnly = brightest();
     return state;
   }, name.startsWith('threshold'));
+  Object.assign(state, later);
   if (name.startsWith('threshold')) {
     // The frame composed just above, as the page then presents it.
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => resolve())));
