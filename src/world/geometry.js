@@ -167,7 +167,8 @@ export function appendMergedGeometry(batch, geometry, matrix, shade = null, loca
     mergeVertex.applyMatrix4(matrix);
     batch.positions.push(mergeVertex.x, mergeVertex.y, mergeVertex.z);
     if (normal) {
-      mergeNormal.fromBufferAttribute(normal, vertex).applyMatrix3(mergeNormalMatrix);
+      mergeNormal.fromBufferAttribute(normal, vertex).applyMatrix3(mergeNormalMatrix).normalize();
+      batch.normals?.push(mergeNormal.x, mergeNormal.y, mergeNormal.z);
       const towardsX = Math.abs(mergeNormal.x);
       const towardsY = Math.abs(mergeNormal.y);
       const towardsZ = Math.abs(mergeNormal.z);
@@ -207,7 +208,12 @@ export function mergedMesh(batch, material) {
   if (batch.colors?.length) geometry.setAttribute('color', new THREE.Float32BufferAttribute(batch.colors, 3));
   geometry.setIndex(batch.indices);
   if (material.isMeshLambertMaterial || material.isMeshStandardMaterial || material.isMeshPhysicalMaterial) {
-    geometry.computeVertexNormals();
+    // Every merged piece is a box whose faces carry their own vertices, so its
+    // transformed source normals are exactly what computeVertexNormals would
+    // average back out of the triangles, and they are already to hand.
+    if (batch.normals?.length === batch.positions.length) {
+      geometry.setAttribute('normal', new THREE.Float32BufferAttribute(batch.normals, 3));
+    } else geometry.computeVertexNormals();
   }
   return new THREE.Mesh(geometry, material);
 }

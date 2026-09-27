@@ -14,8 +14,11 @@ import {
   bookWallsForLevel,
   canonicalWallForWallIndex,
   catalogBookIndexFor,
+  catalogBookIndexForWorldSlotIndex,
   freeWallsForLevel,
+  WORLD_VOLUMES_PER_SHELF,
   worldRoomIndexFor,
+  worldSlotIndexFor,
 } from '../../world-engine.js';
 import {
   BOOK_LETTER_COLOR,
@@ -146,6 +149,26 @@ export function shortSpineTitle(title) {
   return value || 'untitled';
 }
 
+function spineTitleFor(bookIndex) {
+  return shortSpineTitle(titleForBookIndex(bookIndex));
+}
+
+// A volume's title is a dozen divisions of a very large number, and a room has
+// 3840 volumes: working them all out was a sixth of building a room, for
+// titles nobody reads until they pick the book up or its spine is lettered.
+// So a record works its title out the first time it is asked for, and keeps it.
+function bookRecord(bookIndex, worldLocation) {
+  return {
+    bookIndex,
+    worldLocation,
+    get volumeTitle() {
+      const value = spineTitleFor(this.bookIndex);
+      Object.defineProperty(this, 'volumeTitle', { value, enumerable: true });
+      return value;
+    },
+  };
+}
+
 function createSpineAtlas(room) {
   const canvas = document.createElement('canvas');
   canvas.width = SPINE_ATLAS_SIZE;
@@ -157,7 +180,10 @@ function createSpineAtlas(room) {
   texture.generateMipmaps = true;
   texture.minFilter = THREE.LinearMipmapLinearFilter;
   texture.magFilter = THREE.LinearFilter;
-  const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide, depthWrite: false });
+  // A label is one flat quad, so its two faces never cover each other and the
+  // back-then-front second pass three.js gives transparent double-sided
+  // materials would only double the draw calls.
+  const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide, depthWrite: false, forceSinglePass: true });
   const atlas = { context, material, next: 0, positions: [], uvs: [], indices: [] };
   room.userData.spineAtlases.push(atlas);
   room.userData.disposableMaterials.push(material);
@@ -187,7 +213,7 @@ function paintSpineLabel(context, column, row, label) {
 const spineCorner = new THREE.Vector3();
 // Spine quads are baked into room space and merged per atlas, so a whole room
 // of 3840 labels costs one draw call per atlas instead of one per volume.
-function appendSpine(room, label, matrix) {
+function appendSpine(room, bookIndex, matrix) {
   let atlas = room.userData.spineAtlases.at(-1);
   if (!atlas || atlas.next === SPINES_PER_ATLAS) atlas = createSpineAtlas(room);
   const cell = atlas.next++;
@@ -198,7 +224,8 @@ function appendSpine(room, label, matrix) {
   // cost. The current 1024 atlases keep the capacity at one quarter of the
   // upload size, and none of it belongs in the threshold frame:
   // they arrive at the far doorway, where a spine is a smudge anyway.
-  room.userData.pendingSpines.push({ atlas, column, row, label });
+  // The title itself is worked out when the label is painted: see bookRecord.
+  room.userData.pendingSpines.push({ atlas, column, row, bookIndex });
   const inset = 1;
   const u0 = (column * SPINE_CELL_WIDTH + inset) / SPINE_ATLAS_SIZE;
   const u1 = ((column + 1) * SPINE_CELL_WIDTH - inset) / SPINE_ATLAS_SIZE;
@@ -224,7 +251,7 @@ function appendSpine(room, label, matrix) {
 function staticBatchFor(room, material) {
   let batch = room.userData.staticBatches.get(material);
   if (!batch) {
-    batch = { material, positions: [], uvs: [], indices: [], colors: [] };
+    batch = { material, positions: [], normals: [], uvs: [], indices: [], colors: [] };
     room.userData.staticBatches.set(material, batch);
   }
   return batch;
@@ -488,6 +515,8 @@ export function wallNumberMaterial() {
     transparent: true,
     side: THREE.DoubleSide,
     depthWrite: false,
+    // Flat numerals: see the spine labels above.
+    forceSinglePass: true,
   });
   return sharedWallNumberMaterial;
 }
@@ -579,6 +608,69 @@ export function addShelfEdge(outlinePositions, parentMatrix, shelfY, width = CAB
   }
 }
 
+// The joinery that makes the case a piece of furniture rather than a box: a
+// stepped cornice over the head rail, a moulded base, a lipped front on each
+// board and a fluted pilaster over either end post. It is all the same timber
+// as the carcase, so it merges into the batch the case already draws and costs
+// no extra draw call. Every piece stands proud of the carcase front, so none of
+// it reaches into the niches or across a spine. The cornice stays below the
+// first wall band, which carries the ouroboros relief.
+const CORNICE_PROFILE = Object.freeze([
+  // [height, depth, projection past the carcase front, extra run, centre above the case top]
+  [0.05, 0.08, 0.03, 0.06, -0.03],
+  [0.07, 0.16, 0.08, 0.16, 0.035],
+  [0.03, 0.2, 0.11, 0.22, 0.085],
+]);
+const BASE_PROFILE = Object.freeze([
+  [0.08, 0.12, 0.05, 0.08, 0.04],
+  [0.035, 0.06, 0.025, 0.04, PLINTH_HEIGHT - 0.03],
+]);
+const SHELF_LIP_DEPTH = 0.03;
+const SHELF_LIP_PROUD = 0.015;
+const PILASTER_WIDTH = 0.2;
+const PILASTER_DEPTH = 0.04;
+const PILASTER_FLUTES = 3;
+
+function addProud(room, size, x, y, proud, shade) {
+  const z = CARCASE_FRONT_Z - proud + size[2] / 2;
+  addBox(room, shelfMaterial, size, new THREE.Vector3(x, y, z), 0, frameMatrix, { outlined: false, shade });
+}
+
+function addCabinetCarving(room) {
+  for (const [height, depth, proud, extra, y] of CORNICE_PROFILE) {
+    const centreY = CARCASE_HEIGHT + y;
+    addProud(room, [CABINET_RUN_WIDTH + extra, height, depth], 0, centreY, proud, shelfBoardShade(centreY));
+  }
+  for (const [height, depth, proud, extra, y] of BASE_PROFILE) {
+    addProud(room, [CABINET_RUN_WIDTH + extra, height, depth], 0, y, proud, shelfBoardShade(y));
+  }
+
+  const innerRun = CABINET_RUN_WIDTH - 2 * CABINET_POST_WIDTH;
+  for (let shelfIndex = 0; shelfIndex < SHELVES_PER_WALL; shelfIndex++) {
+    const shelfY = SHELF_BASE_Y + shelfIndex * SHELF_PITCH;
+    addProud(room, [innerRun, SHELF_THICKNESS + 0.03, SHELF_LIP_DEPTH], 0, shelfY, SHELF_LIP_PROUD,
+      shelfBoardShade(shelfY));
+  }
+
+  const bottom = PLINTH_HEIGHT + 0.02;
+  const top = CARCASE_HEIGHT - 0.07;
+  const shaftHeight = top - bottom;
+  const shaftY = (top + bottom) / 2;
+  const outerPost = (CABINET_RUN_WIDTH - CABINET_POST_WIDTH) / 2;
+  for (const side of [-1, 1]) {
+    const x = side * outerPost;
+    addProud(room, [PILASTER_WIDTH, shaftHeight, PILASTER_DEPTH], x, shaftY, 0.03, nicheShade);
+    // Raised reeds with dark hollows between them read as flutes by lantern light.
+    const pitch = PILASTER_WIDTH / (PILASTER_FLUTES + 1);
+    for (let flute = 1; flute <= PILASTER_FLUTES; flute++) {
+      addProud(room, [0.028, shaftHeight - 0.36, 0.02], x - PILASTER_WIDTH / 2 + flute * pitch, shaftY, 0.045,
+        nicheShade);
+    }
+    addProud(room, [PILASTER_WIDTH + 0.06, 0.09, 0.07], x, top - 0.02, 0.055, shelfBoardShade(top - 0.02));
+    addProud(room, [PILASTER_WIDTH + 0.04, 0.12, 0.06], x, bottom + 0.06, 0.05, shelfBoardShade(bottom));
+  }
+}
+
 // Collects one wall's volumes into the room-wide batches instead of adding a
 // mesh per book.  Shelving itself stays merged too: there are only a handful
 // of carcase pieces per wall, but they share two materials across four walls.
@@ -620,7 +712,12 @@ function collectBookWall(room, index, q, r, level, disturbed) {
       { outlined: false, shade: shelfBoardShade(shelfY) });
     addShelfEdge(outlinePositions, frameMatrix, shelfY, CABINET_RUN_WIDTH);
   }
+  addCabinetCarving(room);
 
+  // Every volume on a wall is the wall's first slot plus its place along the
+  // shelves, so the address arithmetic is done once here rather than from
+  // coordinates for each of the 960 volumes.
+  const wallSlot = worldSlotIndexFor({ q, r, level, wall: canonicalWall, shelf: 1, volume: 1, page: 1 });
   for (let section = 0; section < CABINET_SECTIONS_PER_WALL; section++) {
     const tangent = (section - (CABINET_SECTIONS_PER_WALL - 1) / 2) * CABINET_SECTION_PITCH;
     const frameOffset = pointOnWall(basis, tangent, 0, CABINET_WALL_INSET);
@@ -639,7 +736,9 @@ function collectBookWall(room, index, q, r, level, disturbed) {
           volume: volumeIndex + 1,
           page: 1,
         };
-        const bookIndex = catalogBookIndexFor(worldLocation);
+        const bookIndex = catalogBookIndexForWorldSlotIndex(
+          wallSlot + BigInt(shelfIndex * WORLD_VOLUMES_PER_SHELF + volumeIndex),
+        );
         const batch = batches[0];
         const x = -((VOLUMES_PER_SHELF - 1) * CABINET_BOOK_STEP) / 2
           + localVolume * CABINET_BOOK_STEP;
@@ -662,17 +761,16 @@ function collectBookWall(room, index, q, r, level, disturbed) {
           .premultiply(frameMatrix);
         batch.matrices.push(bookMatrix.clone());
         batch.tints.push([1, 1, 1]);
-        const title = shortSpineTitle(titleForBookIndex(bookIndex));
-        batch.records.push({ bookIndex, worldLocation, volumeTitle: title });
+        batch.records.push(bookRecord(bookIndex, worldLocation));
         // Thousands of rectangular ink frames flattened the wall into a
         // technical diagram. The binding itself now supplies the silhouette;
         // typography is the only mark drawn on its face.
 
         spineMatrix.makeRotationY(Math.PI).setPosition(x, y, BOOK_FRONT_Z - 0.015).premultiply(frameMatrix);
         if (room.userData.deferSpines) {
-          room.userData.deferredSpines.push({ label: title, matrix: spineMatrix.clone() });
+          room.userData.deferredSpines.push({ bookIndex, matrix: spineMatrix.clone() });
         } else {
-          appendSpine(room, title, spineMatrix);
+          appendSpine(room, bookIndex, spineMatrix);
         }
       }
     }
@@ -859,9 +957,8 @@ function hydrateOnePortalVolume(room) {
     page: 1,
   };
   const bookIndex = catalogBookIndexFor(worldLocation);
-  const title = shortSpineTitle(titleForBookIndex(bookIndex));
   const bookMesh = room.userData.bookMeshes[0];
-  bookMesh.userData.records[state.record] = { bookIndex, worldLocation, volumeTitle: title };
+  bookMesh.userData.records[state.record] = bookRecord(bookIndex, worldLocation);
 
   const x = -((VOLUMES_PER_SHELF - 1) * CABINET_BOOK_STEP) / 2
     + state.localVolume * CABINET_BOOK_STEP;
@@ -890,7 +987,7 @@ function hydrateOnePortalVolume(room) {
   metadataSpineMatrix.makeRotationY(Math.PI)
     .setPosition(x, y, BOOK_FRONT_Z - 0.015)
     .premultiply(metadataFrameMatrix);
-  appendSpine(room, title, metadataSpineMatrix);
+  appendSpine(room, bookIndex, metadataSpineMatrix);
 
   state.record++;
   state.localVolume++;
@@ -999,16 +1096,16 @@ export function paintPendingSpines(room, budgetMs) {
     // Order is immaterial because every quad carries its own world matrix. Pop
     // avoids repeatedly moving thousands of array entries while a newly
     // adopted portal room materialises its labels.
-    const { label, matrix } = deferred.pop();
-    appendSpine(room, label, matrix);
+    const { bookIndex, matrix } = deferred.pop();
+    appendSpine(room, bookIndex, matrix);
   }
   if (deferred?.length) return false;
   const pending = room.userData.pendingSpines;
   if (pending?.length) {
     let painted = 0;
     while (painted < pending.length && performance.now() < deadline) {
-      const { atlas, column, row, label } = pending[painted++];
-      paintSpineLabel(atlas.context, column, row, label);
+      const { atlas, column, row, bookIndex } = pending[painted++];
+      paintSpineLabel(atlas.context, column, row, spineTitleFor(bookIndex));
     }
     pending.splice(0, painted);
     if (pending.length) return false;
