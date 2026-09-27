@@ -348,6 +348,9 @@ async function openCatalogue() {
   }
   await takeBackCursor();
   await page.locator('#open-search').click();
+  // The panel hands focus to the search field on its next task. Waiting for
+  // it keeps that hand-off from landing after a test has focused another field.
+  await page.waitForFunction(() => document.activeElement?.id === 'search-input');
 }
 
 async function openAddress(address) {
