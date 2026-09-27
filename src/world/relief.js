@@ -9,16 +9,21 @@
  */
 
 import * as THREE from 'three';
-import { WALL_THICKNESS } from '../constants.js';
+import { WALL_THICKNESS, WORLD_SURFACE_COLOR } from '../constants.js';
 import { drawOuroboros, SIZE } from '../art/ouroboros.js';
 import { pointOnWall, wallBasis } from './geometry.js';
 
-// Pale stone cut into the wall's own darker stone, with the lines sunk in.
+// Pale stone set into the wall's own darker stone, with the lines sunk in. It
+// is lit only by the lamps, like the wall round it, so it is kept pale enough
+// to read in the dim strip above the sconces.
+// `ground` fills the disc behind the carving with the wall's own colour, so the
+// disc is opaque and needs no alpha test.
 const STONE_PALETTE = Object.freeze({
+  ground: `#${WORLD_SURFACE_COLOR.toString(16).padStart(6, '0')}`,
   ink: '#2b231e',
   farInk: '#4a3e36',
-  paper: '#b9ab9d',
-  skin: '#cbbfb1',
+  paper: '#e2d6c8',
+  skin: '#efe6da',
 });
 
 // 512 square is under sixty texels a metre on a nine-metre medallion: sharp
@@ -30,6 +35,10 @@ const FRAME_INTERVAL_MS = 125;
 // Diameter, and the gap left to the cornice bands above and below it.
 const DIAMETER = 9;
 const MARGIN = 0.4;
+// The drawing's outer ring reaches 110 of its 120 half-units; the disc stops
+// a little past it, in texture units from the centre.
+const DISC_RADIUS = 0.475;
+const DISC_SEGMENTS = 48;
 // Just proud of the wall's inner face, so it never fights it for depth.
 const INWARD = WALL_THICKNESS / 2 + 0.03;
 
@@ -46,18 +55,14 @@ function sharedMaterial() {
   // Seen from across the chamber it is shrunk several times over, and without
   // mips the moving scales shimmer. The chain is built on the GPU per upload.
   texture.anisotropy = 4;
+  // Exactly the features of the shelving's material (a map and vertex
+  // colours, nothing else), so three.js reuses the shader program it has
+  // already compiled for the shelves. A bump or emissive map, or an alpha
+  // test, each made a new program, and compiling those under a software
+  // renderer held up the first frames of the chamber.
   material = new THREE.MeshStandardMaterial({
     map: texture,
-    bumpMap: texture,
-    bumpScale: 2.5,
-    // Cut out rather than blended: no sorting, no overdraw, and the lamps
-    // light it exactly as they light the wall around it.
-    alphaTest: 0.5,
-    // The strip sits above the reach of the sconces, so without a little
-    // light of its own the carving is lost in the dark of the upper wall.
-    emissive: 0xffffff,
-    emissiveMap: texture,
-    emissiveIntensity: 0.22,
+    vertexColors: true,
     roughness: 0.92,
     metalness: 0,
   });
@@ -96,19 +101,28 @@ export function addRelief(room, walls, bottom, top) {
   for (const wall of walls) {
     const basis = wallBasis(wall);
     const base = positions.length / 3;
+    // A disc just past the drawing's outer ring, as a fan round its centre.
     // Seen from the room the tangent runs to the right, so u follows it.
-    for (const [t, y, u, v] of [[-half, -half, 0, 0], [half, -half, 1, 0], [half, half, 1, 1], [-half, half, 0, 1]]) {
-      const point = pointOnWall(basis, t, centre + y, INWARD);
+    const rim = [[0, 0]];
+    for (let step = 0; step < DISC_SEGMENTS; step++) {
+      const angle = (step / DISC_SEGMENTS) * Math.PI * 2;
+      rim.push([Math.cos(angle) * DISC_RADIUS, Math.sin(angle) * DISC_RADIUS]);
+    }
+    for (const [x, y] of rim) {
+      const point = pointOnWall(basis, x * half * 2, centre + y * half * 2, INWARD);
       positions.push(point.x, point.y, point.z);
       normals.push(-basis.nx, 0, -basis.nz);
-      uvs.push(u, v);
+      uvs.push(0.5 + x, 0.5 + y);
     }
-    indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    for (let step = 0; step < DISC_SEGMENTS; step++) {
+      indices.push(base, base + 1 + step, base + 1 + ((step + 1) % DISC_SEGMENTS));
+    }
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
   geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(new Array(positions.length).fill(1), 3));
   geometry.setIndex(indices);
   const mesh = new THREE.Mesh(geometry, sharedMaterial());
   mesh.name = 'relief';
