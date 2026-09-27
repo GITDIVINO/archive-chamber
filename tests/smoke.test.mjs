@@ -1730,10 +1730,40 @@ for (const [name, query] of Object.entries(visualQueries)) {
       resolve(Array.from(context.getImageData(0, 0, probe.width, probe.height).data));
     })))
     : null;
-  const state = await page.evaluate(() => {
+  const state = await page.evaluate(async sampleBuffer => {
     const gl = document.querySelector('canvas.world-canvas')?.getContext('webgl2');
-    return { frames: window.__draw.frames, calls: window.__draw.calls, contextLost: gl ? gl.isContextLost() : 'no webgl2' };
-  });
+    const state = { frames: window.__draw.frames, calls: window.__draw.calls, contextLost: gl ? gl.isContextLost() : 'no webgl2' };
+    if (!sampleBuffer) return state;
+    // Where a blank view goes dark: the composed world buffer, or the world
+    // itself drawn again without any doorway passes.
+    const THREE = await import('three');
+    const { camera, renderer, scene } = await import('./src/core/view.js');
+    const { sceneTarget } = await import('./src/core/bloom.js');
+    const brightest = () => {
+      const texel = new Uint16Array(4);
+      let peak = 0;
+      let nan = 0;
+      for (let y = 1; y < 8; y++) {
+        for (let x = 1; x < 8; x++) {
+          renderer.readRenderTargetPixels(sceneTarget, Math.floor(sceneTarget.width * x / 8), Math.floor(sceneTarget.height * y / 8), 1, 1, texel);
+          for (let c = 0; c < 3; c++) {
+            const value = THREE.DataUtils.fromHalfFloat(texel[c]);
+            if (Number.isFinite(value)) peak = Math.max(peak, value);
+            else nan++;
+          }
+        }
+      }
+      return { peak: Math.round(peak * 1000) / 1000, nonFinite: nan };
+    };
+    state.camera = [camera.position.x, camera.position.y, camera.position.z, camera.rotation.x, camera.rotation.y].map(v => Math.round(v * 1000) / 1000);
+    state.composed = brightest();
+    renderer.setRenderTarget(sceneTarget);
+    renderer.clear(true, true, true);
+    renderer.render(scene, camera);
+    renderer.setRenderTarget(null);
+    state.worldOnly = brightest();
+    return state;
+  }, name.startsWith('threshold'));
   visualMetrics[name] = {
     canvasSample,
     state,
