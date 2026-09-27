@@ -4,26 +4,23 @@
  *
  * Every relief in every chamber is the same drawing at the same moment, so they
  * all share one canvas, one texture and one material. The canvas is redrawn a
- * few times a second and uploaded once, however many rooms show it; each room
- * adds a single mesh, one draw call, holding a quad per cabinet wall.
+ * few times a second and uploaded once. Only the walker's own chamber shows it
+ * (neighbours seen through doorways leave it out), as a single mesh, one draw
+ * call, holding a quad per cabinet wall.
  */
 
 import * as THREE from 'three';
-import { WALL_THICKNESS, WORLD_SURFACE_COLOR } from '../constants.js';
+import { WALL_THICKNESS } from '../constants.js';
 import { drawOuroboros, SIZE } from '../art/ouroboros.js';
+import { renderedWorld } from '../core/view.js';
 import { pointOnWall, wallBasis } from './geometry.js';
 
-// Pale stone set into the wall's own darker stone, with the lines sunk in. It
-// is lit only by the lamps, like the wall round it, so it is kept pale enough
-// to read in the dim strip above the sconces.
-// `ground` fills the disc behind the carving with the wall's own colour, so the
-// disc is opaque and needs no alpha test.
+// Pale stone cut into the wall's own darker stone, with the lines sunk in.
 const STONE_PALETTE = Object.freeze({
-  ground: `#${WORLD_SURFACE_COLOR.toString(16).padStart(6, '0')}`,
   ink: '#2b231e',
   farInk: '#4a3e36',
-  paper: '#e2d6c8',
-  skin: '#efe6da',
+  paper: '#b9ab9d',
+  skin: '#cbbfb1',
 });
 
 // 512 square is under sixty texels a metre on a nine-metre medallion: sharp
@@ -35,10 +32,6 @@ const FRAME_INTERVAL_MS = 125;
 // Diameter, and the gap left to the cornice bands above and below it.
 const DIAMETER = 9;
 const MARGIN = 0.4;
-// The drawing's outer ring reaches 110 of its 120 half-units; the disc stops
-// a little past it, in texture units from the centre.
-const DISC_RADIUS = 0.475;
-const DISC_SEGMENTS = 48;
 // Just proud of the wall's inner face, so it never fights it for depth.
 const INWARD = WALL_THICKNESS / 2 + 0.03;
 
@@ -49,20 +42,28 @@ function sharedMaterial() {
   const canvas = document.createElement('canvas');
   canvas.width = TEXTURE_SIZE;
   canvas.height = TEXTURE_SIZE;
-  const context = canvas.getContext('2d');
+  // Kept in main memory. A GPU-backed 2D canvas has to be synchronised with
+  // the WebGL context on every upload, and under a software renderer that
+  // stall held back whole frames of the chamber; from plain memory an upload
+  // is a copy.
+  const context = canvas.getContext('2d', { willReadFrequently: true });
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   // Seen from across the chamber it is shrunk several times over, and without
   // mips the moving scales shimmer. The chain is built on the GPU per upload.
   texture.anisotropy = 4;
-  // Exactly the features of the shelving's material (a map and vertex
-  // colours, nothing else), so three.js reuses the shader program it has
-  // already compiled for the shelves. A bump or emissive map, or an alpha
-  // test, each made a new program, and compiling those under a software
-  // renderer held up the first frames of the chamber.
   material = new THREE.MeshStandardMaterial({
     map: texture,
-    vertexColors: true,
+    bumpMap: texture,
+    bumpScale: 2.5,
+    // Cut out rather than blended: no sorting, no overdraw, and the lamps
+    // light it exactly as they light the wall around it.
+    alphaTest: 0.5,
+    // The strip sits above the reach of the sconces, so without a little
+    // light of its own the carving is lost in the dark of the upper wall.
+    emissive: 0xffffff,
+    emissiveMap: texture,
+    emissiveIntensity: 0.22,
     roughness: 0.92,
     metalness: 0,
   });
@@ -77,12 +78,23 @@ function sharedMaterial() {
   let last = 0;
   const tick = now => {
     requestAnimationFrame(tick);
+    showActiveReliefs();
     if (still?.matches || now - last < FRAME_INTERVAL_MS) return;
     last = now;
     paint(now / 1000);
   };
   requestAnimationFrame(tick);
   return material;
+}
+
+// The chambers directly under renderedWorld are the walker's own; portal
+// copies live in their own scene. A handful of children, checked each tick.
+function showActiveReliefs() {
+  for (const room of renderedWorld.children) {
+    for (const child of room.children) {
+      if (child.userData.chamberOnly) child.visible = true;
+    }
+  }
 }
 
 /**
@@ -101,28 +113,19 @@ export function addRelief(room, walls, bottom, top) {
   for (const wall of walls) {
     const basis = wallBasis(wall);
     const base = positions.length / 3;
-    // A disc just past the drawing's outer ring, as a fan round its centre.
     // Seen from the room the tangent runs to the right, so u follows it.
-    const rim = [[0, 0]];
-    for (let step = 0; step < DISC_SEGMENTS; step++) {
-      const angle = (step / DISC_SEGMENTS) * Math.PI * 2;
-      rim.push([Math.cos(angle) * DISC_RADIUS, Math.sin(angle) * DISC_RADIUS]);
-    }
-    for (const [x, y] of rim) {
-      const point = pointOnWall(basis, x * half * 2, centre + y * half * 2, INWARD);
+    for (const [t, y, u, v] of [[-half, -half, 0, 0], [half, -half, 1, 0], [half, half, 1, 1], [-half, half, 0, 1]]) {
+      const point = pointOnWall(basis, t, centre + y, INWARD);
       positions.push(point.x, point.y, point.z);
       normals.push(-basis.nx, 0, -basis.nz);
-      uvs.push(0.5 + x, 0.5 + y);
+      uvs.push(u, v);
     }
-    for (let step = 0; step < DISC_SEGMENTS; step++) {
-      indices.push(base, base + 1 + step, base + 1 + ((step + 1) % DISC_SEGMENTS));
-    }
+    indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
   geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(new Array(positions.length).fill(1), 3));
   geometry.setIndex(indices);
   const mesh = new THREE.Mesh(geometry, sharedMaterial());
   mesh.name = 'relief';
@@ -130,5 +133,10 @@ export function addRelief(room, walls, bottom, top) {
   mesh.receiveShadow = true;
   // Never in the way of a click on a book or the reader's aim.
   mesh.raycast = () => {};
+  // Only in the chamber the walker stands in. Through a doorway it is a few
+  // pixels on a far wall, and a copy in every neighbour cost a draw call each:
+  // room.js hides it in portal copies and showActiveReliefs brings it back
+  // when the walker steps through and the copy becomes their chamber.
+  mesh.userData.chamberOnly = true;
   room.add(mesh);
 }
