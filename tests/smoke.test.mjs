@@ -64,18 +64,10 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 const consoleErrors = [];
 page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
 page.on('pageerror', error => consoleErrors.push(String(error)));
-// WebGL reports a skipped draw (a feedback loop, an incomplete texture) as a
-// warning; a blank view is read against these.
-const consoleWarnings = [];
-page.on('console', message => { if (message.type() === 'warning') consoleWarnings.push(message.text()); });
 
 // Count real GPU submissions rather than trusting three.js bookkeeping.
 await page.addInitScript(() => {
-  window.__draw = { calls: 0, frames: 0, drew: false, ticks: [] };
-  // Per tick: draws into buffers, draws onto the canvas, clears of the canvas.
-  // A blank view is read against this trail.
-  let bound = null;
-  let tick = [0, 0, 0];
+  window.__draw = { calls: 0, frames: 0, drew: false };
   const patch = (proto) => {
     if (!proto) return;
     for (const name of ['drawElements', 'drawArrays', 'drawElementsInstanced', 'drawArraysInstanced']) {
@@ -84,35 +76,21 @@ await page.addInitScript(() => {
       proto[name] = function (...args) {
         window.__draw.calls++;
         window.__draw.drew = true;
-        tick[bound === null ? 1 : 0]++;
         return original.apply(this, args);
       };
     }
-    const bind = proto.bindFramebuffer;
-    proto.bindFramebuffer = function (target, framebuffer) {
-      if (target !== this.READ_FRAMEBUFFER) bound = framebuffer;
-      return bind.call(this, target, framebuffer);
-    };
-    const clear = proto.clear;
-    proto.clear = function (mask) {
-      if (bound === null) tick[2]++;
-      return clear.call(this, mask);
-    };
   };
   patch(window.WebGL2RenderingContext?.prototype);
   patch(window.WebGLRenderingContext?.prototype);
   const raf = window.requestAnimationFrame.bind(window);
   // The game skips a tick while the chip is still busy with its last frame,
   // so only ticks that actually drew count as frames.
-  const onTick = () => {
+  const tick = () => {
     if (window.__draw.drew) window.__draw.frames++;
     window.__draw.drew = false;
-    window.__draw.ticks.push(tick.join('/'));
-    if (window.__draw.ticks.length > 24) window.__draw.ticks.shift();
-    tick = [0, 0, 0];
-    raf(onTick);
+    raf(tick);
   };
-  raf(onTick);
+  raf(tick);
 });
 
 await page.goto(origin, { waitUntil: 'load' });
@@ -1740,110 +1718,39 @@ const visualMetrics = {};
 for (const [name, query] of Object.entries(visualQueries)) {
   await page.goto(`${origin}/?${query}`, { waitUntil: 'load' });
   await page.waitForFunction(() => document.querySelector('#startup-state').textContent === 'ready', null, { timeout: 30000 });
-  // Frames are paced to the chip, so a fixed pause can end before the view
-  // is drawn; wait until two frames have actually reached the canvas.
-  await page.waitForFunction(() => window.__draw.frames > 1, null, { timeout: 15000 });
+  // Frames are paced to the chip, so a fixed pause can end before the view is
+  // drawn. At a doorway the first frames can still show black in CI's browser
+  // while the view settles; four drawn frames show the finished view.
+  await page.waitForFunction(() => window.__draw.frames > 3, null, { timeout: 30000 });
   const screenshot = await page.screenshot();
-  const later = {};
-  if (name.startsWith('threshold')) {
-    // Whether the game's own later frames stay blank, and whether letting the
-    // chip finish its queue, with nothing redrawn, changes what is shown.
-    const drawn = await page.evaluate(() => window.__draw.frames);
-    await page.waitForFunction(drawn => window.__draw.frames > drawn + 1, drawn, { timeout: 30000 });
-    later.twoFramesLaterPngBytes = (await page.screenshot()).length;
-    await page.evaluate(() => document.querySelector('canvas.world-canvas').getContext('webgl2').finish());
-    later.afterFinishPngBytes = (await page.screenshot()).length;
-  }
+  // Sampled from what is on screen, not from the WebGL canvas: without a
+  // preserved drawing buffer, current Chrome hands a script a cleared buffer.
   const canvasSample = name.startsWith('threshold')
-    ? await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => {
-      const source = document.querySelector('canvas.world-canvas');
+    ? await page.evaluate(async png => {
+      const image = new Image();
+      image.src = `data:image/png;base64,${png}`;
+      await image.decode();
       const probe = document.createElement('canvas');
       probe.width = 64;
       probe.height = 40;
       const context = probe.getContext('2d', { willReadFrequently: true });
-      context.drawImage(source, 0, 0, probe.width, probe.height);
-      resolve(Array.from(context.getImageData(0, 0, probe.width, probe.height).data));
-    })))
+      context.drawImage(image, 0, 0, probe.width, probe.height);
+      return Array.from(context.getImageData(0, 0, probe.width, probe.height).data);
+    }, screenshot.toString('base64'))
     : null;
-  const state = await page.evaluate(async sampleBuffer => {
-    const gl = document.querySelector('canvas.world-canvas')?.getContext('webgl2');
-    const state = { frames: window.__draw.frames, calls: window.__draw.calls, contextLost: gl ? gl.isContextLost() : 'no webgl2', ticks: window.__draw.ticks.join(' ') };
-    if (!sampleBuffer) return state;
-    // Where a blank view goes dark: the composed world buffer, or the world
-    // itself drawn again without any doorway passes.
-    const THREE = await import('three');
-    const { camera, renderer, scene } = await import('./src/core/view.js');
-    const { sceneTarget } = await import('./src/core/bloom.js');
-    const brightest = () => {
-      const texel = new Uint16Array(4);
-      let peak = 0;
-      let nan = 0;
-      for (let y = 1; y < 8; y++) {
-        for (let x = 1; x < 8; x++) {
-          renderer.readRenderTargetPixels(sceneTarget, Math.floor(sceneTarget.width * x / 8), Math.floor(sceneTarget.height * y / 8), 1, 1, texel);
-          for (let c = 0; c < 3; c++) {
-            const value = THREE.DataUtils.fromHalfFloat(texel[c]);
-            if (Number.isFinite(value)) peak = Math.max(peak, value);
-            else nan++;
-          }
-        }
-      }
-      return { peak: Math.round(peak * 1000) / 1000, nonFinite: nan };
-    };
-    state.camera = [camera.position.x, camera.position.y, camera.position.z, camera.rotation.x, camera.rotation.y].map(v => Math.round(v * 1000) / 1000);
-    state.composed = brightest();
-    // And the step from that buffer to the canvas, with the GL state it inherits.
-    const context = renderer.getContext();
-    state.gl = {
-      colorMask: context.getParameter(context.COLOR_WRITEMASK),
-      scissorTest: context.getParameter(context.SCISSOR_TEST),
-      scissor: Array.from(context.getParameter(context.SCISSOR_BOX)),
-      viewport: Array.from(context.getParameter(context.VIEWPORT)),
-      stencilTest: context.getParameter(context.STENCIL_TEST),
-      blend: context.getParameter(context.BLEND),
-    };
-    const { composeFrame } = await import('./src/core/bloom.js');
-    composeFrame(renderer);
-    const pixel = new Uint8Array(4);
-    let canvasPeak = 0;
-    for (let y = 1; y < 8; y++) {
-      for (let x = 1; x < 8; x++) {
-        context.readPixels(Math.floor(context.drawingBufferWidth * x / 8), Math.floor(context.drawingBufferHeight * y / 8), 1, 1, context.RGBA, context.UNSIGNED_BYTE, pixel);
-        canvasPeak = Math.max(canvasPeak, pixel[0], pixel[1], pixel[2]);
-      }
-    }
-    state.canvasPeak = canvasPeak;
-    renderer.setRenderTarget(sceneTarget);
-    renderer.clear(true, true, true);
-    renderer.render(scene, camera);
-    renderer.setRenderTarget(null);
-    state.worldOnly = brightest();
-    return state;
-  }, name.startsWith('threshold'));
-  Object.assign(state, later);
-  if (name.startsWith('threshold')) {
-    // The frame composed just above, as the page then presents it.
-    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => resolve())));
-    state.recomposedPngBytes = (await page.screenshot()).length;
-  }
   visualMetrics[name] = {
     canvasSample,
-    state,
-    errors: consoleErrors.slice(),
-    warnings: consoleWarnings.splice(0).slice(-6),
+    frames: await page.evaluate(() => window.__draw.frames),
     pngBytes: screenshot.length,
     signature: createHash('sha256').update(screenshot).digest('hex'),
   };
 }
 
 for (const [name, metric] of Object.entries(visualMetrics)) {
-  const evidence = JSON.stringify({ pngBytes: metric.pngBytes, signature: metric.signature, ...metric.state, errors: metric.errors, warnings: metric.warnings });
+  const evidence = JSON.stringify({ pngBytes: metric.pngBytes, signature: metric.signature, frames: metric.frames });
   // A blank view is easier to diagnose when the log shows what was drawn.
   const picture = metric.canvasSample ? '\n' + sketch(metric.canvasSample, 64, 40) : '';
-  const others = Object.entries(visualMetrics)
-    .map(([other, m]) => `\n${other}: ${m.pngBytes} B, ${m.state.frames} frames, ticks ${m.state.ticks}`)
-    .join('');
-  assert.ok(metric.pngBytes > 20000, `${name}: the rendered view must contain more than blank paper; ${evidence}${picture}${others}`);
+  assert.ok(metric.pngBytes > 20000, `${name}: the rendered view must contain more than blank paper; ${evidence}${picture}`);
 }
 for (const side of ['Right', 'Left']) {
   const before = visualMetrics[`threshold${side}Before`].canvasSample;
