@@ -10,7 +10,6 @@
 import * as THREE from 'three';
 import { SHELVES_PER_WALL, VOLUMES_PER_SHELF, titleForBookIndex } from '../../babel-v3.js';
 import { tracesFor } from './traces.js';
-import { addRelief } from './relief.js';
 import {
   bookWallsForLevel,
   canonicalWallForWallIndex,
@@ -847,8 +846,6 @@ function cloneVisualChild(source) {
     clone = source.clone(false);
   }
   copyVisualTransform(clone, source);
-  // Shown again by world/relief.js if this room becomes the walker's own.
-  if (source.userData.chamberOnly) clone.visible = false;
   if (source.isInstancedMesh) clone.userData.records = [];
   if (source.geometry) sharedGeometries.add(source.geometry);
   return clone;
@@ -1361,9 +1358,6 @@ export function makeRoom(q, r, level, { deferSpines = false } = {}) {
     if (shelvedWalls.includes(index)) collectBookWall(room, index, q, r, level, traces.disturbed);
   }
   for (let index = 0; index < 6; index++) addWallJoinery(room, index);
-  // The ouroboros, between the cornice over the cabinets and the next one up.
-  const [lowerBand, upperBand] = WALL_CORNICE_BANDS;
-  addRelief(room, shelvedWalls, lowerBand.y + lowerBand.height / 2, upperBand.y - upperBand.height / 2);
   if (traces.tally) addTally(room, traces.tally);
   finalizeRoom(room);
   return room;
