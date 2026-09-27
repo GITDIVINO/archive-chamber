@@ -348,6 +348,9 @@ async function openCatalogue() {
   }
   await takeBackCursor();
   await page.locator('#open-search').click();
+  // The panel hands focus to the search field on its next task. Waiting for
+  // it keeps that hand-off from landing after a test has focused another field.
+  await page.waitForFunction(() => document.activeElement?.id === 'search-input');
 }
 
 async function openAddress(address) {
@@ -1692,35 +1695,62 @@ const visualQueries = await page.evaluate(async () => {
   };
 });
 
+// Render an RGBA sample as rows of characters, dark to light, for failure logs.
+function sketch(rgba, width, height) {
+  const ramp = ' .:-=+*#%@';
+  // The chamber is dark, so scale to the brightest pixel rather than to white.
+  let peak = 1;
+  for (let i = 0; i < rgba.length; i += 4) peak = Math.max(peak, rgba[i] + rgba[i + 1] + rgba[i + 2]);
+  const rows = [`peak ${Math.round(peak / 3)}/255`];
+  for (let y = 0; y < height; y += 2) {
+    let row = '';
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      const light = (rgba[i] + rgba[i + 1] + rgba[i + 2]) / peak;
+      row += ramp[Math.min(ramp.length - 1, Math.floor(light * ramp.length))];
+    }
+    rows.push('|' + row + '|');
+  }
+  return rows.join('\n');
+}
+
 const visualMetrics = {};
 for (const [name, query] of Object.entries(visualQueries)) {
   await page.goto(`${origin}/?${query}`, { waitUntil: 'load' });
   await page.waitForFunction(() => document.querySelector('#startup-state').textContent === 'ready', null, { timeout: 30000 });
-  // Frames are paced to the chip, so a fixed pause can end before the view
-  // is drawn; wait until two frames have actually reached the canvas.
-  await page.waitForFunction(() => window.__draw.frames > 1, null, { timeout: 15000 });
+  // Frames are paced to the chip, so a fixed pause can end before the view is
+  // drawn. At a doorway the first frames can still show black in CI's browser
+  // while the view settles; four drawn frames show the finished view.
+  await page.waitForFunction(() => window.__draw.frames > 3, null, { timeout: 30000 });
   const screenshot = await page.screenshot();
+  // Sampled from what is on screen, not from the WebGL canvas: without a
+  // preserved drawing buffer, current Chrome hands a script a cleared buffer.
   const canvasSample = name.startsWith('threshold')
-    ? await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => {
-      const source = document.querySelector('canvas.world-canvas');
+    ? await page.evaluate(async png => {
+      const image = new Image();
+      image.src = `data:image/png;base64,${png}`;
+      await image.decode();
       const probe = document.createElement('canvas');
       probe.width = 64;
       probe.height = 40;
       const context = probe.getContext('2d', { willReadFrequently: true });
-      context.drawImage(source, 0, 0, probe.width, probe.height);
-      resolve(Array.from(context.getImageData(0, 0, probe.width, probe.height).data));
-    })))
+      context.drawImage(image, 0, 0, probe.width, probe.height);
+      return Array.from(context.getImageData(0, 0, probe.width, probe.height).data);
+    }, screenshot.toString('base64'))
     : null;
   visualMetrics[name] = {
     canvasSample,
+    frames: await page.evaluate(() => window.__draw.frames),
     pngBytes: screenshot.length,
     signature: createHash('sha256').update(screenshot).digest('hex'),
   };
 }
 
 for (const [name, metric] of Object.entries(visualMetrics)) {
-  const evidence = JSON.stringify({ pngBytes: metric.pngBytes, signature: metric.signature });
-  assert.ok(metric.pngBytes > 20000, `${name}: the rendered view must contain more than blank paper; ${evidence}`);
+  const evidence = JSON.stringify({ pngBytes: metric.pngBytes, signature: metric.signature, frames: metric.frames });
+  // A blank view is easier to diagnose when the log shows what was drawn.
+  const picture = metric.canvasSample ? '\n' + sketch(metric.canvasSample, 64, 40) : '';
+  assert.ok(metric.pngBytes > 20000, `${name}: the rendered view must contain more than blank paper; ${evidence}${picture}`);
 }
 for (const side of ['Right', 'Left']) {
   const before = visualMetrics[`threshold${side}Before`].canvasSample;
