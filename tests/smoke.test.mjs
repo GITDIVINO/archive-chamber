@@ -67,7 +67,7 @@ page.on('pageerror', error => consoleErrors.push(String(error)));
 
 // Count real GPU submissions rather than trusting three.js bookkeeping.
 await page.addInitScript(() => {
-  window.__draw = { calls: 0, frames: 0 };
+  window.__draw = { calls: 0, frames: 0, drew: false };
   const patch = (proto) => {
     if (!proto) return;
     for (const name of ['drawElements', 'drawArrays', 'drawElementsInstanced', 'drawArraysInstanced']) {
@@ -75,6 +75,7 @@ await page.addInitScript(() => {
       if (!original) continue;
       proto[name] = function (...args) {
         window.__draw.calls++;
+        window.__draw.drew = true;
         return original.apply(this, args);
       };
     }
@@ -82,7 +83,13 @@ await page.addInitScript(() => {
   patch(window.WebGL2RenderingContext?.prototype);
   patch(window.WebGLRenderingContext?.prototype);
   const raf = window.requestAnimationFrame.bind(window);
-  const tick = () => { window.__draw.frames++; raf(tick); };
+  // The game skips a tick while the chip is still busy with its last frame,
+  // so only ticks that actually drew count as frames.
+  const tick = () => {
+    if (window.__draw.drew) window.__draw.frames++;
+    window.__draw.drew = false;
+    raf(tick);
+  };
   raf(tick);
 });
 
@@ -107,7 +114,11 @@ assert.match(
 );
 
 // --- the room is drawn, and drawn cheaply ------------------------------------
-await page.waitForFunction(() => window.__draw.frames > 4, null, { timeout: 15000 });
+// The first frames bake the static shadow maps once; the budget is for the
+// frames after that, which is what walking costs.
+await page.waitForFunction(() => window.__draw.frames > 2, null, { timeout: 15000 });
+await page.evaluate(() => Object.assign(window.__draw, { calls: 0, frames: 0, drew: false }));
+await page.waitForFunction(() => window.__draw.frames > 3, null, { timeout: 15000 });
 const perFrame = await page.evaluate(() => Math.round(window.__draw.calls / window.__draw.frames));
 assert.ok(perFrame > 0, 'the room must actually render');
 assert.ok(
@@ -997,16 +1008,22 @@ const sideContinuity = await page.evaluate(async () => {
   const corridorEntrySyncMs = performance.now() - syncStarted;
   window.__draw.calls = 0;
   window.__draw.frames = 0;
+  window.__draw.drew = false;
   const sampleFrameGaps = () => new Promise(resolve => {
     const gaps = [];
     let previous = null;
     // Four frames are enough to catch the first upload and the settled render
     // without making the software-WebGL smoke monopolise the machine.
     let remaining = 4;
+    // Ticks in which the game drew nothing are not frames: see the draw count.
+    let drawn = window.__draw.frames;
     const sample = now => {
-      if (previous !== null) gaps.push(now - previous);
-      previous = now;
-      remaining--;
+      if (window.__draw.frames !== drawn) {
+        drawn = window.__draw.frames;
+        if (previous !== null) gaps.push(now - previous);
+        previous = now;
+        remaining--;
+      }
       if (remaining === 0) resolve(gaps);
       else requestAnimationFrame(sample);
     };
