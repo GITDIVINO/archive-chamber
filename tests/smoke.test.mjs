@@ -1687,7 +1687,9 @@ const visualMetrics = {};
 for (const [name, query] of Object.entries(visualQueries)) {
   await page.goto(`${origin}/?${query}`, { waitUntil: 'load' });
   await page.waitForFunction(() => document.querySelector('#startup-state').textContent === 'ready', null, { timeout: 30000 });
-  await page.waitForTimeout(350);
+  // Frames are paced to the chip, so a fixed pause can end before the view
+  // is drawn; wait until two frames have actually reached the canvas.
+  await page.waitForFunction(() => window.__draw.frames > 1, null, { timeout: 15000 });
   const screenshot = await page.screenshot();
   const canvasSample = name.startsWith('threshold')
     ? await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => {
