@@ -1806,6 +1806,11 @@ for (const [name, query] of Object.entries(visualQueries)) {
     state.worldOnly = brightest();
     return state;
   }, name.startsWith('threshold'));
+  if (name.startsWith('threshold')) {
+    // The frame composed just above, as the page then presents it.
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => resolve())));
+    state.recomposedPngBytes = (await page.screenshot()).length;
+  }
   visualMetrics[name] = {
     canvasSample,
     state,
@@ -1819,7 +1824,10 @@ for (const [name, metric] of Object.entries(visualMetrics)) {
   const evidence = JSON.stringify({ pngBytes: metric.pngBytes, signature: metric.signature, ...metric.state, errors: metric.errors });
   // A blank view is easier to diagnose when the log shows what was drawn.
   const picture = metric.canvasSample ? '\n' + sketch(metric.canvasSample, 64, 40) : '';
-  assert.ok(metric.pngBytes > 20000, `${name}: the rendered view must contain more than blank paper; ${evidence}${picture}`);
+  const others = Object.entries(visualMetrics)
+    .map(([other, m]) => `\n${other}: ${m.pngBytes} B, ${m.state.frames} frames, ticks ${m.state.ticks}`)
+    .join('');
+  assert.ok(metric.pngBytes > 20000, `${name}: the rendered view must contain more than blank paper; ${evidence}${picture}${others}`);
 }
 for (const side of ['Right', 'Left']) {
   const before = visualMetrics[`threshold${side}Before`].canvasSample;
