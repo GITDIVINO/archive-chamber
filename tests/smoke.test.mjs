@@ -115,10 +115,12 @@ assert.match(
 
 // --- the room is drawn, and drawn cheaply ------------------------------------
 // The first frames bake the static shadow maps once; the budget is for the
-// frames after that, which is what walking costs.
+// frames after that, which is what walking costs. A settled room draws the
+// same calls every frame, so two frames are a full sample even when software
+// WebGL takes seconds over each.
 await page.waitForFunction(() => window.__draw.frames > 2, null, { timeout: 15000 });
 await page.evaluate(() => Object.assign(window.__draw, { calls: 0, frames: 0, drew: false }));
-await page.waitForFunction(() => window.__draw.frames > 3, null, { timeout: 15000 });
+await page.waitForFunction(() => window.__draw.frames > 1, null, { timeout: 15000 });
 const perFrame = await page.evaluate(() => Math.round(window.__draw.calls / window.__draw.frames));
 assert.ok(perFrame > 0, 'the room must actually render');
 assert.ok(
