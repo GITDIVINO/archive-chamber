@@ -274,6 +274,16 @@ function addBox(room, material, size, position, rotation = 0, parentMatrix = nul
   if (outlined) appendMergedEdges(room.userData.outlinePositions, entry.edges, staticBoxMatrix);
 }
 
+// Toned a little below the walls, so the floor stays the darkest plane in the
+// room rather than a lit sheet under the walker's feet.
+const SHELL_RING_TONE = 0.75;
+function litRing() {
+  const ring = new THREE.RingGeometry(WELL_RADIUS, ROOM_RADIUS, 6);
+  const count = ring.getAttribute('position').count;
+  ring.setAttribute('color', new THREE.Float32BufferAttribute(new Array(count * 3).fill(SHELL_RING_TONE), 3));
+  return ring;
+}
+
 function addSolidWall(room, index) {
   const basis = wallBasis(index);
   addBox(room, wallMaterial, [WALL_WIDTH, WALL_HEIGHT, WALL_THICKNESS], pointOnWall(basis, 0, WALL_HEIGHT / 2), basis.rotation);
@@ -298,6 +308,39 @@ function drawOnWall(outlinePositions, basis, inward, edges) {
 // A doorway wall is the same surface with a hole in it: two jambs and a lintel.
 // Everything above and beside the opening stays closed, so the room reads as
 // sealed apart from the two passages.
+// The reveals of a doorway are the full depth of a door wall, and bare they
+// were two great flat planes of plaster lit square-on by the passage lamp. They
+// are lined in the cabinets' timber instead: a thin board over each reveal and
+// the soffit, framed by stiles at either arris and broken by three rails, and
+// toned down so the opening reads as a deep, dark frame around the well rather
+// than as two lit walls. It is the same material as the cabinets, so it joins a
+// batch the room already draws. The vista builds exactly the same parts.
+const REVEAL_LINING = 0.025;
+const REVEAL_TONE = 0.55;
+export const revealShade = () => REVEAL_TONE;
+export function doorRevealParts(basis, detailed = true) {
+  const seat = -DOOR_WALL_OFFSET;
+  const face = DOOR_WIDTH / 2 - REVEAL_LINING / 2;
+  const parts = [];
+  const part = (size, tangent, height, inward = seat) => parts.push({
+    size, position: pointOnWall(basis, tangent, height, inward), rotation: basis.rotation,
+  });
+  for (const side of [-1, 1]) {
+    part([REVEAL_LINING, HALL_OPENING_HEIGHT, DOOR_WALL_THICKNESS], side * face, HALL_OPENING_HEIGHT / 2);
+    if (!detailed) continue;
+    const proud = side * (face - REVEAL_LINING);
+    for (const edge of [-1, 1]) {
+      part([REVEAL_LINING, HALL_OPENING_HEIGHT, 0.14], proud, HALL_OPENING_HEIGHT / 2,
+        seat + edge * (DOOR_WALL_THICKNESS / 2 - 0.07));
+    }
+    for (const height of [0.12, HALL_OPENING_HEIGHT * 0.45, HALL_OPENING_HEIGHT - 0.12]) {
+      part([REVEAL_LINING, 0.1, DOOR_WALL_THICKNESS - 0.28], proud, height);
+    }
+  }
+  part([DOOR_WIDTH, REVEAL_LINING, DOOR_WALL_THICKNESS], 0, HALL_OPENING_HEIGHT - REVEAL_LINING / 2);
+  return parts;
+}
+
 /**
  * A wall with a hole in it.
  *
@@ -344,6 +387,9 @@ function addDoorWall(room, index) {
     null,
     plain,
   );
+  for (const { size, position, rotation } of doorRevealParts(basis)) {
+    addBox(room, shelfMaterial, size, position, rotation, null, { outlined: false, shade: revealShade });
+  }
 
   const half = WALL_WIDTH / 2;
   const opening = DOOR_WIDTH / 2;
@@ -613,8 +659,7 @@ export function addShelfEdge(outlinePositions, parentMatrix, shelfY, width = CAB
 // board and a fluted pilaster over either end post. It is all the same timber
 // as the carcase, so it merges into the batch the case already draws and costs
 // no extra draw call. Every piece stands proud of the carcase front, so none of
-// it reaches into the niches or across a spine. The cornice stays below the
-// first wall band, which carries the ouroboros relief.
+// it reaches into the niches or across a spine.
 const CORNICE_PROFILE = Object.freeze([
   // [height, depth, projection past the carcase front, extra run, centre above the case top]
   [0.05, 0.08, 0.03, 0.06, -0.03],
@@ -1180,13 +1225,16 @@ export function makeRoom(q, r, level, { deferSpines = false } = {}) {
   // centimetre below its lip. A bounding square is not enough either: the
   // corridor leaves through a corner of one, which is exactly where a square
   // overhangs the hexagon it stands for.
-  const floor = new THREE.Mesh(new THREE.RingGeometry(WELL_RADIUS, ROOM_RADIUS, 6), floorMaterial);
+  // The shell materials take vertex colour, and a mesh without a colour
+  // attribute is read as black. That is what made the gallery between a
+  // doorway and the rail a black pit however the room was lit.
+  const floor = new THREE.Mesh(litRing(), floorMaterial);
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.01;
   floor.userData.wellOpening = true;
   floor.receiveShadow = true;
   room.add(floor);
-  const ceiling = new THREE.Mesh(new THREE.RingGeometry(WELL_RADIUS, ROOM_RADIUS, 6), ceilingMaterial);
+  const ceiling = new THREE.Mesh(litRing(), ceilingMaterial);
   ceiling.rotation.x = Math.PI / 2;
   ceiling.position.y = WALL_HEIGHT - WELL_SLAB_THICKNESS;
   ceiling.userData.wellOpening = true;
