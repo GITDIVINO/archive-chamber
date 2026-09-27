@@ -67,7 +67,11 @@ page.on('pageerror', error => consoleErrors.push(String(error)));
 
 // Count real GPU submissions rather than trusting three.js bookkeeping.
 await page.addInitScript(() => {
-  window.__draw = { calls: 0, frames: 0, drew: false };
+  window.__draw = { calls: 0, frames: 0, drew: false, ticks: [] };
+  // Per tick: draws into buffers, draws onto the canvas, clears of the canvas.
+  // A blank view is read against this trail.
+  let bound = null;
+  let tick = [0, 0, 0];
   const patch = (proto) => {
     if (!proto) return;
     for (const name of ['drawElements', 'drawArrays', 'drawElementsInstanced', 'drawArraysInstanced']) {
@@ -76,21 +80,35 @@ await page.addInitScript(() => {
       proto[name] = function (...args) {
         window.__draw.calls++;
         window.__draw.drew = true;
+        tick[bound === null ? 1 : 0]++;
         return original.apply(this, args);
       };
     }
+    const bind = proto.bindFramebuffer;
+    proto.bindFramebuffer = function (target, framebuffer) {
+      if (target !== this.READ_FRAMEBUFFER) bound = framebuffer;
+      return bind.call(this, target, framebuffer);
+    };
+    const clear = proto.clear;
+    proto.clear = function (mask) {
+      if (bound === null) tick[2]++;
+      return clear.call(this, mask);
+    };
   };
   patch(window.WebGL2RenderingContext?.prototype);
   patch(window.WebGLRenderingContext?.prototype);
   const raf = window.requestAnimationFrame.bind(window);
   // The game skips a tick while the chip is still busy with its last frame,
   // so only ticks that actually drew count as frames.
-  const tick = () => {
+  const onTick = () => {
     if (window.__draw.drew) window.__draw.frames++;
     window.__draw.drew = false;
-    raf(tick);
+    window.__draw.ticks.push(tick.join('/'));
+    if (window.__draw.ticks.length > 24) window.__draw.ticks.shift();
+    tick = [0, 0, 0];
+    raf(onTick);
   };
-  raf(tick);
+  raf(onTick);
 });
 
 await page.goto(origin, { waitUntil: 'load' });
@@ -1735,7 +1753,7 @@ for (const [name, query] of Object.entries(visualQueries)) {
     : null;
   const state = await page.evaluate(async sampleBuffer => {
     const gl = document.querySelector('canvas.world-canvas')?.getContext('webgl2');
-    const state = { frames: window.__draw.frames, calls: window.__draw.calls, contextLost: gl ? gl.isContextLost() : 'no webgl2' };
+    const state = { frames: window.__draw.frames, calls: window.__draw.calls, contextLost: gl ? gl.isContextLost() : 'no webgl2', ticks: window.__draw.ticks.join(' ') };
     if (!sampleBuffer) return state;
     // Where a blank view goes dark: the composed world buffer, or the world
     // itself drawn again without any doorway passes.
