@@ -18,4 +18,5 @@ jobs:
       - run: npm test
       - run: npx playwright install --with-deps chromium
       - run: npm run test:route
+      - run: npm run test:stairs
       - run: npm run test:smoke

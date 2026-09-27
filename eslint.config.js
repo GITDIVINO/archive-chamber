@@ -41,7 +41,7 @@ export default [
     // The browser tests are Node scripts whose page.evaluate/addInitScript
     // callbacks are serialised and run inside the browser, so they
     // legitimately reference both environments.
-    files: ['tests/smoke.test.mjs', 'tests/route.test.mjs'],
+    files: ['tests/smoke.test.mjs', 'tests/route.test.mjs', 'tests/stairs.test.mjs'],
     languageOptions: {
       globals: { ...globals.node, ...globals.browser },
     },
