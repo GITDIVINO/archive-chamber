@@ -82,7 +82,9 @@ import {
   SHELF_THICKNESS,
   WALL_CORNICE_BANDS,
   WALL_PILASTER_WIDTH,
+  doorRevealParts,
   nicheShade,
+  revealShade,
   shelfBoardShade,
 } from './room.js';
 import {
@@ -420,6 +422,11 @@ function addDistantDoorWall(batches, index, roomOffset, outlines = null) {
   }
   addBox(batches, wallMaterial, [DOOR_WIDTH, lintelHeight, DOOR_WALL_THICKNESS],
     pointOnWall(basis, 0, HALL_OPENING_HEIGHT + lintelHeight / 2, seat), basis.rotation, null, roomOffset, null);
+  // Lined as a built room lines them, with the plain boards only: the stiles
+  // and rails are below a pixel down the shaft.
+  for (const { size, position, rotation } of doorRevealParts(basis, false)) {
+    addBox(batches, shelfMaterial, size, position, rotation, null, roomOffset, revealShade);
+  }
   if (!outlines) return;
   const half = WALL_WIDTH / 2;
   const opening = DOOR_WIDTH / 2;
