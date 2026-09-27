@@ -537,6 +537,8 @@ function addTemplateChamber(
   // above and below were a cheaper building than this one. A shaft whose whole
   // subject is that every storey is the same storey cannot afford that.
   for (const part of [...WELL_BRIDGE_PARTS, ...WELL_STAIR_PARTS]) {
+    // Chamber-only carving: the shaft keeps its vertex budget.
+    if (part.near) continue;
     if (distant && isThinPart(part.size)) continue;
     addBox(
       batches,

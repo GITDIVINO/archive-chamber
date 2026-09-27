@@ -608,6 +608,69 @@ export function addShelfEdge(outlinePositions, parentMatrix, shelfY, width = CAB
   }
 }
 
+// The joinery that makes the case a piece of furniture rather than a box: a
+// stepped cornice over the head rail, a moulded base, a lipped front on each
+// board and a fluted pilaster over either end post. It is all the same timber
+// as the carcase, so it merges into the batch the case already draws and costs
+// no extra draw call. Every piece stands proud of the carcase front, so none of
+// it reaches into the niches or across a spine. The cornice stays below the
+// first wall band, which carries the ouroboros relief.
+const CORNICE_PROFILE = Object.freeze([
+  // [height, depth, projection past the carcase front, extra run, centre above the case top]
+  [0.05, 0.08, 0.03, 0.06, -0.03],
+  [0.07, 0.16, 0.08, 0.16, 0.035],
+  [0.03, 0.2, 0.11, 0.22, 0.085],
+]);
+const BASE_PROFILE = Object.freeze([
+  [0.08, 0.12, 0.05, 0.08, 0.04],
+  [0.035, 0.06, 0.025, 0.04, PLINTH_HEIGHT - 0.03],
+]);
+const SHELF_LIP_DEPTH = 0.03;
+const SHELF_LIP_PROUD = 0.015;
+const PILASTER_WIDTH = 0.2;
+const PILASTER_DEPTH = 0.04;
+const PILASTER_FLUTES = 3;
+
+function addProud(room, size, x, y, proud, shade) {
+  const z = CARCASE_FRONT_Z - proud + size[2] / 2;
+  addBox(room, shelfMaterial, size, new THREE.Vector3(x, y, z), 0, frameMatrix, { outlined: false, shade });
+}
+
+function addCabinetCarving(room) {
+  for (const [height, depth, proud, extra, y] of CORNICE_PROFILE) {
+    const centreY = CARCASE_HEIGHT + y;
+    addProud(room, [CABINET_RUN_WIDTH + extra, height, depth], 0, centreY, proud, shelfBoardShade(centreY));
+  }
+  for (const [height, depth, proud, extra, y] of BASE_PROFILE) {
+    addProud(room, [CABINET_RUN_WIDTH + extra, height, depth], 0, y, proud, shelfBoardShade(y));
+  }
+
+  const innerRun = CABINET_RUN_WIDTH - 2 * CABINET_POST_WIDTH;
+  for (let shelfIndex = 0; shelfIndex < SHELVES_PER_WALL; shelfIndex++) {
+    const shelfY = SHELF_BASE_Y + shelfIndex * SHELF_PITCH;
+    addProud(room, [innerRun, SHELF_THICKNESS + 0.03, SHELF_LIP_DEPTH], 0, shelfY, SHELF_LIP_PROUD,
+      shelfBoardShade(shelfY));
+  }
+
+  const bottom = PLINTH_HEIGHT + 0.02;
+  const top = CARCASE_HEIGHT - 0.07;
+  const shaftHeight = top - bottom;
+  const shaftY = (top + bottom) / 2;
+  const outerPost = (CABINET_RUN_WIDTH - CABINET_POST_WIDTH) / 2;
+  for (const side of [-1, 1]) {
+    const x = side * outerPost;
+    addProud(room, [PILASTER_WIDTH, shaftHeight, PILASTER_DEPTH], x, shaftY, 0.03, nicheShade);
+    // Raised reeds with dark hollows between them read as flutes by lantern light.
+    const pitch = PILASTER_WIDTH / (PILASTER_FLUTES + 1);
+    for (let flute = 1; flute <= PILASTER_FLUTES; flute++) {
+      addProud(room, [0.028, shaftHeight - 0.36, 0.02], x - PILASTER_WIDTH / 2 + flute * pitch, shaftY, 0.045,
+        nicheShade);
+    }
+    addProud(room, [PILASTER_WIDTH + 0.06, 0.09, 0.07], x, top - 0.02, 0.055, shelfBoardShade(top - 0.02));
+    addProud(room, [PILASTER_WIDTH + 0.04, 0.12, 0.06], x, bottom + 0.06, 0.05, shelfBoardShade(bottom));
+  }
+}
+
 // Collects one wall's volumes into the room-wide batches instead of adding a
 // mesh per book.  Shelving itself stays merged too: there are only a handful
 // of carcase pieces per wall, but they share two materials across four walls.
@@ -649,6 +712,7 @@ function collectBookWall(room, index, q, r, level, disturbed) {
       { outlined: false, shade: shelfBoardShade(shelfY) });
     addShelfEdge(outlinePositions, frameMatrix, shelfY, CABINET_RUN_WIDTH);
   }
+  addCabinetCarving(room);
 
   // Every volume on a wall is the wall's first slot plus its place along the
   // shelves, so the address arithmetic is done once here rather than from
