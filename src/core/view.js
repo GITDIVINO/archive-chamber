@@ -109,7 +109,7 @@ scene.add(new THREE.AmbientLight(0xffd9b0, 0.16));
 // their arrises, never by their tone. What is kept is the separation of floor
 // from wall from ceiling, which depends only on how far a surface is turned
 // from the vertical, and the shadow the cabinets drop on the floor.
-const keyLight = new THREE.DirectionalLight(0xffe8cc, 0.18);
+export const keyLight = new THREE.DirectionalLight(0xffe8cc, 0.18);
 keyLight.position.set(0, 72, 0);
 keyLight.castShadow = true;
 keyLight.shadow.mapSize.set(1536, 1536);
@@ -158,6 +158,18 @@ export function resizeView() {
  * it is handed the buffer to draw into rather than the canvas.
  */
 export function render() {
+  const gl = renderer.getContext();
+  // A slow graphics chip must not be handed a new frame before it has
+  // finished the last one. Frames it cannot keep up with would queue behind
+  // each other, and every step, click and page change would wait for the
+  // whole queue: the walk would freeze for seconds at a time. Until the last
+  // frame is done the screen simply keeps showing it.
+  if (frameInFlight) {
+    if (gl.getSyncParameter(frameInFlight, gl.SYNC_STATUS) !== gl.SIGNALED) return;
+    gl.deleteSync(frameInFlight);
+    frameInFlight = null;
+    for (const shown of framesAwaited.splice(0)) shown();
+  }
   if (portalRenderPass) portalRenderPass();
   else {
     renderer.setRenderTarget(sceneTarget);
@@ -165,4 +177,16 @@ export function render() {
     renderer.render(scene, camera);
   }
   composeFrame(renderer);
+  frameInFlight = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+  gl.flush();
+  framesAwaited.push(...framesRequested.splice(0));
+}
+
+let frameInFlight = null;
+const framesRequested = [];
+const framesAwaited = [];
+
+/** Resolves once a frame drawn from now on has reached the screen. */
+export function nextFrameShown() {
+  return new Promise(shown => framesRequested.push(shown));
 }

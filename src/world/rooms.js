@@ -27,6 +27,7 @@ import {
 } from '../constants.js';
 import {
   camera,
+  keyLight,
   renderedWorld,
   renderer,
   scene,
@@ -586,8 +587,13 @@ function buildDestination(job, synchronousFallback = false) {
   // face, and here it would also disagree with the corridor the walker is
   // standing in. The old (-28, 42, 24) survived here after the base scene was
   // corrected, which put a lit wall next to an unlit one across the threshold.
-  const portalKey = new THREE.DirectionalLight(0xffe8cc, 0.18);
-  portalKey.position.set(0, 72, 0);
+  //
+  // A copy of the base key, shadow and all. Given a key without a shadow, a
+  // portal scene's lighting differed from the chamber's by one shadow count,
+  // and that alone made three.js compile every material a second time for the
+  // doorways: half of all the shaders the game builds, most of the seconds a
+  // first frame took. The shadow is drawn once per destination and kept.
+  const portalKey = keyLight.clone();
   portalRoot.add(portalKey);
   portalRoot.add(portalKey.target);
   portalScene.add(portalRoot);
@@ -639,11 +645,22 @@ function buildDestination(job, synchronousFallback = false) {
   data.maxBuildMs = Math.max(data.maxBuildMs, duration);
   data.buildsTriggeredInPassage += passageWallAt(camera.position, world.room.level) === null ? 0 : 1;
   data.synchronousFallbacks += synchronousFallback ? 1 : 0;
-  // Portal scenes use a no-shadow lighting variant that the active room does
-  // not compile. Preparing it now keeps shader compilation away from the first
-  // frame in which the player turns toward an exit. Geometry and instance
-  // attributes are already shared with the active room and therefore warm.
-  void renderer.compileAsync(portalScene, camera).then(() => {
+  // Preparing the portal scene now keeps any shader compilation away from the
+  // first frame in which the player turns toward an exit. Geometry and
+  // instance attributes are already shared with the active room and therefore
+  // warm.
+  //
+  // It has to be compiled for the buffer it will be drawn into. three.js picks
+  // the colour space and tone mapping of a program from the render target that
+  // is current at compile time, and between frames that is the canvas; the
+  // doorways are drawn into sceneTarget, linear and untoned. Compiled against
+  // the canvas, every material got a second program nothing ever used, and the
+  // first frames spent seconds building them.
+  const previousTarget = renderer.getRenderTarget();
+  renderer.setRenderTarget(sceneTarget);
+  const compiling = renderer.compileAsync(portalScene, camera);
+  renderer.setRenderTarget(previousTarget);
+  void compiling.then(() => {
     if (passageDestinations?.entries.get(key) !== destination) return;
     destination.compiled = true;
     passageDestinations.group.userData.compiled++;
