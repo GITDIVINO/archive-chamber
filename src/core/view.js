@@ -37,7 +37,10 @@ export const camera = new THREE.PerspectiveCamera(70, viewportWidth() / viewport
 camera.position.set(PLAYER_START_X, 1.65, PLAYER_START_Z);
 
 export const renderer = new THREE.WebGLRenderer({
-  antialias: true,
+  // The canvas only ever receives the finished frame, a single full-screen
+  // quad, so smoothing it buys nothing. The world is smoothed where it is
+  // drawn: in the multisampled frame buffer in bloom.js.
+  antialias: false,
   powerPreference: 'high-performance',
   // Side destinations are true apertures. Their geometry is drawn only where
   // the corresponding doorway has written into this buffer.
@@ -45,7 +48,19 @@ export const renderer = new THREE.WebGLRenderer({
 });
 renderer.domElement.className = 'world-canvas';
 renderer.setSize(viewportWidth(), viewportHeight());
-renderer.setPixelRatio(Math.min(devicePixelRatio, 1.7));
+// A retina screen is drawn at its own resolution. Any fraction of it (the old
+// cap was 1.7) has to be stretched back up to the screen's pixels, and that
+// stretch is what made every edge and every spine soft. A chip that cannot
+// afford the full resolution steps down on its own: see adaptResolution below.
+const MAX_PIXEL_RATIO = Math.max(1, Math.min(devicePixelRatio, 2));
+renderer.setPixelRatio(MAX_PIXEL_RATIO);
+// The multisampled frame buffer is drawn into several times a frame (the
+// world, then every doorway through its stencil), and three.js resolves it
+// after each of those draws. After resolving it also tells the driver that the
+// samples, depth and stencil may be thrown away, and on a tiled chip such as
+// Apple's they are: the next doorway would be drawn over garbage and against a
+// lost stencil. The hint is only an optimisation, so it is simply not given.
+renderer.getContext().invalidateFramebuffer = () => {};
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -141,6 +156,77 @@ export function setPortalRenderPass(pass) {
   portalRenderPass = pass;
 }
 
+// --- resolution that follows the chip ---------------------------------------
+//
+// render() below skips a tick whenever the last frame is still on the chip, so
+// the share of ticks that actually drew says directly whether the graphics can
+// keep up. When they plainly cannot for two seconds running, the frame is drawn
+// at a quarter step fewer pixels per point; when they have kept up with room to
+// spare for a while, a quarter step is tried back. A step that has just failed
+// is not retried for a minute, so the resolution settles instead of hunting.
+const PIXEL_RATIO_STEP = 0.25;
+const MIN_PIXEL_RATIO = 1;
+const resolution = {
+  windowStart: 0,
+  ticks: 0,
+  drawn: 0,
+  slow: 0,
+  fast: 0,
+  settleUntil: 0,
+  failedAt: new Map(),
+};
+
+function setRenderPixelRatio(ratio) {
+  renderer.setPixelRatio(ratio);
+  resizeBloom(viewportWidth(), viewportHeight(), ratio);
+  document.documentElement.dataset.pixelRatio = String(ratio);
+}
+document.documentElement.dataset.pixelRatio = String(MAX_PIXEL_RATIO);
+
+function adaptResolution(drew) {
+  if (MAX_PIXEL_RATIO <= MIN_PIXEL_RATIO) return;
+  const now = performance.now();
+  // The first frames compile every shader and draw the shadows; they are not
+  // what walking costs.
+  if (!resolution.settleUntil) resolution.settleUntil = now + 3000;
+  if (now < resolution.settleUntil) return;
+  if (!resolution.windowStart) resolution.windowStart = now;
+  resolution.ticks++;
+  if (drew) resolution.drawn++;
+  const elapsed = now - resolution.windowStart;
+  if (elapsed < 1000) return;
+  const fps = resolution.drawn * 1000 / elapsed;
+  const share = resolution.drawn / resolution.ticks;
+  // A hidden tab, a panel or a long pause stops the ticks; such a window says
+  // nothing about the chip.
+  const meaningful = elapsed < 2000;
+  resolution.windowStart = now;
+  resolution.ticks = 0;
+  resolution.drawn = 0;
+  if (!meaningful) return;
+  // Slow only if the chip is what held the frames back. A busy main thread
+  // slows the ticks themselves, and fewer pixels would not help it.
+  const slow = fps < 50 && share < 0.8;
+  const fast = share > 0.95 && fps > 57;
+  resolution.slow = slow ? resolution.slow + 1 : 0;
+  resolution.fast = fast ? resolution.fast + 1 : 0;
+  const ratio = renderer.getPixelRatio();
+  let next = ratio;
+  if (resolution.slow >= 2 && ratio > MIN_PIXEL_RATIO) {
+    resolution.failedAt.set(ratio, now);
+    next = Math.max(MIN_PIXEL_RATIO, ratio - PIXEL_RATIO_STEP);
+  } else if (resolution.fast >= 8 && ratio < MAX_PIXEL_RATIO) {
+    const up = Math.min(MAX_PIXEL_RATIO, ratio + PIXEL_RATIO_STEP);
+    if (now - (resolution.failedAt.get(up) ?? -Infinity) > 60000) next = up;
+  }
+  if (next === ratio) return;
+  resolution.slow = 0;
+  resolution.fast = 0;
+  // The first frames at a new size reallocate the buffers; judge after them.
+  resolution.settleUntil = now + 1500;
+  setRenderPixelRatio(next);
+}
+
 export function resizeView() {
   const width = viewportWidth();
   const height = viewportHeight();
@@ -165,11 +251,17 @@ export function render() {
   // whole queue: the walk would freeze for seconds at a time. Until the last
   // frame is done the screen simply keeps showing it.
   if (frameInFlight) {
-    if (gl.getSyncParameter(frameInFlight, gl.SYNC_STATUS) !== gl.SIGNALED) return;
-    gl.deleteSync(frameInFlight);
-    frameInFlight = null;
-    for (const shown of framesAwaited.splice(0)) shown();
+    if (gl.getSyncParameter(frameInFlight, gl.SYNC_STATUS) === gl.SIGNALED) {
+      gl.deleteSync(frameInFlight);
+      frameInFlight = null;
+      for (const shown of framesAwaited.splice(0)) shown();
+    }
   }
+  if (frameInFlight) {
+    adaptResolution(false);
+    return;
+  }
+  adaptResolution(true);
   if (portalRenderPass) portalRenderPass();
   else {
     renderer.setRenderTarget(sceneTarget);

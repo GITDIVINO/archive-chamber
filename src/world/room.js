@@ -1357,12 +1357,12 @@ export function makeRoom(q, r, level, { deferSpines = false } = {}) {
   // contributes nothing but its own brightness and there is no reason to pay a
   // shadow map to say so.
   const wellLanterns = [
-    ...WELL_LANTERN_POSITIONS.map(position => ({ position, lit: true })),
+    ...WELL_LANTERN_POSITIONS.map(position => ({ position, lit: true, shadowed: true })),
     ...WELL_STAIR_LANTERNS,
   ];
   room.userData.lanternCount = wellLanterns.length;
   room.userData.litLanternCount = wellLanterns.filter(lantern => lantern.lit).length;
-  for (const { position, lit } of wellLanterns) {
+  for (const { position, lit, shadowed } of wellLanterns) {
     // Dark frame plus a luminous core: the light is a recognisable lantern
     // rather than an unexplained cube hovering over the rail.
     addBox(room, brassMaterial, [0.34, 0.08, 0.34],
@@ -1385,12 +1385,17 @@ export function makeRoom(q, r, level, { deferSpines = false } = {}) {
     if (!lit) continue;
     const light = new THREE.PointLight(LAMP_LIGHT_COLOR, LAMP_INTENSITY, LAMP_RANGE, 2);
     light.position.copy(position);
-    // Measured, not assumed. Two shadow-casting lanterns cost twenty-four draw
-    // calls and a fraction of a millisecond of a sixteen millisecond frame, and
-    // the barred shadow a balustrade throws across a flight is most of what
-    // makes the flight look built. The cube is small and its far plane is cut
-    // to the light's own reach, so it renders almost nothing.
-    light.castShadow = true;
+    // The pair on the deck throw the barred shadow of the balustrade across
+    // the flight, which is most of what makes it look built. The lanterns up
+    // the flight light it without a shadow of their own: every shadowing
+    // lantern is a cube of six views of the chamber to draw on arrival and nine
+    // shadow lookups in every pixel of every frame, and with all six of them
+    // casting, the lamps and their shadows were close to half the frame.
+    light.castShadow = Boolean(shadowed);
+    if (!shadowed) {
+      room.add(light);
+      continue;
+    }
     light.shadow.mapSize.set(512, 512);
     light.shadow.camera.far = LAMP_RANGE;
     light.shadow.bias = -0.004;
