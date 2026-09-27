@@ -6,8 +6,7 @@
 // and he never gets anywhere. The drawing is a pure function of time, so one
 // canvas can feed as many surfaces as want it (see world/relief.js).
 
-// Colours come from the caller; the default is ink on the panel's paper. A
-// caller may add `ground` to fill the square behind the drawing.
+// Colours come from the caller; the default is ink on the panel's paper.
 export const PAPER_PALETTE = Object.freeze({
   ink: '#1f1d1a',
   farInk: '#57514a',
@@ -448,10 +447,6 @@ function drawStoneAndFigure(ctx, time) {
 export function drawOuroboros(ctx, time, colours = PAPER_PALETTE) {
   palette = colours;
   ctx.clearRect(0, 0, SIZE, SIZE);
-  if (colours.ground) {
-    ctx.fillStyle = colours.ground;
-    ctx.fillRect(0, 0, SIZE, SIZE);
-  }
   drawRing(ctx);
   drawMouth(ctx);
   drawBody(ctx, time);
