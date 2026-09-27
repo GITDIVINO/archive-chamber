@@ -27,7 +27,7 @@ scene.background = new THREE.Color(DISTANCE);
 // the shaft was dark rather than deep. At this density the far side of the well
 // is visibly hazed and the shaft fades out around nine floors, which is where
 // the reference loses its own distance too.
-export const WORLD_FOG_DENSITY = 0.013;
+export const WORLD_FOG_DENSITY = 0.012;
 scene.fog = new THREE.FogExp2(DISTANCE, WORLD_FOG_DENSITY);
 
 // The portal stencil lies only a few centimetres behind a side threshold.  A
@@ -57,8 +57,24 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 // appears at once, and the room turns muddy. Neutral mapping keeps hue and
 // saturation where filmic did not, and compresses only the top, so the room can
 // be lit properly without the tones underneath it going to mud.
+// Shadows are cast by the architecture alone: nothing that throws one ever
+// moves, and a lantern hangs where it was built. Redrawing every lantern's
+// cube map on every frame was nearly the whole cost of a frame (6.3 s of 6.35 s
+// under software rendering, 290 of 422 draws), and it was the same picture
+// each time. A scene's maps are therefore drawn again only when the set of
+// lanterns that cast them, or the set of rooms in the world, has changed:
+// entering a chamber, releasing one, or adopting a portal destination.
+const drawShadows = renderer.shadowMap.render;
+const shadowSignatures = new WeakMap();
+renderer.shadowMap.render = function (lights, shadowScene, shadowCamera) {
+  let signature = lights.map(light => light.id).join(',');
+  if (shadowScene === scene) signature += '|' + renderedWorld.children.map(child => child.id).join(',');
+  if (shadowSignatures.get(shadowScene) === signature) return;
+  shadowSignatures.set(shadowScene, signature);
+  drawShadows.call(this, lights, shadowScene, shadowCamera);
+};
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.22;
+renderer.toneMappingExposure = 2.4;
 document.body.prepend(renderer.domElement);
 
 // Warmed, and left near its old strength rather than cut. A vertical wall takes
@@ -76,8 +92,8 @@ document.body.prepend(renderer.domElement);
 // held close together on purpose — a hemisphere with a bright sky lights every
 // upward face at full strength, and that is what made the floor the brightest
 // thing in the frame when it should be among the darkest.
-scene.add(new THREE.HemisphereLight(0x3a2a1e, 0x1a120c, 0.5));
-scene.add(new THREE.AmbientLight(0xffd9b0, 0.16));
+scene.add(new THREE.HemisphereLight(0x8a6240, 0x3a2818, 1.6));
+scene.add(new THREE.AmbientLight(0xffd9b0, 0.5));
 // Straight down, and it has to be. A crossing is the same corridor four times
 // and a chamber is the same wall six times, so the world claims two symmetries:
 // a quarter turn about the passage axis and a sixth turn about the room. The
@@ -93,7 +109,7 @@ scene.add(new THREE.AmbientLight(0xffd9b0, 0.16));
 // their arrises, never by their tone. What is kept is the separation of floor
 // from wall from ceiling, which depends only on how far a surface is turned
 // from the vertical, and the shadow the cabinets drop on the floor.
-const keyLight = new THREE.DirectionalLight(0xffe8cc, 0.18);
+export const keyLight = new THREE.DirectionalLight(0xffe8cc, 0.18);
 keyLight.position.set(0, 72, 0);
 keyLight.castShadow = true;
 keyLight.shadow.mapSize.set(1536, 1536);
@@ -142,6 +158,18 @@ export function resizeView() {
  * it is handed the buffer to draw into rather than the canvas.
  */
 export function render() {
+  const gl = renderer.getContext();
+  // A slow graphics chip must not be handed a new frame before it has
+  // finished the last one. Frames it cannot keep up with would queue behind
+  // each other, and every step, click and page change would wait for the
+  // whole queue: the walk would freeze for seconds at a time. Until the last
+  // frame is done the screen simply keeps showing it.
+  if (frameInFlight) {
+    if (gl.getSyncParameter(frameInFlight, gl.SYNC_STATUS) !== gl.SIGNALED) return;
+    gl.deleteSync(frameInFlight);
+    frameInFlight = null;
+    for (const shown of framesAwaited.splice(0)) shown();
+  }
   if (portalRenderPass) portalRenderPass();
   else {
     renderer.setRenderTarget(sceneTarget);
@@ -149,4 +177,16 @@ export function render() {
     renderer.render(scene, camera);
   }
   composeFrame(renderer);
+  frameInFlight = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+  gl.flush();
+  framesAwaited.push(...framesRequested.splice(0));
+}
+
+let frameInFlight = null;
+const framesRequested = [];
+const framesAwaited = [];
+
+/** Resolves once a frame drawn from now on has reached the screen. */
+export function nextFrameShown() {
+  return new Promise(shown => framesRequested.push(shown));
 }
