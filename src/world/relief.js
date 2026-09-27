@@ -40,7 +40,11 @@ function sharedMaterial() {
   const canvas = document.createElement('canvas');
   canvas.width = TEXTURE_SIZE;
   canvas.height = TEXTURE_SIZE;
-  const context = canvas.getContext('2d');
+  // Kept in main memory. A GPU-backed 2D canvas has to be synchronised with
+  // the WebGL context on every upload, and under a software renderer that
+  // stall held back whole frames of the chamber; from plain memory an upload
+  // is a copy.
+  const context = canvas.getContext('2d', { willReadFrequently: true });
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   // Seen from across the chamber it is shrunk several times over, and without
