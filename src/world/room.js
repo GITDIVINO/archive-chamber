@@ -180,7 +180,10 @@ function createSpineAtlas(room) {
   texture.generateMipmaps = true;
   texture.minFilter = THREE.LinearMipmapLinearFilter;
   texture.magFilter = THREE.LinearFilter;
-  const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide, depthWrite: false });
+  // A label is one flat quad, so its two faces never cover each other and the
+  // back-then-front second pass three.js gives transparent double-sided
+  // materials would only double the draw calls.
+  const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide, depthWrite: false, forceSinglePass: true });
   const atlas = { context, material, next: 0, positions: [], uvs: [], indices: [] };
   room.userData.spineAtlases.push(atlas);
   room.userData.disposableMaterials.push(material);
@@ -512,6 +515,8 @@ export function wallNumberMaterial() {
     transparent: true,
     side: THREE.DoubleSide,
     depthWrite: false,
+    // Flat numerals: see the spine labels above.
+    forceSinglePass: true,
   });
   return sharedWallNumberMaterial;
 }
