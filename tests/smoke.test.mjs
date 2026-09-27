@@ -1732,8 +1732,7 @@ for (const [name, metric] of Object.entries(visualMetrics)) {
   const evidence = JSON.stringify({ pngBytes: metric.pngBytes, signature: metric.signature });
   // A blank view is easier to diagnose when the log shows what was drawn.
   const picture = metric.canvasSample ? '\n' + sketch(metric.canvasSample, 64, 40) : '';
-  const errors = consoleErrors.length ? '\nconsole: ' + consoleErrors.join('\n') : '';
-  assert.ok(metric.pngBytes > 20000, `${name}: the rendered view must contain more than blank paper; ${evidence}${picture}${errors}`);
+  assert.ok(metric.pngBytes > 20000, `${name}: the rendered view must contain more than blank paper; ${evidence}${picture}`);
 }
 for (const side of ['Right', 'Left']) {
   const before = visualMetrics[`threshold${side}Before`].canvasSample;
