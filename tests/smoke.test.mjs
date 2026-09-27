@@ -1447,8 +1447,17 @@ for (const [name, value] of Object.entries(contrast)) {
 // because CI runs on shared machines with a software rasteriser.
 const cost = await page.evaluate(async () => {
   const { moveToWorldHex, paintRoomLabels } = await import('./src/world/rooms.js');
-  const { renderedWorld } = await import('./src/core/view.js');
+  const { renderedWorld, renderer } = await import('./src/core/view.js');
   const roomOf = () => renderedWorld.children.find(child => child.userData.q !== undefined);
+
+  // Time the build, not the rasteriser. A frame handed to the GPU just before
+  // this runs is still being drawn in software on the same few CPU cores, and
+  // on a two-core runner it doubles every build it overlaps. Reading a pixel
+  // back waits for that frame to finish; the loop below then holds the main
+  // thread, so no further frame starts until it is done.
+  await new Promise(resolve => requestAnimationFrame(() => resolve()));
+  const gl = renderer.getContext();
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
 
   const builds = [];
   for (let index = 1; index <= 9; index++) {
