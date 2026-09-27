@@ -218,7 +218,7 @@ function* finishVistaGeometryInSteps(group, batches, outlinePositions) {
 function batchFor(batches, material) {
   let batch = batches.get(material);
   if (!batch) {
-    batch = { material, positions: [], uvs: [], indices: [], colors: [] };
+    batch = { material, positions: [], normals: [], uvs: [], indices: [], colors: [] };
     batches.set(material, batch);
   }
   return batch;
