@@ -576,8 +576,8 @@ function buildDestination(job, synchronousFallback = false) {
   // Must track view.js exactly. A destination is seen through an opening a few
   // centimetres away, so any difference between the two lightings is a seam
   // drawn straight down the middle of a doorway.
-  portalScene.add(new THREE.HemisphereLight(0x3a2a1e, 0x1a120c, 0.5));
-  portalScene.add(new THREE.AmbientLight(0xffd9b0, 0.16));
+  portalScene.add(new THREE.HemisphereLight(0x8a6240, 0x3a2818, 1.6));
+  portalScene.add(new THREE.AmbientLight(0xffd9b0, 0.5));
   // The destination room and its key light share one local frame. Leaving the
   // light at a fixed world coordinate made the same room brighter or darker
   // depending on whether it was seen ahead, left or right, and the light then
