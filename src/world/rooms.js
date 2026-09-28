@@ -210,33 +210,17 @@ const PORTAL_STENCIL_REF = 1;
 // and depth-tests the mask back to its true visible aperture.
 const PORTAL_MASK_OVERDRAW = 0.36;
 
-// Before a destination is drawn, the source world's depth has to be cleared
-// wherever its doorway is actually seen, so that everything of the destination
+// Before a destination is drawn, the source world's depth is cleared wherever
+// its doorway is actually in sight, so that everything of the destination
 // beyond the threshold shows however near the source's own walls stand behind
 // it; and only there, so that a doorway hidden behind a wall stays hidden.
 //
 // Two earlier versions each got one half wrong. A full-screen reset with the
 // depth test off wrote no depth at all (WebGL ignores depthWrite then), so the
 // outside of the walker's own chamber cut the far side of a side-exit shaft
-// into a blank wall. The same reset made to work cleared depth across the
-// whole mask, and the core mask ignores depth, so doorways behind the chamber's
-// walls were painted over them. Now the aperture is drawn once more with the
-// depth test on and raises the stencil where it is really visible, and only
-// those pixels are reset and receive the destination.
-const PORTAL_VISIBLE_REF = PORTAL_STENCIL_REF + 1;
-const apertureVisibleMaterial = new THREE.MeshBasicMaterial({
-  colorWrite: false,
-  depthTest: true,
-  depthWrite: false,
-  side: THREE.DoubleSide,
-  stencilFail: THREE.KeepStencilOp,
-  stencilFunc: THREE.EqualStencilFunc,
-  stencilRef: PORTAL_STENCIL_REF,
-  stencilWrite: true,
-  stencilZFail: THREE.KeepStencilOp,
-  stencilZPass: THREE.IncrementStencilOp,
-});
-
+// into a blank wall. Made to work, the same reset followed a stencil laid by a
+// core mask that ignored depth, so doorways behind the chamber's walls were
+// painted over them.
 const depthResetScene = new THREE.Scene();
 const depthResetCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 // The depth test stays on and always passes: with it off WebGL writes nothing.
@@ -248,7 +232,6 @@ const depthResetMaterial = new THREE.ShaderMaterial({
   fragmentShader: 'void main() { gl_FragColor = vec4(0.0); }',
   stencilFail: THREE.KeepStencilOp,
   stencilFunc: THREE.EqualStencilFunc,
-  stencilRef: PORTAL_VISIBLE_REF,
   stencilWrite: true,
   stencilZFail: THREE.KeepStencilOp,
   stencilZPass: THREE.KeepStencilOp,
@@ -310,15 +293,14 @@ function portalTransform(from, wall, exit) {
 }
 
 function portalMaskFor(transform, stencilRef) {
-  // Portal composition uses two coincident apertures with different jobs.
-  // The exact core ignores the old world's depth: at a side exit, geometry of
-  // the source chamber can be physically nearer than the non-Euclidean
-  // destination, but it must still disappear inside the doorway. A second,
-  // slightly larger fringe respects depth and fills only cracks that are truly
-  // visible around oblique jamb and lintel edges.
-  const makeMaterial = depthTest => new THREE.MeshBasicMaterial({
+  // One aperture, slightly larger than the doorway and tested against the
+  // source world's depth: real corridor walls, jambs and lintels hide it, and
+  // the margin fills the cracks that open around oblique jamb and lintel edges.
+  // What the source has standing behind the doorway is dealt with by the depth
+  // reset that follows, not by ignoring depth here.
+  const material = new THREE.MeshBasicMaterial({
     colorWrite: false,
-    depthTest,
+    depthTest: true,
     depthWrite: false,
     side: THREE.DoubleSide,
     stencilFail: THREE.KeepStencilOp,
@@ -328,12 +310,6 @@ function portalMaskFor(transform, stencilRef) {
     stencilZFail: THREE.KeepStencilOp,
     stencilZPass: THREE.ReplaceStencilOp,
   });
-  const coreMaterial = makeMaterial(false);
-  const material = makeMaterial(true);
-  const coreMesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(2 * HALL_HALF_WIDTH, DOOR_HEIGHT),
-    coreMaterial,
-  );
   const mesh = new THREE.Mesh(
     new THREE.PlaneGeometry(
       2 * HALL_HALF_WIDTH + 2 * PORTAL_MASK_OVERDRAW,
@@ -343,22 +319,12 @@ function portalMaskFor(transform, stencilRef) {
   );
   // Keep the aperture beyond the 20 mm near clip until the same frame in which
   // crossedPassageExit hands the camera to the destination room.
-  for (const aperture of [coreMesh, mesh]) {
-    aperture.position.copy(transform.doorway).addScaledVector(transform.direction, 0.12);
-    aperture.rotation.y = Math.atan2(-transform.direction.x, -transform.direction.z);
-    aperture.raycast = () => {};
-  }
+  mesh.position.copy(transform.doorway).addScaledVector(transform.direction, 0.12);
+  mesh.rotation.y = Math.atan2(-transform.direction.x, -transform.direction.z);
   mesh.raycast = () => {};
   const maskScene = new THREE.Scene();
-  maskScene.add(coreMesh, mesh);
-  // The fringe lies in the core's plane and covers it, so it alone finds every
-  // pixel of the aperture that is really in sight, for one draw, not two.
-  const visibleScene = new THREE.Scene();
-  const visible = new THREE.Mesh(mesh.geometry, apertureVisibleMaterial);
-  visible.position.copy(mesh.position);
-  visible.rotation.copy(mesh.rotation);
-  visibleScene.add(visible);
-  return { coreMaterial, coreMesh, visibleScene, maskScene, material, mesh, stencilRef };
+  maskScene.add(mesh);
+  return { maskScene, material, mesh, stencilRef };
 }
 
 function destinationMaterials(root) {
@@ -484,12 +450,12 @@ function renderPassagePortals() {
       renderer.clear(false, false, true);
       renderer.render(destination.maskScene, camera);
 
-      renderer.render(destination.visibleScene, camera);
+      depthResetMaterial.stencilRef = destination.stencilRef;
       renderer.render(depthResetScene, depthResetCamera);
 
       const states = applyPortalStencil(
         destination.materials,
-        PORTAL_VISIBLE_REF,
+        destination.stencilRef,
       );
       renderer.render(destination.portalScene, camera);
       restoreStencil(states);
@@ -517,8 +483,6 @@ function disposePassageDestinations() {
     if (!destination.adopted) disposeRoom(destination.portalRoom);
     destination.mesh.geometry.dispose();
     destination.material.dispose();
-    destination.coreMesh.geometry.dispose();
-    destination.coreMaterial.dispose();
   }
   passageDestinations = null;
 }
@@ -651,7 +615,6 @@ function buildDestination(job, synchronousFallback = false) {
   );
   root.userData.metadataDeferred = Boolean(portalRoom.userData.portalMetadata);
   root.userData.maskDepthTest = mask.material.depthTest;
-  root.userData.coreMaskDepthTest = mask.coreMaterial.depthTest;
   root.userData.maskHeight = mask.mesh.geometry.parameters.height;
   root.userData.maskWidth = mask.mesh.geometry.parameters.width;
   root.userData.omittedArrivalPassage = destinationVista.userData.omittedArrivalPassage;
