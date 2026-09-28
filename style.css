@@ -43,7 +43,7 @@ canvas { display: block; filter: contrast(1.035) saturate(.88); }
 .panel { position: absolute; width: min(480px, calc(100vw - 42px)); left: 50%; top: 50%; padding: 34px 36px 30px; text-align: center; transform: translate(-50%, -50%); transition: opacity 220ms var(--ease-out), transform 220ms var(--ease-out); pointer-events: auto; font-family: "Courier New", monospace; }
 .panel.gone { opacity: 0; transform: translate(-50%, -47%); pointer-events: none; }
 /* The game's own name, in the same drafted hand as everything else. */
-/* The ouroboros with Sisyphus inside its ring, above the title. It gives way
+/* The game's logo, an ouroboros round a monkey at a typewriter, above the title. It gives way
    on short screens so the enter button never drops below the fold. */
 #emblem { display: block; width: min(200px, 27vh); height: auto; margin: -6px auto 18px; border-radius: 50%; }
 @media (max-height: 520px) { #emblem { display: none; } }
