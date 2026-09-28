@@ -194,12 +194,18 @@ function drawPassageEdges(outlines, openAlcoves) {
 }
 
 /**
- * Pilasters, a dado and ceiling joists along the passage.
+ * Rails, pilasters, a dado and ceiling joists, the same in all four arms.
  *
  * A passage used to be three metres of wall between a doorway and a crossing,
  * and a blank face that size reads as a face. At a storey of fourteen metres it
  * is the largest unbroken surface a walker ever stands next to, and looking
  * sideways at the mouth it fills half the frame with nothing at all.
+ *
+ * The crossing is a junction of four identical arms, so the timber is too: it
+ * was once only along the corridor axis, which left both side arms and the four
+ * bevelled corners bare plaster and the passage lopsided from every angle but
+ * straight ahead. Each arm is now set out the same way from the crossing's
+ * centre, and each bevel carries the rails across the corner between them.
  *
  * Everything here is additive: boxes into the batches the caller is already
  * filling, in the materials already in use. No existing piece moves, so the
@@ -208,6 +214,11 @@ function drawPassageEdges(outlines, openAlcoves) {
  * Depth is the one number that matters for safety. A walker is held a body's
  * radius off the wall line, at 1.97 from the axis, and the deepest thing here
  * reaches 2.18 — so nothing added can be walked into.
+ *
+ * The passages seen down the shaft end their arms on a blank wall a walker
+ * never reaches and only ever see along the corridor, so they keep the timber
+ * of that axis alone: the side arms' would cost the shaft's vertex budget
+ * for a surface nobody looks at.
  */
 const PILASTER_DEPTH = 0.14;
 const PILASTER_WIDTH = 0.36;
@@ -218,39 +229,97 @@ const DADO_THICKNESS = 0.13;
 const JOIST_PITCH = 2.4;
 const JOIST_DROP = 0.17;
 const JOIST_WIDTH = 0.24;
+const RAIL_DEPTH = 0.07;
+const RAIL_HEIGHT = 0.1;
+const RAIL_LEVELS = [0.18, 1.1, DOOR_HEIGHT - 0.28];
 
-function addPassageJoinery(batches) {
-  for (const side of [-1, 1]) {
-    for (const [runCentre, runLength] of wallRuns(OPENINGS)) {
-      const from = runCentre - runLength / 2;
+// The four arms, as the direction each runs from the crossing and the turn that
+// lays a box's length along it. Back and ahead are the corridor itself.
+const ARMS = [
+  { dx: 0, dz: -1, turn: 0 },
+  { dx: 0, dz: 1, turn: 0 },
+  { dx: 1, dz: 0, turn: Math.PI / 2 },
+  { dx: -1, dz: 0, turn: Math.PI / 2 },
+];
 
+// Where each arm's walls begin, measured out from the crossing's centre: past
+// the opening and the bevel beside it.
+const ARM_CLEAR = HALL_SIDE_HALF + HALL_JUNCTION_CHAMFER;
+
+// Joists stand at the corridor's own pitch, and at the same distances from the
+// crossing in every arm, so the ceiling reads the same whichever way one looks.
+function joistDistances() {
+  const joists = Math.floor(HALL_LENGTH / JOIST_PITCH);
+  const distances = [];
+  for (let joist = 1; joist < joists; joist++) {
+    const distance = HALL_SIDE_CENTRE - HALL_LENGTH * joist / joists;
+    if (distance >= ARM_CLEAR) distances.push(distance);
+  }
+  return distances;
+}
+const JOIST_DISTANCES = joistDistances();
+
+function addPassageJoinery(batches, sideArms) {
+  const centre = HALL_SIDE_CENTRE;
+  for (const arm of sideArms ? ARMS : ARMS.filter(arm => !arm.turn)) {
+    const reach = arm.turn ? ALCOVE_REACH : HALL_SIDE_CENTRE;
+    const runLength = reach - ARM_CLEAR;
+    const runMiddle = (reach + ARM_CLEAR) / 2;
+    // Across the arm: the corridor's x for back and ahead, its z for a side arm.
+    const place = (along, across, size, y) => addBox(batches, null, size.material,
+      size.box,
+      arm.dx * along + (arm.turn ? 0 : across),
+      y,
+      centre + arm.dz * along + (arm.turn ? across : 0),
+      null, false, arm.turn);
+
+    for (const side of [-1, 1]) {
+      const halfWidth = arm.turn ? HALL_SIDE_HALF : HALL_HALF_WIDTH;
+      for (const y of RAIL_LEVELS) {
+        place(runMiddle, side * (halfWidth - RAIL_DEPTH / 2),
+          { material: shelfMaterial, box: [RAIL_DEPTH, RAIL_HEIGHT, runLength] }, y);
+      }
       // A timber band at hand height, the length of each run of wall.
-      addBox(batches, null, shelfMaterial,
-        [DADO_THICKNESS, DADO_THICKNESS, runLength],
-        side * (HALL_HALF_WIDTH - DADO_DEPTH), DADO_HEIGHT, runCentre, null, false);
-
-      // Pilasters set out from the run's own ends, so they never land in a
-      // side opening: wallRuns has already cut those out.
+      place(runMiddle, side * (halfWidth - DADO_DEPTH),
+        { material: shelfMaterial, box: [DADO_THICKNESS, DADO_THICKNESS, runLength] }, DADO_HEIGHT);
+      // Pilasters set out from the run's own ends, so none lands in an opening.
       const bays = Math.max(1, Math.round(runLength / PILASTER_PITCH));
       for (let bay = 0; bay <= bays; bay++) {
-        addBox(batches, null, wallMaterial,
-          [PILASTER_DEPTH, DOOR_HEIGHT, PILASTER_WIDTH],
-          side * (HALL_HALF_WIDTH - PILASTER_DEPTH / 2), DOOR_HEIGHT / 2,
-          from + runLength * bay / bays, null, false);
+        place(ARM_CLEAR + runLength * bay / bays, side * (halfWidth - PILASTER_DEPTH / 2),
+          { material: wallMaterial, box: [PILASTER_DEPTH, DOOR_HEIGHT, PILASTER_WIDTH] }, DOOR_HEIGHT / 2);
       }
+    }
+
+    // Joists across the ceiling, none over the crossing, so nothing hangs over
+    // an opening a walker is meant to see through.
+    const span = 2 * (arm.turn ? HALL_SIDE_HALF : HALL_HALF_WIDTH);
+    for (const distance of JOIST_DISTANCES) {
+      place(distance, 0,
+        { material: shelfMaterial, box: [span, JOIST_DROP, JOIST_WIDTH] }, DOOR_HEIGHT - JOIST_DROP / 2);
     }
   }
 
-  // Joists across the ceiling, skipping the crossing so nothing hangs over an
-  // opening a walker is meant to see through.
-  const clear = HALL_SIDE_HALF + HALL_JUNCTION_CHAMFER;
-  const joists = Math.floor(HALL_LENGTH / JOIST_PITCH);
-  for (let joist = 1; joist < joists; joist++) {
-    const along = HALL_LENGTH * joist / joists;
-    if (OPENINGS.some(opening => Math.abs(along - opening) < clear)) continue;
-    addBox(batches, null, shelfMaterial,
-      [2 * HALL_HALF_WIDTH, JOIST_DROP, JOIST_WIDTH],
-      0, DOOR_HEIGHT - JOIST_DROP / 2, along, null, false);
+  if (!sideArms) return;
+
+  // The bevels at the crossing's four corners carry the rails and the dado
+  // round from one arm to the next. A bevel's wall is centred on its line, so
+  // its face stands half a wall's thickness in towards the crossing.
+  const bevel = HALL_JUNCTION_CHAMFER * Math.SQRT2;
+  for (const side of [-1, 1]) {
+    for (const jamb of [-1, 1]) {
+      const edge = centre + jamb * HALL_SIDE_HALF;
+      const turn = Math.atan2(side, -jamb);
+      const lineX = side * (HALL_HALF_WIDTH + HALL_JUNCTION_CHAMFER / 2);
+      const lineZ = edge + jamb * HALL_JUNCTION_CHAMFER / 2;
+      const at = inset => [lineX - side * inset / Math.SQRT2, lineZ - jamb * inset / Math.SQRT2];
+      for (const y of RAIL_LEVELS) {
+        const [x, z] = at(WALL_THICKNESS / 2 + RAIL_DEPTH / 2);
+        addBox(batches, null, shelfMaterial, [RAIL_DEPTH, RAIL_HEIGHT, bevel], x, y, z, null, false, turn);
+      }
+      const [x, z] = at(WALL_THICKNESS / 2 + DADO_DEPTH);
+      addBox(batches, null, shelfMaterial, [DADO_THICKNESS, DADO_THICKNESS, bevel],
+        x, DADO_HEIGHT, z, null, false, turn);
+    }
   }
 }
 
@@ -268,19 +337,6 @@ export function appendHall(batches, outlines, matrix, openAlcoves = false, surfa
     0, LIP - SLAB / 2, centre, null, false);
   addBox(batches, null, passageCeilingMaterial, [2 * HALL_HALF_WIDTH, SLAB, RUN],
     0, DOOR_HEIGHT + SLAB / 2, centre, null, false);
-  // Timber rails keep the corridor visually tied to the galleries. Each run
-  // stops at the real side opening: a former full-length strip crossed both
-  // exits and looked like stale geometry appearing only from oblique angles.
-  for (const side of [-1, 1]) {
-    const face = side * (HALL_HALF_WIDTH - 0.035);
-    for (const [runCentre, runLength] of wallRuns(OPENINGS)) {
-      for (const y of [0.18, 1.1, DOOR_HEIGHT - 0.28]) {
-        addBox(batches, null, shelfMaterial, [0.07, 0.1, runLength],
-          face, y, runCentre, null, false);
-      }
-    }
-  }
-
   for (const side of [-1, 1]) {
     const wallX = side * (HALL_HALF_WIDTH + WALL_THICKNESS / 2);
     for (const [runCentre, runLength] of wallRuns(OPENINGS)) {
@@ -359,7 +415,7 @@ export function appendHall(batches, outlines, matrix, openAlcoves = false, surfa
     }
   }
 
-  addPassageJoinery(batches);
+  addPassageJoinery(batches, openAlcoves);
   if (outlines) drawPassageEdges(outlines, openAlcoves);
 }
 
