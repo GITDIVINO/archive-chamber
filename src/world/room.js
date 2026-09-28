@@ -1199,8 +1199,6 @@ function copyVisualTransform(target, source) {
 
 function cloneVisualChild(source) {
   if (source.userData.spineLabels) return null;
-  // The head lies in one chamber only; a copy of this one is somewhere else.
-  if (source.userData.landmark === 'head') return null;
   let clone;
   if (source.isInstancedMesh) {
     clone = new THREE.InstancedMesh(source.geometry, source.material, source.count);
