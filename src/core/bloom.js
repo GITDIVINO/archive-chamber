@@ -100,14 +100,12 @@ const compositeMaterial = new THREE.ShaderMaterial({
     tScene: { value: null },
     tBloom: { value: null },
     strength: { value: 1.35 },
-    time: { value: 0 },
   },
   vertexShader: VERTEX,
   fragmentShader: `
     uniform sampler2D tScene;
     uniform sampler2D tBloom;
     uniform float strength;
-    uniform float time;
     varying vec2 vUv;
     void main() {
       vec3 base = texture2D(tScene, vUv).rgb;
@@ -117,9 +115,6 @@ const compositeMaterial = new THREE.ShaderMaterial({
       // Radial and centred, so it is symmetric by construction.
       vec2 centred = vUv - 0.5;
       colour *= 1.0 - 0.55 * smoothstep(0.28, 0.82, dot(centred, centred) * 2.0);
-      // Fine grain, a hair of noise so the haze reads as air and not as a flat fill.
-      float grain = fract(sin(dot(vUv * 1024.0 + fract(time), vec2(12.9898, 78.233))) * 43758.5453);
-      colour += (grain - 0.5) * 0.006;
       gl_FragColor = vec4(colour, 1.0);
       #include <colorspace_fragment>
     }`,
@@ -205,7 +200,6 @@ export function composeFrame(renderer) {
 
   compositeMaterial.uniforms.tScene.value = sceneTarget.texture;
   compositeMaterial.uniforms.tBloom.value = bloomA.texture;
-  compositeMaterial.uniforms.time.value = (compositeMaterial.uniforms.time.value + 0.37) % 1;
   renderer.setRenderTarget(null);
   renderer.render(compositeScene, quadCamera);
 
