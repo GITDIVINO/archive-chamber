@@ -58,7 +58,16 @@ import {
   vistaOutlineMaterial,
   wallMaterial,
 } from '../core/materials.js';
-import { appendMergedEdges, appendMergedGeometry, axialMapOffset, boxGeometryFor, mergedMesh, pointOnWall, wallBasis } from './geometry.js';
+import {
+  appendMergedEdges,
+  appendMergedGeometry,
+  axialMapOffset,
+  boxGeometryFor,
+  mergedMesh,
+  mitredSlabFor,
+  pointOnWall,
+  wallBasis,
+} from './geometry.js';
 const SHELVED_WALLS = 4;
 import { appendHall, hallTransform } from './hall.js';
 import {
@@ -74,12 +83,14 @@ import {
   CARCASE_DEPTH,
   CARCASE_HEIGHT,
   bookGeometry,
+  shelfFaceBookGeometry,
   RAIL_THICKNESS,
   SHELF_CENTRE_Z,
   SHELF_DEPTH,
   SHELF_THICKNESS,
   WALL_CORNICE_BANDS,
   WALL_PILASTER_WIDTH,
+  corniceRuns,
   doorRevealParts,
   nicheShade,
   placeVolume,
@@ -95,6 +106,8 @@ import {
   WELL_STAIR_LANTERNS,
   WELL_STAIR_PARTS,
 } from './well.js';
+import { WELL_DISTANT_PIER_PARTS, doorColumnParts } from './columns.js';
+import { GALLERY_LEVELS, galleryParts } from './galleries.js';
 
 // Looking straight up or down exposes a column of chambers. Twenty-eight in
 // either direction reaches 134 metres; the existing fog has erased the last
@@ -109,7 +122,10 @@ import {
 // storey is 130 units off and the fog has already taken nineteen parts in
 // twenty of it. The five beyond cost over a third of the shaft's geometry and
 // changed well under a pixel in a thousand of a view straight up or down.
-export const VERTICAL_VISTA_DEPTH = 9;
+// Eight, not nine, once every storey carried its galleries: the ninth is 130
+// units off and nineteen parts in twenty fog, and the galleries of all the
+// others cost more than it did.
+export const VERTICAL_VISTA_DEPTH = 8;
 
 // How far up and down the shaft the shelves carry volumes. Every storey holds
 // 3840 of them, so the full stack was over a hundred thousand instances, and
@@ -130,39 +146,6 @@ export const VISTA_BOOK_STOREYS = 2;
 // How far up and down the shaft a storey keeps its bars. See isThinPart.
 export const VISTA_DETAIL_STOREYS = 3;
 
-// The spine (-z) and top (+y) faces of bookGeometry, with its own normals,
-// texture coordinates and three-stop tone, so a distant volume is shaded
-// exactly as a near one wherever a near one could be seen.
-const BOX_FACE_POSITIVE_Y = 2;
-const BOX_FACE_NEGATIVE_Z = 5;
-const distantBookGeometry = (() => {
-  const geometry = new THREE.BufferGeometry();
-  const index = bookGeometry.getIndex();
-  const attributes = Object.entries(bookGeometry.attributes);
-  const values = Object.fromEntries(attributes.map(([name]) => [name, []]));
-  const indices = [];
-  const remap = new Map();
-  for (const face of [BOX_FACE_POSITIVE_Y, BOX_FACE_NEGATIVE_Z]) {
-    const group = bookGeometry.groups[face];
-    for (let element = group.start; element < group.start + group.count; element++) {
-      const vertex = index.getX(element);
-      if (!remap.has(vertex)) {
-        remap.set(vertex, remap.size);
-        for (const [name, attribute] of attributes) {
-          for (let component = 0; component < attribute.itemSize; component++) {
-            values[name].push(attribute.array[vertex * attribute.itemSize + component]);
-          }
-        }
-      }
-      indices.push(remap.get(vertex));
-    }
-  }
-  for (const [name, attribute] of attributes) {
-    geometry.setAttribute(name, new THREE.Float32BufferAttribute(values[name], attribute.itemSize));
-  }
-  geometry.setIndex(indices);
-  return geometry;
-})();
 
 function instancedVolumes(geometry, volumes) {
   const mesh = new THREE.InstancedMesh(geometry, bookMaterials[0], volumes.count);
@@ -395,6 +378,47 @@ function addDistantBookWall(batches, volumes, index, roomOffset) {
   }
 }
 
+// A tier of cases on a gallery, as the shaft sees it: the back, the head and
+// the boards, and on the nearest storeys the volumes standing on them.
+function addDistantGalleryCases(batches, volumes, index, baseY, roomOffset, distant) {
+  const basis = wallBasis(index);
+  const runOffset = pointOnWall(basis, 0, baseY, CABINET_WALL_INSET);
+  const runFrame = new THREE.Matrix4().makeRotationY(basis.rotation)
+    .setPosition(runOffset.x, runOffset.y, runOffset.z);
+  addBox(batches, shelfMaterial, [CABINET_RUN_WIDTH, CARCASE_HEIGHT, CARCASE_BACK_THICKNESS],
+    new THREE.Vector3(0, CARCASE_CENTRE_Y, CARCASE_BACK_Z), 0, runFrame, roomOffset, nicheShade);
+  const headRailY = CARCASE_HEIGHT - RAIL_THICKNESS / 2;
+  addBox(batches, shelfMaterial, [CABINET_RUN_WIDTH, RAIL_THICKNESS, CARCASE_DEPTH],
+    new THREE.Vector3(0, headRailY, CARCASE_CENTRE_Z), 0, runFrame, roomOffset, shelfBoardShade(headRailY));
+  // Past a few storeys a board eleven centimetres thick is a pixel in the fog,
+  // and there are no volumes on it to stand on.
+  for (let shelfIndex = 0; !distant && shelfIndex < SHELVES_PER_WALL; shelfIndex++) {
+    const shelfY = SHELF_BASE_Y + shelfIndex * SHELF_PITCH;
+    addBox(batches, shelfMaterial, [CABINET_RUN_WIDTH, SHELF_THICKNESS, SHELF_DEPTH],
+      new THREE.Vector3(0, shelfY, SHELF_CENTRE_Z), 0, runFrame, roomOffset, shelfBoardShade(shelfY));
+  }
+  if (!volumes) return;
+  const tierWall = index + 7 * (baseY > GALLERY_LEVELS[0] ? 2 : 1);
+  for (let section = 0; section < CABINET_SECTIONS_PER_WALL; section++) {
+    const tangent = (section - (CABINET_SECTIONS_PER_WALL - 1) / 2) * CABINET_SECTION_PITCH;
+    const offset = pointOnWall(basis, tangent, baseY, CABINET_WALL_INSET);
+    sectionFrame.makeRotationY(basis.rotation)
+      .setPosition(offset.x, offset.y, offset.z)
+      .premultiply(roomOffset);
+    for (let shelfIndex = 0; shelfIndex < SHELVES_PER_WALL; shelfIndex++) {
+      const shelfY = SHELF_BASE_Y + shelfIndex * SHELF_PITCH;
+      for (let volume = 0; volume < VOLUMES_PER_SHELF; volume++) {
+        const x = -((VOLUMES_PER_SHELF - 1) * CABINET_BOOK_STEP) / 2 + volume * CABINET_BOOK_STEP;
+        const { height, tint } = volumeVariation(tierWall, shelfIndex, section * VOLUMES_PER_SHELF + volume);
+        placeVolume(volumeMatrix, x, shelfY, BOOK_FRONT_Z + BOOK_DEPTH / 2, height).premultiply(sectionFrame);
+        volumeMatrix.toArray(volumes.matrices, volumes.count * 16);
+        volumes.colors.set(tint, volumes.count * 3);
+        volumes.count++;
+      }
+    }
+  }
+}
+
 // A wall with a hole in it, drawn as one thing. Outlining each of its three
 // pieces put a seam from either corner of the opening up to the ceiling, and
 // these walls are monolithic: only the wall's own frame and the opening cut in
@@ -448,19 +472,21 @@ function addSolidWall(batches, index, roomOffset, outlines = null) {
     pointOnWall(basis, 0, WALL_HEIGHT / 2), basis.rotation, null, roomOffset, null, outlines);
 }
 
-function addDistantWallJoinery(batches, index, roomOffset) {
+function addDistantWallJoinery(batches, index, roomOffset, doorway = false) {
   const basis = wallBasis(index);
   for (const band of WALL_CORNICE_BANDS) {
-    addBox(
-      batches,
-      shelfMaterial,
-      [WALL_WIDTH - 0.58, band.height, band.depth],
-      pointOnWall(basis, 0, band.y, band.inset),
-      basis.rotation,
-      null,
-      roomOffset,
-      null,
-    );
+    for (const [tangent, width] of corniceRuns(band, doorway)) {
+      addBox(
+        batches,
+        shelfMaterial,
+        [width, band.height, band.depth],
+        pointOnWall(basis, tangent, band.y, band.inset),
+        basis.rotation,
+        null,
+        roomOffset,
+        null,
+      );
+    }
   }
   const tangent = WALL_WIDTH / 2 - WALL_PILASTER_WIDTH / 2 - 0.12;
   for (const side of [-1, 1]) {
@@ -509,6 +535,7 @@ function addTemplateChamber(
   roomOffset,
   distant = false,
   glowPositions = [],
+  tierVolumes = null,
 ) {
   const doorWalls = freeWallsForLevel(level);
   const glow = position => {
@@ -603,7 +630,46 @@ function addTemplateChamber(
   for (const index of doorWalls) addDistantDoorWall(batches, index, roomOffset, null);
   for (let index = 0; index < 6; index++) {
     if (!doorWalls.includes(index)) addSolidWall(batches, index, roomOffset, null);
-    addDistantWallJoinery(batches, index, roomOffset);
+    addDistantWallJoinery(batches, index, roomOffset, doorWalls.includes(index));
+  }
+  // The piers of the well, storey on storey, and the columns at each doorway:
+  // shafts and capitals only, which is all that survives the distance. The
+  // piers are what make the shaft a structure rather than a stack of floors.
+  for (const part of WELL_DISTANT_PIER_PARTS) {
+    addBox(batches, part.stone ? wallMaterial : shelfMaterial, part.size, part.position, part.rotation,
+      null, roomOffset, null);
+  }
+  // The galleries, storey on storey: slabs, rails and newels, and on each tier
+  // of cases its back and boards. The storeys nearest the walker's also keep
+  // their volumes, as the course on the floor does.
+  for (const part of galleryParts(doorWalls, false)) {
+    const material = part.kind === 'iron' ? metalMaterial : shelfMaterial;
+    if (part.slab) {
+      const { left, right, depth, height } = part.slab;
+      localMatrix.makeRotationY(part.rotation).setPosition(part.position.x, part.position.y, part.position.z);
+      worldMatrix.copy(localMatrix).premultiply(roomOffset);
+      appendMergedGeometry(batchFor(batches, material), mitredSlabFor(left, right, depth, height).geometry, worldMatrix);
+      continue;
+    }
+    addBox(batches, material, part.size, part.position, part.rotation, null, roomOffset, null, null,
+      part.rotationZ ?? 0);
+  }
+  for (const index of bookWallsForLevel(level)) {
+    const basis = wallBasis(index);
+    for (const tier of GALLERY_LEVELS) {
+      addDistantGalleryCases(batches, tierVolumes, index, tier, roomOffset, distant);
+      // The tiers' reading lamps, as haze only: a point each in the one glow
+      // cloud, which costs the shaft no geometry at all.
+      for (const ratio of [-0.39, -0.195, 0, 0.195, 0.39]) {
+        glow(pointOnWall(basis, ratio * CABINET_RUN_WIDTH, tier + CARCASE_HEIGHT - 0.22, 0.62));
+      }
+    }
+  }
+  for (const index of doorWalls) {
+    for (const part of doorColumnParts(index, false)) {
+      addBox(batches, part.stone ? wallMaterial : shelfMaterial, part.size, part.position, part.rotation,
+        null, roomOffset, null);
+    }
   }
   // Physical shelf bands, slab lips and balustrades already describe every
   // repeated hexagon. Per-box edge lines accumulated into a black wireframe
@@ -641,13 +707,18 @@ export function* vistaBuilder(level) {
   // Four shelved walls, six sections, five shelves, thirty-two volumes: 3840 a
   // chamber, for every floor of the shaft above and below.
   const volumesPerChamber = SHELVED_WALLS * CABINET_SECTIONS_PER_WALL * SHELVES_PER_WALL * VOLUMES_PER_SHELF;
-  const storeyVolumes = storeys => ({
-    matrices: new Float32Array(2 * storeys * volumesPerChamber * 16),
-    colors: new Float32Array(2 * storeys * volumesPerChamber * 3),
+  const storeyVolumes = (storeys, courses = 1) => ({
+    matrices: new Float32Array(2 * storeys * courses * volumesPerChamber * 16),
+    colors: new Float32Array(2 * storeys * courses * volumesPerChamber * 3),
     count: 0,
   });
   const volumes = storeyVolumes(VISTA_WHOLE_BOOK_STOREYS);
-  const distantVolumes = storeyVolumes(VISTA_BOOK_STOREYS - VISTA_WHOLE_BOOK_STOREYS);
+  // Spines and tops only: the storeys past the whole volumes, and the gallery
+  // tiers of the storeys that keep them, which are seen only from the well.
+  // One buffer for both, so the tiers cost no draw of their own.
+  const distantVolumes = storeyVolumes(
+    VISTA_BOOK_STOREYS - VISTA_WHOLE_BOOK_STOREYS + VISTA_WHOLE_BOOK_STOREYS * GALLERY_LEVELS.length,
+  );
   let verticalPassages = 0;
   const glowPositions = [];
   // A wall index is its own axial direction, so the corridor axis follows
@@ -685,6 +756,7 @@ export function* vistaBuilder(level) {
       offsetMatrix,
       storeys > VISTA_DETAIL_STOREYS,
       glowPositions,
+      storeys <= VISTA_WHOLE_BOOK_STOREYS ? distantVolumes : null,
     );
 
     // One real passage begins behind each visible doorway. That is enough to
@@ -752,7 +824,7 @@ export function* vistaBuilder(level) {
   // Once the threshold is crossed the ordinary vista, with both passages, is
   // still present and becomes canonical without a visual substitute.
   if (volumes.count) group.add(instancedVolumes(bookGeometry, volumes));
-  if (distantVolumes.count) group.add(instancedVolumes(distantBookGeometry, distantVolumes));
+  if (distantVolumes.count) group.add(instancedVolumes(shelfFaceBookGeometry, distantVolumes));
   yield* finishVistaGeometryInSteps(group, batches, outlinePositions);
 
   for (let n = -1; n < 1; n++) {

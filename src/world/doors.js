@@ -28,6 +28,7 @@ import {
 } from '../constants.js';
 import { wallBasis } from './geometry.js';
 import { constrainFromWell, stairSurfaceAt } from './well.js';
+import { galleryHeightAt } from './galleries.js';
 
 // Half-width the player's centre may reach before the jambs stop them.
 const DOOR_CLEAR_HALF_WIDTH = DOOR_HALF_WIDTH - PLAYER_RADIUS;
@@ -202,7 +203,23 @@ export function passageWallAt(position, level) {
  *
  * A passage has no well and no flight, so it always answers zero.
  */
-export function constrainToPlace(position, level, footY = 0) {
+export function constrainToPlace(position, level, footY = 0, from = null) {
+  const height = settle(position, level, footY);
+  if (height !== null) return height;
+  // Nothing underfoot within a step: the edge of a gallery, the side of a
+  // spiral stair. Slide along whichever axis still has ground, else stand.
+  if (from) {
+    for (const [x, z] of [[position.x, from.z], [from.x, position.z], [from.x, from.z]]) {
+      position.x = x;
+      position.z = z;
+      const slid = settle(position, level, footY);
+      if (slid !== null) return slid;
+    }
+  }
+  return footY;
+}
+
+function settle(position, level, footY) {
   const hall = hallAt(position, level);
   if (hall) {
     constrainToHall(position, hall);
@@ -210,8 +227,11 @@ export function constrainToPlace(position, level, footY = 0) {
   }
   constrainToRoom(position, level, footY);
   const surface = stairSurfaceAt(position.x, position.z, footY);
-  if (!surface) return 0;
-  return Math.abs(surface.height - footY) <= STAIR_MOUNT_REACH ? surface.height : 0;
+  const ground = surface && Math.abs(surface.height - footY) <= STAIR_MOUNT_REACH ? surface.height : 0;
+  // The flight in the well is the only thing that carries a walker above the
+  // floor out there; the galleries and their stairs stand against the walls.
+  if (ground !== 0) return ground;
+  return galleryHeightAt(position.x, position.z, freeWallsForLevel(level), footY, ground);
 }
 
 /**

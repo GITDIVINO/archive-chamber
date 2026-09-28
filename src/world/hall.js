@@ -231,7 +231,9 @@ const JOIST_DROP = 0.17;
 const JOIST_WIDTH = 0.24;
 const RAIL_DEPTH = 0.07;
 const RAIL_HEIGHT = 0.1;
-const RAIL_LEVELS = [0.18, 1.1, DOOR_HEIGHT - 0.28];
+// The passage rises most of a storey now, so the rails climb it in courses: one
+// a little over halfway, and one under the ceiling.
+const RAIL_LEVELS = [0.18, 1.1, DOOR_HEIGHT / 2 + 1.2, DOOR_HEIGHT - 0.28];
 
 // The four arms, as the direction each runs from the crossing and the turn that
 // lays a box's length along it. Back and ahead are the corridor itself.

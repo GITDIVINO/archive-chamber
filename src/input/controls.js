@@ -17,6 +17,7 @@ const raycaster = new THREE.Raycaster();
 const centerPointer = new THREE.Vector2(0, 0);
 const forwardVector = new THREE.Vector3();
 const rightVector = new THREE.Vector3();
+const previousPosition = new THREE.Vector3();
 
 const WALK_SPEED = 2.6;
 const RUN_SPEED = 5.5;
@@ -53,9 +54,10 @@ export function movePlayer(delta, forwardAxis, strafeAxis, running) {
   // shaft's two coincident flights is the one holding them up, so it is read
   // before the step and handed to the constraint.
   const footY = camera.position.y - EYE_HEIGHT;
+  previousPosition.copy(camera.position);
   camera.position.addScaledVector(forwardVector, forwardAxis * speed);
   camera.position.addScaledVector(rightVector, strafeAxis * speed);
-  camera.position.y = constrainToPlace(camera.position, world.room.level, footY) + EYE_HEIGHT;
+  camera.position.y = constrainToPlace(camera.position, world.room.level, footY, previousPosition) + EYE_HEIGHT;
 }
 
 export function keyboardAxes() {

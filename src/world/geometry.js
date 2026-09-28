@@ -117,6 +117,29 @@ export function boxGeometryFor(width, height, depth) {
   return entry;
 }
 
+// A box whose two long faces are different lengths: a slab laid along a
+// hexagon's side, mitred at either end so that the six of a ring meet at the
+// corners with neither a gap nor an overlap. Local x runs along the side, local
+// z across it with +z outward; each end is given as [x at -z, x at +z].
+const prismGeometryCache = new Map();
+export function mitredSlabFor(left, right, depth, height) {
+  const key = [...left, ...right, depth, height].map(value => value.toFixed(4)).join(':');
+  let entry = prismGeometryCache.get(key);
+  if (!entry) {
+    const geometry = new THREE.BoxGeometry(1, height, depth);
+    const position = geometry.getAttribute('position');
+    for (let vertex = 0; vertex < position.count; vertex++) {
+      const outward = position.getZ(vertex) > 0 ? 1 : 0;
+      position.setX(vertex, position.getX(vertex) < 0 ? left[outward] : right[outward]);
+    }
+    geometry.computeVertexNormals();
+    entry = { geometry, edges: new THREE.EdgesGeometry(geometry, 18) };
+    sharedGeometries.add(geometry).add(entry.edges);
+    prismGeometryCache.set(key, entry);
+  }
+  return entry;
+}
+
 const mergeVertex = new THREE.Vector3();
 const shadeVertex = new THREE.Vector3();
 /**
