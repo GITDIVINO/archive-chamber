@@ -68,16 +68,17 @@ button:focus-visible, .location-record:focus-visible { outline: 1px solid var(--
 
 #reticle { position: absolute; left: 50%; top: 50%; display: none; color: #d8ceb8b0; font-size: 18px; transform: translate(-50%, -50%); }
 #reticle.target { color: var(--accent); }
-#hex-map { position: absolute; left: 24px; bottom: 50px; width: 200px; height: 236px; opacity: .96; pointer-events: none; }
+#hex-map { position: absolute; left: 24px; bottom: 50px; width: 200px; height: 236px; opacity: .96; pointer-events: auto; cursor: pointer; }
 #status { position: absolute; right: 0; bottom: 24px; left: 0; color: var(--muted); font: 10px "Courier New", monospace; letter-spacing: .08em; pointer-events: auto; }
 #cell { position: absolute; left: 24px; width: 200px; border: 0; background: transparent; color: inherit; padding: 0; font: inherit; letter-spacing: inherit; text-align: center; }
 #cell:hover, #cell:focus:not(:focus-visible) { background: transparent; color: inherit; outline: none; }
 #cell:active:not(:disabled) { transform: none; }
-#sound { position: absolute; right: 216px; }
-#open-search, #open-register { position: absolute; bottom: -7px; border: 0; background: transparent; color: var(--muted); padding: 0; font: 600 10px "Courier New", monospace; pointer-events: auto; }
+#sound { position: absolute; right: 236px; }
+#open-search, #open-register, #open-atlas { position: absolute; bottom: -7px; border: 0; background: transparent; color: var(--muted); padding: 0; font: 600 10px "Courier New", monospace; pointer-events: auto; }
 #open-search { right: 28px; }
 #open-register { right: 92px; }
-#open-search:hover, #open-register:hover { background: transparent; color: var(--ink); }
+#open-atlas { right: 178px; }
+#open-search:hover, #open-register:hover, #open-atlas:hover { background: transparent; color: var(--ink); }
 #notice { position: absolute; bottom: 54px; left: 50%; max-width: calc(100vw - 48px); color: #6d614e; font: 11px "Courier New", monospace; letter-spacing: .04em; opacity: 0; transform: translate(-50%, 4px); transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out); white-space: nowrap; }
 #notice.visible { opacity: 1; transform: translate(-50%, 0); }
 
@@ -172,6 +173,7 @@ button:focus-visible, .location-record:focus-visible { outline: 1px solid var(--
   #sound { display: none; }
   #open-search { right: 16px; }
   #open-register { right: 74px; }
+  #open-atlas { right: 150px; }
   #search-panel, #register-panel { width: calc(100vw - 24px); padding: 20px; }
   .register-row { grid-template-columns: 34px 1fr; }
   .register-address { display: none; }
@@ -214,3 +216,16 @@ button:focus-visible, .location-record:focus-visible { outline: 1px solid var(--
   p.controls:not(.controls-touch) { display: none; }
   .controls-touch { display: block; }
 }
+
+/* The atlas lies over the whole screen in the chamber's own dark, so the lit
+   floors on it read as the library seen from outside rather than as a form. */
+#atlas-panel { display: none; position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 55%, rgba(26,16,9,.94), rgba(6,4,2,.97)); pointer-events: auto; font-family: "Courier New", monospace; color: #d3b88c; }
+#atlas-panel.visible { display: block; }
+#atlas { position: absolute; inset: 0; width: 100%; height: 100%; filter: none; cursor: crosshair; touch-action: none; }
+.atlas-head { position: absolute; left: 28px; top: 22px; pointer-events: none; }
+.atlas-head .eyebrow { margin: 0; color: #a88f6a; }
+.atlas-level { margin: 6px 0 0; font: 700 20px "Courier New", monospace; letter-spacing: .04em; color: #ffd18a; }
+.atlas-keys { margin: 8px 0 0; max-width: 560px; font: 10px/1.6 "Courier New", monospace; letter-spacing: .05em; color: #a88f6a; }
+.atlas-hint { position: absolute; left: 0; right: 0; bottom: 26px; margin: 0; text-align: center; font: 600 12px "Courier New", monospace; letter-spacing: .08em; color: #ffd18a; pointer-events: none; }
+#close-atlas { position: absolute; right: 28px; top: 22px; padding: 8px 14px; border: 1px solid #a88f6a; background: transparent; color: #d3b88c; }
+#close-atlas:hover { background: rgba(211,184,140,.12); }

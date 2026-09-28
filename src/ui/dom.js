@@ -20,6 +20,13 @@ export const addressSubmit = find('#address-submit');
 export const searchResult = find('#search-result');
 export const closeSearchButton = find('#close-search');
 
+export const atlasButton = find('#open-atlas');
+export const atlasPanel = find('#atlas-panel');
+export const atlasCanvas = find('#atlas');
+export const atlasLevel = find('#atlas-level');
+export const atlasHint = find('#atlas-hint');
+export const closeAtlasButton = find('#close-atlas');
+
 export const registerButton = find('#open-register');
 export const registerPanel = find('#register-panel');
 export const registerBody = find('#register-body');

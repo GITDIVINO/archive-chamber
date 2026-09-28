@@ -16,14 +16,14 @@
         <p class="library-description">the catalogue contains every possible 410-page volume. the world repeats it without end.</p>
         <p id="startup-state" class="startup-state">locating archive…</p>
         <button id="start" type="button" disabled>enter the chamber</button>
-        <p class="controls">wasd — move · mouse — look · e — read · f — search · r — register · shift — faster · m — sound</p>
-        <p class="controls controls-touch">left half — move · right half — look · tap right — read · register — chambers entered · search — catalogue</p>
+        <p class="controls">wasd — move · mouse — look · e — read · f — search · r — register · tab — map · shift — faster · m — sound</p>
+        <p class="controls controls-touch">left half — move · right half — look · tap right — read · map — go anywhere · register — chambers entered · search — catalogue</p>
         <p class="attribution">inspired by the library of babel by jorge luis borges, 1941. an independent work, not affiliated with or endorsed by the borges estate.</p>
       </section>
 
       <div id="reticle" aria-hidden="true">+</div>
-      <canvas id="hex-map" aria-label="world adjacency map"></canvas>
-      <div id="status"><button id="cell" type="button" title="copy exact w3 room address">chamber locating…</button><span id="sound">sound: muted</span><button id="open-register" type="button">register</button><button id="open-search" type="button">search</button></div>
+      <canvas id="hex-map" aria-label="map of the floors around you — click to open the full map" title="open the map (tab)"></canvas>
+      <div id="status"><button id="cell" type="button" title="copy exact w3 room address">chamber locating…</button><span id="sound">sound: muted</span><button id="open-atlas" type="button">map</button><button id="open-register" type="button">register</button><button id="open-search" type="button">search</button></div>
       <div id="notice" role="status" aria-live="polite"></div>
 
       <aside id="search-panel" aria-live="polite" aria-label="catalogue search">
@@ -43,6 +43,16 @@
         <p id="search-result" class="search-result"></p>
       </aside>
 
+      <section id="atlas-panel" aria-label="map of the library">
+        <canvas id="atlas" aria-label="the floors of the library around you"></canvas>
+        <div class="atlas-head">
+          <p class="eyebrow">map</p>
+          <p id="atlas-level" class="atlas-level">level 0</p>
+          <p class="atlas-keys">click a chamber — go there · wheel or q / e — floor · drag — turn · wasd — slide · c — back to you · ctrl + wheel — zoom</p>
+        </div>
+        <p id="atlas-hint" class="atlas-hint"></p>
+        <button id="close-atlas" class="overlay-close" type="button">close</button>
+      </section>
       <aside id="register-panel" aria-live="polite" aria-label="register of chambers">
         <header class="overlay-header">
           <p class="eyebrow">register</p>
