@@ -24,7 +24,6 @@ import { WALL_DIRECTIONS } from '../../world-model.js';
 import {
   BOOK_DEPTH,
   BOOK_FRONT_Z,
-  BOOK_HEIGHT,
   CABINET_RUN_WIDTH,
   CABINET_SECTIONS_PER_WALL,
   CABINET_POST_WIDTH,
@@ -78,14 +77,15 @@ import {
   RAIL_THICKNESS,
   SHELF_CENTRE_Z,
   SHELF_DEPTH,
-  SHELF_SURFACE_OFFSET,
   SHELF_THICKNESS,
   WALL_CORNICE_BANDS,
   WALL_PILASTER_WIDTH,
   doorRevealParts,
   nicheShade,
+  placeVolume,
   revealShade,
   shelfBoardShade,
+  volumeVariation,
 } from './room.js';
 import {
   WELL_BALUSTRADE_PARTS,
@@ -171,6 +171,7 @@ function instancedVolumes(geometry, volumes) {
     16,
   );
   mesh.instanceMatrix.needsUpdate = true;
+  mesh.instanceColor = new THREE.InstancedBufferAttribute(volumes.colors.subarray(0, volumes.count * 3), 3);
   mesh.castShadow = false;
   mesh.receiveShadow = true;
   mesh.frustumCulled = false;
@@ -381,12 +382,13 @@ function addDistantBookWall(batches, volumes, index, roomOffset) {
       .premultiply(roomOffset);
     for (let shelfIndex = 0; shelfIndex < SHELVES_PER_WALL; shelfIndex++) {
       const shelfY = SHELF_BASE_Y + shelfIndex * SHELF_PITCH;
-      const centreY = shelfY + SHELF_SURFACE_OFFSET + BOOK_HEIGHT / 2;
       for (let volume = 0; volume < VOLUMES_PER_SHELF; volume++) {
         const x = -((VOLUMES_PER_SHELF - 1) * CABINET_BOOK_STEP) / 2 + volume * CABINET_BOOK_STEP;
-        volumeMatrix.makeTranslation(x, centreY, BOOK_FRONT_Z + BOOK_DEPTH / 2)
-          .premultiply(sectionFrame);
+        // Bound and sized exactly as the same place in the walker's chamber.
+        const { height, tint } = volumeVariation(index, shelfIndex, section * VOLUMES_PER_SHELF + volume);
+        placeVolume(volumeMatrix, x, shelfY, BOOK_FRONT_Z + BOOK_DEPTH / 2, height).premultiply(sectionFrame);
         volumeMatrix.toArray(volumes.matrices, volumes.count * 16);
+        volumes.colors.set(tint, volumes.count * 3);
         volumes.count++;
       }
     }
@@ -641,6 +643,7 @@ export function* vistaBuilder(level) {
   const volumesPerChamber = SHELVED_WALLS * CABINET_SECTIONS_PER_WALL * SHELVES_PER_WALL * VOLUMES_PER_SHELF;
   const storeyVolumes = storeys => ({
     matrices: new Float32Array(2 * storeys * volumesPerChamber * 16),
+    colors: new Float32Array(2 * storeys * volumesPerChamber * 3),
     count: 0,
   });
   const volumes = storeyVolumes(VISTA_WHOLE_BOOK_STOREYS);

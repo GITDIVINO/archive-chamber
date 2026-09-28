@@ -609,7 +609,8 @@ const chamberLayout = await page.evaluate(async () => {
     ),
     bookMeshes: room.userData.bookMeshes.length,
     bookCount: room.userData.bookMeshes.reduce((total, mesh) => total + mesh.count, 0),
-    allBooksWhite: colours.every(value => value === 1),
+    bindingTints: new Set(colours.map(value => value.toFixed(3))).size,
+    tintRange: [Math.min(...colours), Math.max(...colours)],
   };
 });
 assert.equal(chamberLayout.doorWalls.length, 2, 'a chamber has exactly two exit walls');
@@ -651,7 +652,13 @@ assert.equal(
 );
 assert.equal(chamberLayout.bookMeshes, 1, 'all white books share one material batch');
 assert.equal(chamberLayout.bookCount, 3840, 'all four book walls remain fully populated');
-assert.equal(chamberLayout.allBooksWhite, true, 'every physical volume uses the same white tint');
+// Bindings vary by set, as on real shelves, but stay a tint of the one leather:
+// no volume goes black or glows.
+assert.ok(chamberLayout.bindingTints > 6, 'volumes come in more than one binding');
+assert.ok(
+  chamberLayout.tintRange[0] > 0.3 && chamberLayout.tintRange[1] < 1.8,
+  `binding tints must stay a shade of the leather, measured ${chamberLayout.tintRange}`,
+);
 assert.ok(
   chamberLayout.vistaVertices <= MAX_VISTA_VERTICES,
   `vista geometry must stay below ${MAX_VISTA_VERTICES} vertices, measured ${chamberLayout.vistaVertices}`,
