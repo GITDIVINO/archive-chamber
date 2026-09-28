@@ -151,6 +151,10 @@ export const VISTA_DETAIL_STOREYS = 3;
 // enough to read as daylight falling rather than a lamp's beam, narrow enough
 // that the floors round it stay in their amber dark.
 export const LIGHT_SHAFT_RADIUS = WELL_RADIUS * 0.26;
+// Where the hanging lamps of the well sit: outside the light column, well
+// inside the guard rail, at about a third of the way up each storey.
+const HANGING_LAMP_RADIUS_RATIO = 0.55;
+const HANGING_LAMP_HEIGHT_RATIO = 0.36;
 
 
 // Motes packed into the column of light, on top of the 720 round the well.
@@ -624,6 +628,26 @@ function addTemplateChamber(
         new THREE.Vector3(position.x + dx, position.y, position.z + dz), 0, null, roomOffset, null, null);
     }
     addBox(batches, lampMaterial, [0.19, 0.28, 0.19], position, 0, null, roomOffset, null, null);
+    glow(position);
+  }
+  // Lamps hung in the open air of the well on long chains, as the reference
+  // has: thin vertical lines that show how far it is to the top, and a warm
+  // bead at the end of each. Six to a storey at the corners of the opening, so
+  // the ring is the same after a sixth turn; the drop varies from storey to
+  // storey and never within one, which keeps that symmetry. Same batches and
+  // the same glow cloud as the lanterns above, so no extra draw call.
+  const drop = 5 + ((Math.abs(Math.round(roomOffset.elements[13] / WALL_HEIGHT)) * 7) % 5);
+  for (let k = 0; k < 6; k++) {
+    const angle = Math.PI / 6 + k * Math.PI / 3;
+    const x = Math.cos(angle) * WELL_RADIUS * HANGING_LAMP_RADIUS_RATIO;
+    const z = Math.sin(angle) * WELL_RADIUS * HANGING_LAMP_RADIUS_RATIO;
+    const y = WALL_HEIGHT * HANGING_LAMP_HEIGHT_RATIO;
+    const position = new THREE.Vector3(x, y, z);
+    addBox(batches, lampMaterial, [0.22, 0.32, 0.22], position, 0, null, roomOffset, null);
+    addBox(batches, metalMaterial, [0.34, 0.06, 0.34],
+      new THREE.Vector3(x, y + 0.2, z), 0, null, roomOffset, null);
+    addBox(batches, metalMaterial, [0.03, drop, 0.03],
+      new THREE.Vector3(x, y + 0.23 + drop / 2, z), 0, null, roomOffset, null);
     glow(position);
   }
   // Repeated cabinet lights turn the shaft into a receding constellation. No
