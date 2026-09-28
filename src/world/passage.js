@@ -4,7 +4,7 @@
  * A passage is not part of the hex plane. It has no length there and takes no
  * room on the map: two chambers stay exactly as far apart as they were, and a
  * passage between them can be as long as it likes. That is the whole trick,
- * and it is what lets a chamber keep four shelved walls and 3840 volumes while
+ * and it is what lets a chamber keep four shelved walls and 11520 volumes while
  * still reaching every neighbour.
  *
  * On one level a chamber has two free walls, and they face each other. If a

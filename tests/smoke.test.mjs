@@ -110,7 +110,7 @@ assert.match(
 );
 assert.match(
   await page.locator('#cell').getAttribute('data-full-address'),
-  /^w3;/,
+  /^w4;/,
   'and the exact record is still what the button copies',
 );
 
@@ -361,10 +361,10 @@ async function openAddress(address) {
   await page.locator('#address-submit').click();
 }
 
-await openAddress('w3;0;2;2;13;197');
+await openAddress('w4;0;2;2;13;197');
 await page.waitForSelector('#book-panel.visible');
 assert.equal(await page.locator('.page-counter span').first().textContent(), '197');
-assert.equal(await page.locator('#book-address').textContent(), 'w3;0;2;2;13;197');
+assert.equal(await page.locator('#book-address').textContent(), 'w4;0;2;2;13;197');
 assert.equal(await page.locator('#location-record').textContent(), 'copy world record');
 assert.equal(await page.locator('#catalogue-record').isHidden(), false, 'a world record also exposes its catalogue address');
 const manifestoPage = (await page.locator('#book-page').textContent()).replace(/\n/g, '');
@@ -376,7 +376,7 @@ assert.ok(
 // paging keeps the address and the counter in step
 await page.locator('#next-page').click();
 assert.equal(await page.locator('.page-counter span').first().textContent(), '198');
-assert.equal(await page.locator('#book-address').textContent(), 'w3;0;2;2;13;198');
+assert.equal(await page.locator('#book-address').textContent(), 'w4;0;2;2;13;198');
 
 // --- a catalogue address opens without a world record ------------------------
 await openAddress('v3;129d19;2;2;13;197');
@@ -412,7 +412,7 @@ await page.locator('#address-input').selectText();
 // Chromium builds and leaves the previous address untouched. `insertText`
 // follows the browser's real editing path, which is the contract exercised
 // here: maxlength accepts the prefix and truncates the remainder.
-await page.keyboard.insertText('w3;' + '1'.repeat(20000));
+await page.keyboard.insertText('w4;' + '1'.repeat(20000));
 assert.equal(
   (await page.locator('#address-input').inputValue()).length,
   8192,
@@ -438,7 +438,7 @@ await openCatalogue();
 await page.evaluate(() => {
   const input = document.querySelector('#address-input');
   input.removeAttribute('maxlength');
-  input.value = 'w3;' + '1'.repeat(50000);
+  input.value = 'w4;' + '1'.repeat(50000);
 });
 const oversizedResponse = await page.evaluate(() => {
   const started = performance.now();
@@ -695,7 +695,7 @@ assert.ok(
 // Driven against the page's own module instances, so this exercises the same
 // camera and room registry the player does rather than a copy.
 await openCatalogue();
-await page.locator('#address-input').fill('w3;0');
+await page.locator('#address-input').fill('w4;0');
 await page.locator('#address-submit').click();
 await page.waitForFunction(() => document.querySelector('#search-result').textContent === 'world room opened');
 
@@ -1272,7 +1272,7 @@ assert.equal(register.backHome, 1, 'returning to a chamber returns its number, n
 assert.equal(register.backFresh, register.freshOrdinal, 'and the same holds walking back again');
 assert.equal(register.newest.ordinal, register.freshOrdinal, 'the notebook reads newest first: the way back is what is wanted most');
 assert.equal(register.oldest.ordinal, 1, 'and the first chamber is at the bottom of it');
-assert.match(register.newest.address, /^w3;/, 'every row carries the exact record beside the number');
+assert.match(register.newest.address, /^w4;/, 'every row carries the exact record beside the number');
 assert.ok(
   register.mapOrdinals.some(ordinal => ordinal === null),
   'the map leaves a chamber blank until it has been walked into, because until then nobody has named it',

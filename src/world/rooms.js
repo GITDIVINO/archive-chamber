@@ -1,7 +1,7 @@
 /**
  * Which chamber currently exists in the scene.
  *
- * w3 is unbounded in the plane and in height, but only the player's own hex is
+ * The world is unbounded in the plane and in height, but only the player's own hex is
  * ever built: entering a new room disposes the previous one. This is a renderer
  * limit, not a model one.
  */
@@ -875,7 +875,12 @@ export function paintRoomLabels(budgetMs) {
   if (room) paintPendingSpines(room, budgetMs);
 }
 
+// The floor volumes and the galleries' volumes: every book in the current
+// chamber that can be taken down.
 export function currentBookMeshes() {
   const { q, r, level } = world.room;
-  return roomRegistry.get(roomKey(q, r, level))?.userData.bookMeshes ?? [];
+  const room = roomRegistry.get(roomKey(q, r, level));
+  if (!room) return [];
+  const { bookMeshes, galleryBooks } = room.userData;
+  return galleryBooks ? [...bookMeshes, galleryBooks] : bookMeshes;
 }

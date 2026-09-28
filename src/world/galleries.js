@@ -16,10 +16,10 @@
  * chamber, two either side of each opening, and each the mirror of its
  * neighbour across the doorway.
  *
- * Only the lowest course of cases holds the chamber's 3840 catalogued volumes.
- * The tiers above are shelved too, but the placement issues no addresses past
- * the fifth shelf of a wall, so their volumes stand closed: bindings without
- * titles, which cannot be taken down.
+ * Every course of cases is catalogued: the placement numbers a wall's shelves
+ * 1-5 on the floor, 6-10 on the first gallery and 11-15 on the second, 11520
+ * volumes to a chamber. The galleries' volumes carry no lettered spines, but
+ * any of them can be taken down and read.
  *
  * Plain parts, as in well.js and columns.js, so the chamber and the shaft build
  * the same structure in their own batches.

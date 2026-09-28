@@ -1,8 +1,9 @@
 /**
  * Builds one hexagonal chamber.
  *
- * A room holds 3840 volumes. Giving each one a mesh, an outline and a spine
- * quad cost roughly 1200 draw calls per frame; instead the volumes become
+ * A room holds 11520 volumes, 3840 of them on the floor. Giving each floor
+ * volume a mesh, an outline and a spine quad cost roughly 1200 draw calls per
+ * frame; instead the volumes become
  * three InstancedMeshes, their outlines one LineSegments, and their labels one
  * merged mesh per spine atlas.  A full room now costs under twenty calls.
  */
@@ -916,10 +917,9 @@ function addCaseRun(room, frame) {
   }
 }
 
-// The tiers of cases standing on the galleries. Built as the course on the
-// floor is built, and filled as it is, but their volumes carry no record: the
-// placement gives a wall five shelves and these are above them. They are drawn
-// apart from the catalogued volumes, as spines and tops only: nobody on a
+// The tiers of cases standing on the galleries: shelves 6-15 of each wall.
+// Built as the course on the floor is built, and filled as it is. They are
+// drawn apart from the floor's volumes, as spines and tops only: nobody on a
 // gallery can see a volume's sides past its neighbours.
 function addGalleryCases(room, index) {
   const basis = wallBasis(index);
@@ -1030,6 +1030,9 @@ function galleryShellFor(doorWalls, shelvedWalls) {
       count: matrices.length,
       matrix: new THREE.InstancedBufferAttribute(matrixArray, 16),
       color: new THREE.InstancedBufferAttribute(colorArray, 3),
+      walls: Object.freeze([...shelvedWalls]),
+      centres: Float32Array.from({ length: matrices.length * 3 }, (_, element) =>
+        matrixArray[Math.floor(element / 3) * 16 + 12 + element % 3]),
     },
   };
   galleryShells.set(key, shell);
@@ -1061,17 +1064,87 @@ function mergedWithShell(batch, shellBatch) {
   return new THREE.Mesh(geometry, batch.material);
 }
 
-// The gallery books: not in the catalogue, so they stand apart from the
-// chamber's own volumes, one instanced draw for every tier together.
+// The gallery books: one instanced draw for every tier together, apart from
+// the chamber's floor volumes because their buffers are shared by every
+// chamber of an orientation. They are catalogue books all the same, on shelves
+// 6-15 of their wall; working out 7680 records would double the cost of a
+// chamber, so a record is worked out when a volume is first aimed at.
 function addGalleryVolumes(room, shell) {
   const volumes = new THREE.InstancedMesh(shelfFaceBookGeometry, bookMaterials[0], shell.volumes.count);
   volumes.instanceMatrix = shell.volumes.matrix;
   volumes.instanceColor = shell.volumes.color;
   volumes.userData.galleryVolumes = true;
-  volumes.raycast = () => {};
+  volumes.userData.shelvedWalls = shell.volumes.walls;
+  volumes.userData.records = [];
+  volumes.userData.centres = shell.volumes.centres;
+  volumes.raycast = raycastGalleryVolumes;
   volumes.castShadow = false;
   volumes.receiveShadow = true;
   room.add(volumes);
+  room.userData.galleryBooks = volumes;
+}
+
+// Picking runs every frame, and three.js tests every instance of a mesh
+// against the ray: 7680 more a frame for volumes that are nearly all out of
+// reach. Only those whose centre is within reach of the eye are tested.
+const galleryRayOrigin = new THREE.Vector3();
+const galleryInverse = new THREE.Matrix4();
+const galleryInstanceMatrix = new THREE.Matrix4();
+const galleryInstanceMesh = new THREE.Mesh();
+const galleryHits = [];
+const GALLERY_PICK_SLACK = 0.6;
+function raycastGalleryVolumes(raycaster, intersects) {
+  galleryInverse.copy(this.matrixWorld).invert();
+  galleryRayOrigin.copy(raycaster.ray.origin).applyMatrix4(galleryInverse);
+  const reach = Math.min(raycaster.far, 1e4) + GALLERY_PICK_SLACK;
+  const reachSquared = reach * reach;
+  const { centres } = this.userData;
+  galleryInstanceMesh.geometry = this.geometry;
+  galleryInstanceMesh.material = this.material;
+  for (let instance = 0; instance < this.count; instance++) {
+    const dx = centres[instance * 3] - galleryRayOrigin.x;
+    const dy = centres[instance * 3 + 1] - galleryRayOrigin.y;
+    const dz = centres[instance * 3 + 2] - galleryRayOrigin.z;
+    if (dx * dx + dy * dy + dz * dz > reachSquared) continue;
+    this.getMatrixAt(instance, galleryInstanceMatrix);
+    galleryInstanceMesh.matrixWorld.multiplyMatrices(this.matrixWorld, galleryInstanceMatrix);
+    galleryInstanceMesh.raycast(raycaster, galleryHits);
+    for (const hit of galleryHits) {
+      hit.instanceId = instance;
+      hit.object = this;
+      intersects.push(hit);
+    }
+    galleryHits.length = 0;
+  }
+}
+
+const GALLERY_VOLUMES_PER_TIER = CABINET_SECTIONS_PER_WALL * SHELVES_PER_WALL * VOLUMES_PER_SHELF;
+const GALLERY_VOLUMES_PER_SECTION = SHELVES_PER_WALL * VOLUMES_PER_SHELF;
+
+/** The catalogue record of one gallery volume, in the order addGalleryCases lays them. */
+export function galleryRecordFor(mesh, instanceId) {
+  const cached = mesh.userData.records[instanceId];
+  if (cached) return cached;
+  const room = mesh.parent?.userData;
+  if (!room || instanceId < 0 || instanceId >= mesh.count) return null;
+  const perWall = GALLERY_VOLUMES_PER_TIER * GALLERY_LEVELS.length;
+  const wallIndex = mesh.userData.shelvedWalls[Math.floor(instanceId / perWall)];
+  const tier = Math.floor((instanceId % perWall) / GALLERY_VOLUMES_PER_TIER) + 1;
+  const inTier = instanceId % GALLERY_VOLUMES_PER_TIER;
+  const section = Math.floor(inTier / GALLERY_VOLUMES_PER_SECTION);
+  const shelfIndex = Math.floor((inTier % GALLERY_VOLUMES_PER_SECTION) / VOLUMES_PER_SHELF);
+  const worldLocation = {
+    q: room.q,
+    r: room.r,
+    level: room.level,
+    wall: canonicalWallForWallIndex(room.level, wallIndex),
+    shelf: tier * SHELVES_PER_WALL + shelfIndex + 1,
+    volume: section * VOLUMES_PER_SHELF + (inTier % VOLUMES_PER_SHELF) + 1,
+    page: 1,
+  };
+  const record = bookRecord(catalogBookIndexFor(worldLocation), worldLocation);
+  mesh.userData.records[instanceId] = record;
+  return record;
 }
 
 // Collects one wall's volumes into the room-wide batches instead of adding a
@@ -1214,10 +1287,6 @@ function cloneVisualChild(source) {
     clone.instanceMatrix = source.instanceMatrix;
     clone.instanceColor = source.instanceColor ?? null;
     clone.userData.records = [];
-    if (source.userData.galleryVolumes) {
-      clone.userData.galleryVolumes = true;
-      clone.raycast = () => {};
-    }
   } else if (source.isLineSegments) {
     clone = new THREE.LineSegments(source.geometry, source.material);
   } else if (source.isLine) {
@@ -1236,11 +1305,13 @@ function cloneVisualChild(source) {
 function cloneVisualRoom(source, q, r, level, template = false) {
   const room = new THREE.Group();
   const bookMeshes = [];
+  let galleryBooks = null;
   for (const child of source.children) {
     const clone = cloneVisualChild(child);
     if (!clone) continue;
     room.add(clone);
     if (clone.isInstancedMesh && !clone.userData.galleryVolumes) bookMeshes.push(clone);
+    if (clone.userData.galleryVolumes) galleryBooks = clone;
   }
   const sourceDisturbed = source.userData.templateDisturbed
     ?? tracesFor(worldRoomIndexFor(source.userData.q, source.userData.r, source.userData.level), source.userData.level).disturbed;
@@ -1249,6 +1320,7 @@ function cloneVisualRoom(source, q, r, level, template = false) {
     r,
     level,
     bookMeshes,
+    galleryBooks,
     spineAtlases: [],
     pendingSpines: [],
     deferredSpines: [],

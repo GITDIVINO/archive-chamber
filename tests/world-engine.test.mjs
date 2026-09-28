@@ -11,8 +11,10 @@ import {
   WORLD_BOOK_OFFSET,
   WORLD_FINGERPRINT,
   WORLD_MANIFESTO_LOCATION,
+  WORLD_SHELVES_PER_WALL,
   WORLD_VOLUMES_PER_ROOM,
   WORLD_VOLUMES_PER_SHELF,
+  W3_WORLD_BOOK_OFFSET,
   bookWallsForLevel,
   canonicalWallForWallIndex,
   catalogBookIndexFor,
@@ -34,12 +36,13 @@ import {
   worldSlotIndexForCatalogPlacement,
 } from '../world-engine.js';
 
-assert.equal(WORLD_ALGORITHM_VERSION, 'w3');
-assert.equal(WORLD_FINGERPRINT, 'w3-axial-level-zigzag-cantor-cycle-3840-780712640-20260809');
+assert.equal(WORLD_ALGORITHM_VERSION, 'w4');
+assert.equal(WORLD_FINGERPRINT, 'w4-axial-level-zigzag-cantor-cycle-11520-780710720-20260928');
 assert.equal(WORLD_BOOK_COUNT, BOOK_SPACE_SIZE);
-assert.equal(WORLD_BOOK_OFFSET, 780712640n);
+assert.equal(WORLD_BOOK_OFFSET, 780710720n);
 assert.equal(WORLD_VOLUMES_PER_SHELF, 192);
-assert.equal(WORLD_VOLUMES_PER_ROOM, 3840n);
+assert.equal(WORLD_SHELVES_PER_WALL, 15, 'five shelves on the floor and five on each gallery');
+assert.equal(WORLD_VOLUMES_PER_ROOM, 11520n);
 
 // --- rooms are (q, r, level) and the encoding is reversible ------------------
 const rooms = [
@@ -137,7 +140,7 @@ for (const [dq, dr] of DIRECTIONS) {
 for (const [q, r, level] of [[0n, 0n, 0n], [5n, -3n, 2n], [-11n, 8n, -4n]]) {
   const slots = new Set();
   for (let wall = 1; wall <= 4; wall++) {
-    for (let shelf = 1; shelf <= 5; shelf++) {
+    for (let shelf = 1; shelf <= WORLD_SHELVES_PER_WALL; shelf++) {
       for (let volume = 1; volume <= WORLD_VOLUMES_PER_SHELF; volume++) {
         const slot = worldSlotIndexFor({ q, r, level, wall, shelf, volume, page: 1 });
         slots.add(slot.toString());
@@ -146,7 +149,7 @@ for (const [q, r, level] of [[0n, 0n, 0n], [5n, -3n, 2n], [-11n, 8n, -4n]]) {
       }
     }
   }
-  assert.equal(slots.size, Number(WORLD_VOLUMES_PER_ROOM), 'a room holds exactly 3840 volumes');
+  assert.equal(slots.size, Number(WORLD_VOLUMES_PER_ROOM), 'a room holds exactly 11520 volumes');
 }
 
 // --- the catalogue still cycles ---------------------------------------------
@@ -165,8 +168,8 @@ assert.equal(worldLocationForSlotIndex(someSlot).page, 1);
 // --- the manifesto keeps its place ------------------------------------------
 assert.equal(WORLD_MANIFESTO_LOCATION.level, 0n);
 assert.equal(catalogBookIndexFor(WORLD_MANIFESTO_LOCATION), bookIndexFor(MANIFESTO_LOCATION));
-assert.equal(createWorldPageAddress(WORLD_MANIFESTO_LOCATION), 'w3;0;2;2;13;197');
-assert.equal(createWorldRoomAddress({ q: 0n, r: 0n, level: 0n }), 'w3;0');
+assert.equal(createWorldPageAddress(WORLD_MANIFESTO_LOCATION), 'w4;0;2;2;13;197');
+assert.equal(createWorldRoomAddress({ q: 0n, r: 0n, level: 0n }), 'w4;0');
 
 // --- addresses -------------------------------------------------------------
 for (const [q, r, level] of rooms) {
@@ -184,13 +187,29 @@ for (const [q, r, level] of rooms) {
   assert.equal(parseWorldRoomAddress(createWorldRoomAddress({ q, r, level })).level, level);
 }
 
-assert.throws(() => parseWorldPageAddress('w3;0;2;2;13;411'), RangeError);
-assert.throws(() => parseWorldPageAddress('w3;0;5;2;13;197'), RangeError);
-assert.throws(() => parseWorldPageAddress('w3;0;2;2;193;197'), RangeError);
+assert.throws(() => parseWorldPageAddress('w4;0;2;2;13;411'), RangeError);
+assert.throws(() => parseWorldPageAddress('w4;0;5;2;13;197'), RangeError);
+assert.throws(() => parseWorldPageAddress('w4;0;2;16;13;197'), RangeError);
+assert.throws(() => parseWorldPageAddress('w4;0;2;2;193;197'), RangeError);
+assert.throws(() => parseWorldPageAddress('w3;0;2;6;13;197'), RangeError, 'w3 walls had five shelves');
 assert.throws(() => parseWorldPageAddress('w2;0;2;2;33;197'), RangeError);
-assert.throws(() => parseWorldPageAddress('w4;0;2;2;13;197'), TypeError);
-assert.throws(() => parseWorldRoomAddress('w3;0A'), TypeError);
-assert.throws(() => parseWorldRoomAddress('w3;007'), TypeError);
+assert.throws(() => parseWorldPageAddress('w5;0;2;2;13;197'), TypeError);
+assert.throws(() => parseWorldRoomAddress('w4;0A'), TypeError);
+assert.throws(() => parseWorldRoomAddress('w4;007'), TypeError);
+
+// Published w3 addresses keep their 3840-slot placement and still open the
+// manifesto they named.
+const w3Manifesto = parseWorldPageAddress('w3;0;2;2;13;197');
+assert.equal(w3Manifesto.worldVersion, 'w3');
+assert.equal(catalogBookIndexFor(w3Manifesto), bookIndexFor(MANIFESTO_LOCATION));
+assert.equal(createWorldPageAddress(w3Manifesto), 'w3;0;2;2;13;197');
+assert.equal(W3_WORLD_BOOK_OFFSET, 780712640n, 'the w3 offset is frozen');
+// Every book a w3 room held is still in the catalogue under its old address:
+// the placements differ, the catalogue does not.
+assert.notEqual(
+  catalogBookIndexFor(parseWorldPageAddress('w3;1f;3;4;100;1')),
+  catalogBookIndexFor(parseWorldPageAddress('w4;1f;3;4;100;1')),
+);
 
 // Published w2 addresses retain their original 640-slot placement. They open
 // the same physical catalogue copy even though new rooms use the wider w3 map.

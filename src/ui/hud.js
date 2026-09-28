@@ -18,7 +18,7 @@ export function showNotice(text) {
 
 /**
  * The status line carries the walker's own number, because that is the one a
- * person can hold. The world's h-tag and the exact w3 record are each one
+ * person can hold. The world's h-tag and the exact world record are each one
  * gesture away — the tag in the register, the record in the clipboard.
  */
 export function setChamberLabel(ordinal, tag, address) {
