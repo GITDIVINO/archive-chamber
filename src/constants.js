@@ -19,7 +19,13 @@ export const WORLD_CEILING_COLOR = 0x3a2c24;
 // (0x2e1e12) so each further plane came up out of the dark; that gave depth,
 // but it turned the whole shaft into one flat brown field. Depth is now carried
 // by the lantern glows, which fog does not touch (see lanternGlowMaterial).
-export const WORLD_DISTANCE_COLOR = 0x24160c;
+export const WORLD_DISTANCE_COLOR = 0x35414b;
+// Cold air, warm flames: the reference's whole trick. Fill light and haze are
+// slate; only lanterns, glows and the light column stay amber, so a flame reads
+// as a flame against air it does not colour.
+export const WORLD_SKY_FILL_COLOR = 0x6f8296;
+export const WORLD_GROUND_FILL_COLOR = 0x2a2a30;
+export const WORLD_AMBIENT_COLOR = 0xb4c4d4;
 
 // --- the warm palette ---------------------------------------------------------
 // Everything a hand touches is wood; everything that holds the building up is
