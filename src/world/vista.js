@@ -51,6 +51,7 @@ import {
   distantFixtureMaterial,
   lanternGlowMaterial,
   lampMaterial,
+  lightShaftMaterial,
   metalMaterial,
   shelfMaterial,
   vistaCeilingMaterial,
@@ -146,6 +147,22 @@ export const VISTA_BOOK_STOREYS = 2;
 // How far up and down the shaft a storey keeps its bars. See isThinPart.
 export const VISTA_DETAIL_STOREYS = 3;
 
+// The column of light down the well: a quarter of the well's radius, wide
+// enough to read as daylight falling rather than a lamp's beam, narrow enough
+// that the floors round it stay in their amber dark.
+export const LIGHT_SHAFT_RADIUS = WELL_RADIUS * 0.26;
+
+
+// Motes packed into the column of light, on top of the 720 round the well.
+const SHAFT_DUST_COUNT = 360;
+
+// A mote is lit by the column when it is inside it and by nothing else when it
+// is out in the shaft, so it brightens from the rim of the light inwards.
+function dustTone(radius) {
+  const inside = 1 - Math.min(1, Math.max(0, (radius - LIGHT_SHAFT_RADIUS * 0.7) / (LIGHT_SHAFT_RADIUS * 0.6)));
+  const tone = 1 + 1.6 * inside;
+  return [tone, tone, tone];
+}
 
 function instancedVolumes(geometry, volumes) {
   const mesh = new THREE.InstancedMesh(geometry, bookMaterials[0], volumes.count);
@@ -783,6 +800,7 @@ export function* vistaBuilder(level) {
   // measurable depth. Positions are deterministic, sparse and concentrated
   // around the shaft so the same constellation is seen after every reload.
   const dustPositions = [];
+  const dustColors = [];
   const dustCount = 720;
   for (let index = 0; index < dustCount; index++) {
     const angle = index * 2.399963229728653;
@@ -795,13 +813,42 @@ export function* vistaBuilder(level) {
       y,
       Math.sin(angle) * radius,
     );
+    dustColors.push(...dustTone(radius));
+  }
+  // More motes inside the column of light, where they are what makes a beam
+  // visible at all: the same golden-angle spiral, packed into its radius.
+  for (let index = 0; index < SHAFT_DUST_COUNT; index++) {
+    const angle = index * 2.399963229728653;
+    const radius = LIGHT_SHAFT_RADIUS * Math.sqrt(((index * 61) % 100 + 0.5) / 100);
+    const y = ((index * 173) % 1000) / 1000
+      * (VERTICAL_VISTA_DEPTH * WALL_HEIGHT * 1.8)
+      - VERTICAL_VISTA_DEPTH * WALL_HEIGHT * 0.9;
+    dustPositions.push(Math.cos(angle) * radius, y, Math.sin(angle) * radius);
+    dustColors.push(...dustTone(radius));
   }
   const dustGeometry = new THREE.BufferGeometry();
   dustGeometry.setAttribute('position', new THREE.Float32BufferAttribute(dustPositions, 3));
+  dustGeometry.setAttribute('color', new THREE.Float32BufferAttribute(dustColors, 3));
   const dust = new THREE.Points(dustGeometry, dustMaterial);
   dust.raycast = () => {};
   dust.userData.atmosphericDust = true;
   group.add(dust);
+
+  // The column of light down the axis of the well, over exactly the depth the
+  // dust fills. One open cylinder and one draw; it is centred, so it is the
+  // same from every doorway of every chamber.
+  const shaftHalfHeight = VERTICAL_VISTA_DEPTH * WALL_HEIGHT * 0.9;
+  lightShaftMaterial.uniforms.halfHeight.value = shaftHalfHeight;
+  const lightShaft = new THREE.Mesh(
+    new THREE.CylinderGeometry(
+      LIGHT_SHAFT_RADIUS, LIGHT_SHAFT_RADIUS, shaftHalfHeight * 2, 36, 1, true,
+    ),
+    lightShaftMaterial,
+  );
+  lightShaft.raycast = () => {};
+  lightShaft.renderOrder = 1;
+  lightShaft.userData.lightShaft = true;
+  group.add(lightShaft);
 
   // A haze round every flame in the shaft, as the reference has: each lantern
   // is a soft warm point hanging in dark air rather than a pixel of colour.

@@ -267,6 +267,68 @@ export const lanternGlowMaterial = new THREE.PointsMaterial({
   toneMapped: false,
 });
 
+// Light falling down the axis of the well, the column every reference of the
+// library shows coming through the haze from somewhere far above. It has no
+// source: the shaft has no top. It is a glow drawn on an open cylinder, so what
+// decides its brightness is how much lit air the eye looks through. A line of
+// sight through the middle of the column crosses the most of it and a grazing
+// one almost none, which is |normal · view| on the face behind. Only that far
+// face is drawn: it is the one every line of sight meets, from outside the
+// column or standing in it, and one face instead of two halves what the light
+// costs to fill. The column thins out up and down the
+// shaft over the same distance the fog takes the lanterns, and is a little
+// stronger overhead, the way light is nearer its source.
+export const lightShaftMaterial = new THREE.ShaderMaterial({
+  uniforms: {
+    color: { value: new THREE.Color(0xffbe70) },
+    strength: { value: 0.24 },
+    halfHeight: { value: 1 },
+  },
+  vertexShader: `
+    varying vec3 vNormal;
+    varying vec3 vView;
+    varying float vHeight;
+    varying float vAngle;
+    uniform float halfHeight;
+    void main() {
+      vec4 world = modelMatrix * vec4(position, 1.0);
+      vAngle = atan(position.z, position.x);
+      vNormal = normalize(mat3(modelMatrix) * normal);
+      vView = cameraPosition - world.xyz;
+      vHeight = position.y / halfHeight;
+      gl_Position = projectionMatrix * viewMatrix * world;
+    }
+  `,
+  fragmentShader: `
+    varying vec3 vNormal;
+    varying vec3 vView;
+    varying float vHeight;
+    varying float vAngle;
+    uniform vec3 color;
+    uniform float strength;
+    void main() {
+      float facing = abs(dot(normalize(vNormal), normalize(vView)));
+      float body = 0.4 * pow(facing, 2.2) + 0.6 * pow(facing, 9.0);
+      // Rays, not a lit tube: brighter and darker streaks round the column,
+      // in multiples of six so they repeat with the hexagon of the well and
+      // every side of it sees the same light.
+      float rays = 0.62
+        + 0.22 * sin(vAngle * 18.0)
+        + 0.16 * sin(vAngle * 30.0 + 1.3);
+      body *= rays;
+      float fade = 1.0 - smoothstep(0.35, 1.0, abs(vHeight));
+      float source = mix(0.7, 1.15, clamp(vHeight * 0.5 + 0.5, 0.0, 1.0));
+      gl_FragColor = vec4(color * body * fade * source * strength, 1.0);
+    }
+  `,
+  transparent: true,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending,
+  side: THREE.BackSide,
+  fog: false,
+  toneMapped: false,
+});
+
 export const dustMaterial = new THREE.PointsMaterial({
   color: 0xe4a361,
   map: dustTexture(),
@@ -274,6 +336,7 @@ export const dustMaterial = new THREE.PointsMaterial({
   opacity: 0.3,
   depthWrite: false,
   blending: THREE.AdditiveBlending,
+  vertexColors: true,
   size: 0.18,
   sizeAttenuation: true,
   toneMapped: false,
