@@ -210,14 +210,36 @@ const PORTAL_STENCIL_REF = 1;
 // and depth-tests the mask back to its true visible aperture.
 const PORTAL_MASK_OVERDRAW = 0.36;
 
+// Before a destination is drawn, the source world's depth has to be cleared
+// wherever its doorway is actually seen, so that everything of the destination
+// beyond the threshold shows however near the source's own walls stand behind
+// it; and only there, so that a doorway hidden behind a wall stays hidden.
+//
+// Two earlier versions each got one half wrong. A full-screen reset with the
+// depth test off wrote no depth at all (WebGL ignores depthWrite then), so the
+// outside of the walker's own chamber cut the far side of a side-exit shaft
+// into a blank wall. The same reset made to work cleared depth across the
+// whole mask, and the core mask ignores depth, so doorways behind the chamber's
+// walls were painted over them. Now the aperture is drawn once more with the
+// depth test on and raises the stencil where it is really visible, and only
+// those pixels are reset and receive the destination.
+const PORTAL_VISIBLE_REF = PORTAL_STENCIL_REF + 1;
+const apertureVisibleMaterial = new THREE.MeshBasicMaterial({
+  colorWrite: false,
+  depthTest: true,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+  stencilFail: THREE.KeepStencilOp,
+  stencilFunc: THREE.EqualStencilFunc,
+  stencilRef: PORTAL_STENCIL_REF,
+  stencilWrite: true,
+  stencilZFail: THREE.KeepStencilOp,
+  stencilZPass: THREE.IncrementStencilOp,
+});
+
 const depthResetScene = new THREE.Scene();
 const depthResetCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-// WebGL writes no depth at all while the depth test is off, so the reset has to
-// keep the test on and simply always pass. With it off, the source world's
-// depth survived inside the doorway, and anything of the destination farther
-// away than the nearest source wall behind the aperture was silently dropped:
-// at a side exit the far side of the shaft vanished behind the outside of the
-// walker's own chamber and left a blank wall standing in the middle of the hex.
+// The depth test stays on and always passes: with it off WebGL writes nothing.
 const depthResetMaterial = new THREE.ShaderMaterial({
   colorWrite: false,
   depthFunc: THREE.AlwaysDepth,
@@ -226,6 +248,7 @@ const depthResetMaterial = new THREE.ShaderMaterial({
   fragmentShader: 'void main() { gl_FragColor = vec4(0.0); }',
   stencilFail: THREE.KeepStencilOp,
   stencilFunc: THREE.EqualStencilFunc,
+  stencilRef: PORTAL_VISIBLE_REF,
   stencilWrite: true,
   stencilZFail: THREE.KeepStencilOp,
   stencilZPass: THREE.KeepStencilOp,
@@ -328,7 +351,14 @@ function portalMaskFor(transform, stencilRef) {
   mesh.raycast = () => {};
   const maskScene = new THREE.Scene();
   maskScene.add(coreMesh, mesh);
-  return { coreMaterial, coreMesh, maskScene, material, mesh, stencilRef };
+  // The fringe lies in the core's plane and covers it, so it alone finds every
+  // pixel of the aperture that is really in sight, for one draw, not two.
+  const visibleScene = new THREE.Scene();
+  const visible = new THREE.Mesh(mesh.geometry, apertureVisibleMaterial);
+  visible.position.copy(mesh.position);
+  visible.rotation.copy(mesh.rotation);
+  visibleScene.add(visible);
+  return { coreMaterial, coreMesh, visibleScene, maskScene, material, mesh, stencilRef };
 }
 
 function destinationMaterials(root) {
@@ -454,12 +484,12 @@ function renderPassagePortals() {
       renderer.clear(false, false, true);
       renderer.render(destination.maskScene, camera);
 
-      depthResetMaterial.stencilRef = destination.stencilRef;
+      renderer.render(destination.visibleScene, camera);
       renderer.render(depthResetScene, depthResetCamera);
 
       const states = applyPortalStencil(
         destination.materials,
-        destination.stencilRef,
+        PORTAL_VISIBLE_REF,
       );
       renderer.render(destination.portalScene, camera);
       restoreStencil(states);
