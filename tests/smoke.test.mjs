@@ -572,7 +572,9 @@ const chamberLayout = await page.evaluate(async () => {
   };
   let intrudingVistaTriangles = 0;
   const vistaMeshes = [];
-  vista.traverse(child => { if (child.isMesh) vistaMeshes.push(child); });
+  // The column of light down the well is lit air the walker passes through,
+  // not a surface, so it is the one vista mesh allowed inside the hex.
+  vista.traverse(child => { if (child.isMesh && !child.userData.lightShaft) vistaMeshes.push(child); });
   for (const mesh of vistaMeshes) {
     const positions = mesh.geometry.getAttribute('position');
     const indices = mesh.geometry.getIndex();
