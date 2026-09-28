@@ -162,7 +162,7 @@ export const CABINET_RUN_WIDTH = WALL_WIDTH - 2 * CABINET_CORNER_CLEARANCE;
 export const CABINET_POST_WIDTH = 0.14;
 // Which walls carry shelves is no longer fixed: it turns with the level, and
 // the placement decides it. Only the count is constant; six cabinet sections
-// on each of those four walls keep a w3 room at 3840 volumes.
+// in each of three tiers on those four walls keep a w4 room at 11520 volumes.
 export const SHELVED_WALLS_PER_ROOM = 4;
 
 // The two walls without shelves carry the doorways, and which two those are

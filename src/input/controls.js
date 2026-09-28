@@ -10,6 +10,7 @@ import { EYE_HEIGHT, INTERACTION_DISTANCE } from '../constants.js';
 import { camera, renderer } from '../core/view.js';
 import { isEngaged, keys, player } from '../player.js';
 import { constrainToPlace } from '../world/doors.js';
+import { galleryRecordFor } from '../world/room.js';
 import { currentBookMeshes, world } from '../world/rooms.js';
 import { reticle } from '../ui/dom.js';
 
@@ -69,12 +70,14 @@ export function keyboardAxes() {
 }
 
 // Picking runs against the instanced volumes: three.js reports the instanceId,
-// which indexes the per-batch record built while the room was assembled.
+// which indexes the per-batch record built while the room was assembled, or,
+// on the galleries, names the volume whose record is worked out on demand.
 export function volumeInView() {
   raycaster.setFromCamera(centerPointer, camera);
   raycaster.far = INTERACTION_DISTANCE;
   const hit = raycaster.intersectObjects(currentBookMeshes(), false)[0];
   if (!hit || hit.instanceId === undefined) return null;
+  if (hit.object.userData.galleryVolumes) return galleryRecordFor(hit.object, hit.instanceId);
   return hit.object.userData.records[hit.instanceId] ?? null;
 }
 

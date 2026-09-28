@@ -48,7 +48,7 @@ assert.equal(roomKey(origin.q, origin.r), worldRoomIndexFor(origin.q, origin.r))
 assert.notEqual(roomKey(0n, 0n, 0n), roomKey(0n, 0n, 1n));
 assert.notEqual(roomTagFor(0n, 0n, 0n), roomTagFor(0n, 0n, 1n));
 assert.equal(exactWorldRoomAddressFor(farRoom.q, farRoom.r, farRoom.level), createWorldRoomAddress(farRoom));
-assert.match(exactWorldRoomAddressFor(farRoom.q, farRoom.r, farRoom.level), /^w3;[0-9a-f]+$/);
+assert.match(exactWorldRoomAddressFor(farRoom.q, farRoom.r, farRoom.level), /^w4;[0-9a-f]+$/);
 
 const originTag = roomTagFor(origin.q, origin.r);
 const highBitsTag = roomTagFor(farRoom.q, farRoom.r, farRoom.level);

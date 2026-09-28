@@ -20,7 +20,7 @@
  *
  * No shelves stand here. The story's hallway holds a mirror, a stair and two
  * closets but never books, and volumes here would need addresses the placement
- * does not issue: it gives 3840 to a chamber and none to the space between.
+ * does not issue: it gives 11520 to a chamber and none to the space between.
  */
 
 import * as THREE from 'three';

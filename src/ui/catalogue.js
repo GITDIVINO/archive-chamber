@@ -8,9 +8,7 @@
 
 import { ALPHABET, bookIndexFor, parsePageAddress, search } from '../../babel-v3.js';
 import {
-  LEGACY_WORLD_ALGORITHM_VERSION,
-  PREVIOUS_WORLD_ALGORITHM_VERSION,
-  WORLD_ALGORITHM_VERSION,
+  WORLD_ALGORITHM_VERSIONS,
   catalogBookIndexFor,
   parseWorldPageAddress,
   parseWorldRoomAddress,
@@ -141,13 +139,8 @@ export function openExactAddress() {
     searchResult.textContent = 'record is too long for this client';
     return;
   }
-  const worldPrefixes = [
-    WORLD_ALGORITHM_VERSION,
-    PREVIOUS_WORLD_ALGORITHM_VERSION,
-    LEGACY_WORLD_ALGORITHM_VERSION,
-  ];
   const candidateParts = candidate.split(';');
-  const isWorldRecord = worldPrefixes.includes(candidateParts[0]);
+  const isWorldRecord = WORLD_ALGORITHM_VERSIONS.includes(candidateParts[0]);
   // An exact world remains mathematically unbounded, but building thousands of
   // catalogue placements from a multi-kilobyte room index can monopolise the
   // browser. 1024 hexadecimal digits already name vastly more rooms than a

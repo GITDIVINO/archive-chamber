@@ -2,7 +2,7 @@
  * The register: the walker's numbering set against the world's own names.
  *
  * This is the one place chamber 1 can be turned back into h-2o0obdq5191b3 and
- * into the exact record w3;0 — and back again, because a row is also the way
+ * into the exact record w4;0 — and back again, because a row is also the way
  * to return to the chamber it names. See world/register.js for why the two
  * naming schemes exist side by side.
  */
