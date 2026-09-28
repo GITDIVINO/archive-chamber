@@ -272,14 +272,16 @@ export const lanternGlowMaterial = new THREE.PointsMaterial({
 // source: the shaft has no top. It is a glow drawn on an open cylinder, so what
 // decides its brightness is how much lit air the eye looks through. A line of
 // sight through the middle of the column crosses the most of it and a grazing
-// one almost none, which is |normal · view| on each face; both faces are drawn
-// and add, so the core is brightest. The column thins out up and down the
+// one almost none, which is |normal · view| on the face behind. Only that far
+// face is drawn: it is the one every line of sight meets, from outside the
+// column or standing in it, and one face instead of two halves what the light
+// costs to fill. The column thins out up and down the
 // shaft over the same distance the fog takes the lanterns, and is a little
 // stronger overhead, the way light is nearer its source.
 export const lightShaftMaterial = new THREE.ShaderMaterial({
   uniforms: {
     color: { value: new THREE.Color(0xffbe70) },
-    strength: { value: 0.12 },
+    strength: { value: 0.24 },
     halfHeight: { value: 1 },
   },
   vertexShader: `
@@ -322,7 +324,7 @@ export const lightShaftMaterial = new THREE.ShaderMaterial({
   transparent: true,
   depthWrite: false,
   blending: THREE.AdditiveBlending,
-  side: THREE.DoubleSide,
+  side: THREE.BackSide,
   fog: false,
   toneMapped: false,
 });
