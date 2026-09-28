@@ -219,7 +219,6 @@ const vertical = await page.evaluate(async () => {
     roomPointLights,
     lampCount: room.userData.lampCount,
     readingLampCount: room.userData.readingLampCount,
-    galleryLampCount: room.userData.galleryLampCount,
     bookWallCount: room.userData.bookWallCount,
     litLanternCount: room.userData.litLanternCount,
     openingCount: openings.length,
@@ -266,11 +265,10 @@ assert.equal(vertical.vistaShadowCasters, 0, 'distant geometry must never spend 
 // in a chamber may add a point light.
 assert.equal(vertical.lampCount, 2, 'the room records one canonical lamp at each exit');
 assert.equal(vertical.readingLampCount, 5 * vertical.bookWallCount, 'five sconces to every cabinet wall, each a real light');
-assert.equal(vertical.galleryLampCount, 3 * 2 * vertical.bookWallCount, 'three lit lamps on each gallery tier of every cabinet wall');
 assert.equal(
   vertical.roomPointLights,
-  vertical.lampCount + vertical.readingLampCount + vertical.galleryLampCount + vertical.litLanternCount,
-  'the exit lamps, the sconces, the gallery lamps and the lit well lanterns are the only local lights',
+  vertical.lampCount + vertical.readingLampCount + vertical.litLanternCount,
+  'the exit lamps, the sconces and the lit well lanterns are the only local lights',
 );
 assert.equal(vertical.openingCount, 2, 'the current chamber needs the same opening in its floor and ceiling');
 assert.ok(vertical.openingRadii.every(radius => radius === vertical.expectedRadius), 'both openings must follow the frozen well radius');

@@ -948,7 +948,7 @@ function addGalleryCases(room, index) {
       }
     }
     // Reading lamps along each tier, as along the floor; the bodies glow, and
-    // the light comes from the three at the middle and the quarters (makeRoom).
+    // the light comes from the three at the middle and the quarters.
     for (const ratio of [-0.39, -0.195, 0, 0.195, 0.39]) {
       const tangent = ratio * CABINET_RUN_WIDTH;
       addBox(room, brassMaterial, [0.44, 0.045, 0.045],
@@ -1118,11 +1118,6 @@ function raycastGalleryVolumes(raycaster, intersects) {
   }
 }
 
-// Three lights to a tier of a wall, at the middle and the quarters, as strong
-// as a floor sconce. One in the middle, even a strong one, left the run dark.
-const GALLERY_LIT_LAMPS = Object.freeze([-0.195, 0, 0.195]);
-const GALLERY_LAMP_INTENSITY = SCONCE_INTENSITY;
-const GALLERY_LAMP_RANGE = SCONCE_RANGE;
 const GALLERY_VOLUMES_PER_TIER = CABINET_SECTIONS_PER_WALL * SHELVES_PER_WALL * VOLUMES_PER_SHELF;
 const GALLERY_VOLUMES_PER_SECTION = SHELVES_PER_WALL * VOLUMES_PER_SHELF;
 
@@ -1336,7 +1331,6 @@ function cloneVisualRoom(source, q, r, level, template = false) {
     shelvedWalls: [...bookWallsForLevel(level)],
     bookWallCount: SHELVED_WALLS_PER_ROOM,
     lampCount: 2,
-    galleryLampCount: source.userData.galleryLampCount,
     wellBalustradeParts: WELL_BALUSTRADE_PARTS.length,
     cabinetRunWidth: CABINET_RUN_WIDTH,
     cabinetUprightsPerWall: CABINET_UPRIGHTS_PER_WALL,
@@ -1767,24 +1761,6 @@ export function makeRoom(q, r, level, { deferSpines = false } = {}) {
       reading.castShadow = false;
       room.add(reading);
       room.userData.readingLampCount++;
-    }
-  }
-
-  // The galleries' cases hang reading lamps too, and without light of their own
-  // the books on them were black against black: from the floor a tier read as
-  // empty shelving. The middle three on every tier are real lights, as the
-  // floor's sconces are; the outer two are bodies only.
-  room.userData.galleryLampCount = 0;
-  for (const wall of shelvedWalls) {
-    const basis = wallBasis(wall);
-    for (const level of GALLERY_LEVELS) {
-      for (const ratio of GALLERY_LIT_LAMPS) {
-        const reading = new THREE.PointLight(LAMP_LIGHT_COLOR, GALLERY_LAMP_INTENSITY, GALLERY_LAMP_RANGE, 2);
-        reading.position.copy(pointOnWall(basis, ratio * CABINET_RUN_WIDTH, level + CARCASE_HEIGHT - 0.3, 0.95));
-        reading.castShadow = false;
-        room.add(reading);
-        room.userData.galleryLampCount++;
-      }
     }
   }
 
