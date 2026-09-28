@@ -68,9 +68,9 @@ button:focus-visible, .location-record:focus-visible { outline: 1px solid var(--
 
 #reticle { position: absolute; left: 50%; top: 50%; display: none; color: #d8ceb8b0; font-size: 18px; transform: translate(-50%, -50%); }
 #reticle.target { color: var(--accent); }
-#hex-map { position: absolute; left: 24px; bottom: 54px; width: 174px; height: 174px; opacity: .96; pointer-events: none; }
+#hex-map { position: absolute; left: 24px; bottom: 50px; width: 200px; height: 236px; opacity: .96; pointer-events: none; }
 #status { position: absolute; right: 0; bottom: 24px; left: 0; color: var(--muted); font: 10px "Courier New", monospace; letter-spacing: .08em; pointer-events: auto; }
-#cell { position: absolute; left: 24px; width: 174px; border: 0; background: transparent; color: inherit; padding: 0; font: inherit; letter-spacing: inherit; text-align: center; }
+#cell { position: absolute; left: 24px; width: 200px; border: 0; background: transparent; color: inherit; padding: 0; font: inherit; letter-spacing: inherit; text-align: center; }
 #cell:hover, #cell:focus:not(:focus-visible) { background: transparent; color: inherit; outline: none; }
 #cell:active:not(:disabled) { transform: none; }
 #sound { position: absolute; right: 216px; }
@@ -167,8 +167,8 @@ button:focus-visible, .location-record:focus-visible { outline: 1px solid var(--
 }
 
 @media (max-width: 520px) {
-  #hex-map { left: 14px; bottom: 48px; width: 140px; height: 140px; }
-  #cell { left: 14px; width: 140px; }
+  #hex-map { left: 14px; bottom: 44px; width: 150px; height: 178px; }
+  #cell { left: 14px; width: 150px; }
   #sound { display: none; }
   #open-search { right: 16px; }
   #open-register { right: 74px; }
