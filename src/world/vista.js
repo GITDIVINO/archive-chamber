@@ -634,8 +634,10 @@ function addTemplateChamber(
   // has: thin vertical lines that show how far it is to the top, and a warm
   // bead at the end of each. Six to a storey at the corners of the opening, so
   // the ring is the same after a sixth turn; the drop varies from storey to
-  // storey and never within one, which keeps that symmetry. Same batches and
-  // the same glow cloud as the lanterns above, so no extra draw call.
+  // storey and never within one, which keeps that symmetry. Same batches as
+  // the lanterns above, so no extra draw call. No point-sprite halo: the bloom
+  // pass gives the lamp its glow, and a sprite that size close to the walker
+  // costs more fill than the software renderer in CI can spare.
   const drop = 5 + ((Math.abs(Math.round(roomOffset.elements[13] / WALL_HEIGHT)) * 7) % 5);
   for (let k = 0; k < 6; k++) {
     const angle = Math.PI / 6 + k * Math.PI / 3;
@@ -646,7 +648,6 @@ function addTemplateChamber(
     addBox(batches, lampMaterial, [0.22, 0.32, 0.22], position, 0, null, roomOffset, null);
     addBox(batches, metalMaterial, [0.03, drop, 0.03],
       new THREE.Vector3(x, y + 0.16 + drop / 2, z), 0, null, roomOffset, null);
-    glow(position);
   }
   // Repeated cabinet lights turn the shaft into a receding constellation. No
   // point lights are allocated here: these tiny emissive bodies are batched in
