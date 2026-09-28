@@ -1,7 +1,14 @@
 /** Scene, camera and renderer: the pieces every other layer draws into. */
 
 import * as THREE from 'three';
-import { PLAYER_START_X, PLAYER_START_Z, WORLD_DISTANCE_COLOR } from '../constants.js';
+import {
+  PLAYER_START_X,
+  PLAYER_START_Z,
+  WORLD_AMBIENT_COLOR,
+  WORLD_DISTANCE_COLOR,
+  WORLD_GROUND_FILL_COLOR,
+  WORLD_SKY_FILL_COLOR,
+} from '../constants.js';
 import { composeFrame, resizeBloom, sceneTarget } from './bloom.js';
 
 // A hidden or zero-height viewport would otherwise make the aspect NaN, which
@@ -107,8 +114,8 @@ document.body.prepend(renderer.domElement);
 // held close together on purpose — a hemisphere with a bright sky lights every
 // upward face at full strength, and that is what made the floor the brightest
 // thing in the frame when it should be among the darkest.
-scene.add(new THREE.HemisphereLight(0x8a6240, 0x3a2818, 1.6));
-scene.add(new THREE.AmbientLight(0xffd9b0, 0.5));
+scene.add(new THREE.HemisphereLight(WORLD_SKY_FILL_COLOR, WORLD_GROUND_FILL_COLOR, 1.6));
+scene.add(new THREE.AmbientLight(WORLD_AMBIENT_COLOR, 0.5));
 // Straight down, and it has to be. A crossing is the same corridor four times
 // and a chamber is the same wall six times, so the world claims two symmetries:
 // a quarter turn about the passage axis and a sixth turn about the room. The
