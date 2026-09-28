@@ -765,8 +765,8 @@ const PILASTER_FLUTES = 3;
 // these, and they break the long plain boards into something the eye can walk
 // along. Brass and timber both already have a batch here, so none of it adds a
 // draw call.
-const DENTIL_WIDTH = 0.05;
-const DENTIL_PITCH = 0.13;
+const DENTIL_WIDTH = 0.08;
+const DENTIL_PITCH = 0.3;
 const DENTIL_HEIGHT = 0.045;
 const SHELF_BEAD_HEIGHT = 0.02;
 const LABEL_HOLDER_SIZE = [0.13, 0.065, 0.012];
