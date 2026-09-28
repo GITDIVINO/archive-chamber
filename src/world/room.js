@@ -111,6 +111,54 @@ export const CABINET_BOOK_STEP = (
 export const CABINET_SECTION_PITCH = CABINET_BOOK_STEP * VOLUMES_PER_SHELF;
 export const CABINET_UPRIGHTS_PER_WALL = 2;
 
+// A wall of identical volumes read as a printed pattern. Real shelves hold sets
+// bound alike and stood together, with a stray odd volume between them, so
+// volumes come in runs of five sharing a binding and a height, and one in four
+// breaks ranks. It is worked out from where the volume stands in its chamber
+// and nothing else, so a doorway view of a neighbour and that neighbour once
+// entered agree, and every storey of the shaft matches the walker's own.
+const VOLUMES_PER_SET = 5;
+const BINDING_TINTS = Object.freeze([
+  [1, 1, 1],
+  [1, 1, 1],
+  [1.4, 0.62, 0.55],
+  [1.4, 0.62, 0.55],
+  [0.62, 1.02, 0.7],
+  [0.62, 0.78, 1.3],
+  [1.55, 1.32, 0.98],
+  [0.5, 0.45, 0.42],
+]);
+const MIN_VOLUME_HEIGHT = 0.86;
+
+function unitHash(a, b, c, salt) {
+  let h = Math.imul(a + 1, 0x9e3779b1) ^ Math.imul(b + 7, 0x85ebca6b) ^ Math.imul(c + 13, 0xc2b2ae35) ^ salt;
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x7feb352d);
+  h ^= h >>> 15;
+  h = Math.imul(h, 0x846ca68b);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+
+export function volumeVariation(wallIndex, shelfIndex, volumeIndex) {
+  const set = Math.floor(volumeIndex / VOLUMES_PER_SET);
+  const odd = unitHash(wallIndex, shelfIndex, volumeIndex, 0x51) < 0.25;
+  const bindingKey = odd ? volumeIndex + 4096 : set;
+  const binding = BINDING_TINTS[Math.floor(unitHash(wallIndex, shelfIndex, bindingKey, 0x2b) * BINDING_TINTS.length)];
+  const shade = 0.88 + 0.2 * unitHash(wallIndex, shelfIndex, volumeIndex, 0x77);
+  const setHeight = MIN_VOLUME_HEIGHT + (1 - MIN_VOLUME_HEIGHT) * unitHash(wallIndex, shelfIndex, bindingKey, 0x3d);
+  const height = Math.min(1, setHeight + 0.03 * unitHash(wallIndex, shelfIndex, volumeIndex, 0x19));
+  return { height, tint: binding.map(channel => channel * shade) };
+}
+
+const volumeScale = new THREE.Vector3();
+// A volume stands on its board, so a shorter one is lowered, not shrunk about
+// its middle. The same placement serves the book and its lettered spine.
+export function placeVolume(target, x, shelfY, z, height, turn = 0) {
+  const y = shelfY + SHELF_SURFACE_OFFSET + BOOK_HEIGHT * height / 2;
+  return target.makeRotationY(turn).scale(volumeScale.set(1, height, 1)).setPosition(x, y, z);
+}
+
 // Every volume shares one geometry, so its faces are toned once here. Without
 // this a book is a flat card: the spine faces the room and stays light, the
 // head and sides fall away, and the board behind it is barely lit at all.
@@ -190,23 +238,59 @@ function createSpineAtlas(room) {
   return atlas;
 }
 
+// A spine is dressed like a bound volume rather than stamped edge to edge: two
+// pairs of gilt bands mark the raised cords at head and tail, and the title
+// sits on a dark lettering piece between them with air all round. Lettered
+// across the whole cell, a nine-character title ran into both ends of the
+// spine and read as text overflowing the book.
+const SPINE_BAND_INSET = 6;
+const SPINE_LABEL_INSET = 17;
+const SPINE_TITLE_FONT = 12;
 function paintSpineLabel(context, column, row, label) {
   const x = column * SPINE_CELL_WIDTH;
   const y = row * SPINE_CELL_HEIGHT;
+  const left = x + 2;
+  const width = SPINE_CELL_WIDTH - 4;
   context.save();
   context.beginPath();
   context.rect(x + 1, y + 1, SPINE_CELL_WIDTH - 2, SPINE_CELL_HEIGHT - 2);
   context.clip();
+
   context.fillStyle = BOOK_LETTER_COLOR;
+  context.globalAlpha = 0.5;
+  for (const edge of [y + SPINE_BAND_INSET, y + SPINE_CELL_HEIGHT - SPINE_BAND_INSET - 2]) {
+    context.fillRect(left, edge, width, 2);
+  }
+  context.globalAlpha = 0.32;
+  for (const edge of [y + SPINE_BAND_INSET + 4, y + SPINE_CELL_HEIGHT - SPINE_BAND_INSET - 5]) {
+    context.fillRect(left, edge, width, 1);
+  }
+
+  const labelTop = y + SPINE_LABEL_INSET;
+  const labelHeight = SPINE_CELL_HEIGHT - 2 * SPINE_LABEL_INSET;
+  context.globalAlpha = 0.5;
+  context.fillStyle = '#1a0f0a';
+  context.fillRect(x + 3, labelTop, SPINE_CELL_WIDTH - 6, labelHeight);
+  context.globalAlpha = 0.42;
+  context.strokeStyle = BOOK_LETTER_COLOR;
+  context.lineWidth = 1;
+  context.strokeRect(x + 3.5, labelTop + 0.5, SPINE_CELL_WIDTH - 7, labelHeight - 1);
+
+  // The title is fitted to the lettering piece: a long one is condensed rather
+  // than allowed to run past it.
   context.globalAlpha = 0.98;
-  context.translate(x + SPINE_CELL_WIDTH / 2, y + SPINE_CELL_HEIGHT / 2);
+  context.fillStyle = BOOK_LETTER_COLOR;
+  context.translate(x + SPINE_CELL_WIDTH / 2, labelTop + labelHeight / 2);
   context.rotate(-Math.PI / 2);
+  context.font = `700 ${SPINE_TITLE_FONT}px "Courier New", monospace`;
+  const room = labelHeight - 6;
+  const measured = context.measureText(label).width;
+  if (measured > room) context.scale(room / measured, 1);
   context.shadowColor = 'rgba(0, 0, 0, .72)';
-  context.shadowBlur = 1.2;
-  context.font = '700 16px "Courier New", monospace';
+  context.shadowBlur = 1;
   context.textAlign = 'center';
   context.textBaseline = 'middle';
-  context.fillText(label, 0, 0);
+  context.fillText(label, 0, 0.5);
   context.restore();
 }
 
@@ -676,9 +760,21 @@ const PILASTER_WIDTH = 0.2;
 const PILASTER_DEPTH = 0.04;
 const PILASTER_FLUTES = 3;
 
-function addProud(room, size, x, y, proud, shade) {
+// A row of dentils under the cornice, a bead under every shelf lip and a brass
+// label holder on each section of each shelf. Real library cases carry exactly
+// these, and they break the long plain boards into something the eye can walk
+// along. Brass and timber both already have a batch here, so none of it adds a
+// draw call.
+const DENTIL_WIDTH = 0.05;
+const DENTIL_PITCH = 0.13;
+const DENTIL_HEIGHT = 0.045;
+const SHELF_BEAD_HEIGHT = 0.02;
+const LABEL_HOLDER_SIZE = [0.13, 0.065, 0.012];
+const LABEL_CARD_SIZE = [0.1, 0.04, 0.012];
+
+function addProud(room, size, x, y, proud, shade, material = shelfMaterial) {
   const z = CARCASE_FRONT_Z - proud + size[2] / 2;
-  addBox(room, shelfMaterial, size, new THREE.Vector3(x, y, z), 0, frameMatrix, { outlined: false, shade });
+  addBox(room, material, size, new THREE.Vector3(x, y, z), 0, frameMatrix, { outlined: false, shade });
 }
 
 function addCabinetCarving(room) {
@@ -691,10 +787,26 @@ function addCabinetCarving(room) {
   }
 
   const innerRun = CABINET_RUN_WIDTH - 2 * CABINET_POST_WIDTH;
+  const lipHeight = SHELF_THICKNESS + 0.03;
   for (let shelfIndex = 0; shelfIndex < SHELVES_PER_WALL; shelfIndex++) {
     const shelfY = SHELF_BASE_Y + shelfIndex * SHELF_PITCH;
-    addProud(room, [innerRun, SHELF_THICKNESS + 0.03, SHELF_LIP_DEPTH], 0, shelfY, SHELF_LIP_PROUD,
+    addProud(room, [innerRun, lipHeight, SHELF_LIP_DEPTH], 0, shelfY, SHELF_LIP_PROUD,
       shelfBoardShade(shelfY));
+    const beadY = shelfY - lipHeight / 2 - SHELF_BEAD_HEIGHT / 2;
+    addProud(room, [innerRun, SHELF_BEAD_HEIGHT, 0.02], 0, beadY, SHELF_LIP_PROUD + 0.008, shelfBoardShade(shelfY));
+    for (let section = 0; section < CABINET_SECTIONS_PER_WALL; section++) {
+      const x = (section - (CABINET_SECTIONS_PER_WALL - 1) / 2) * CABINET_SECTION_PITCH;
+      addProud(room, LABEL_HOLDER_SIZE, x, shelfY, SHELF_LIP_PROUD + 0.012, null, brassMaterial);
+      addProud(room, LABEL_CARD_SIZE, x, shelfY - 0.004, SHELF_LIP_PROUD + 0.016, () => 0.45);
+    }
+  }
+
+  const dentilY = CARCASE_HEIGHT - 0.055 - DENTIL_HEIGHT / 2;
+  const dentils = Math.floor((innerRun - DENTIL_WIDTH) / DENTIL_PITCH);
+  const firstDentil = -(dentils * DENTIL_PITCH) / 2;
+  for (let dentil = 0; dentil <= dentils; dentil++) {
+    addProud(room, [DENTIL_WIDTH, DENTIL_HEIGHT, 0.03], firstDentil + dentil * DENTIL_PITCH, dentilY, 0.03,
+      shelfBoardShade(dentilY));
   }
 
   const bottom = PLINTH_HEIGHT + 0.02;
@@ -789,8 +901,8 @@ function collectBookWall(room, index, q, r, level, disturbed) {
           + localVolume * CABINET_BOOK_STEP;
         // Seated exactly on the shelf surface: the old constant left a 25mm gap
         // that read as books hovering once the shelf lost its outline.
-        const y = shelfY + SHELF_SURFACE_OFFSET + BOOK_HEIGHT / 2;
         const bookCenterZ = BOOK_FRONT_Z + BOOK_DEPTH / 2;
+        const { height, tint } = volumeVariation(index, shelfIndex, volumeIndex);
 
         // Somebody read this one and put it back badly. It is the same volume it
         // always was — same address, same text, same title; only its standing has
@@ -801,17 +913,16 @@ function collectBookWall(room, index, q, r, level, disturbed) {
           && disturbed.volume === volumeIndex;
         // Cabinet space has the room at -z — BOOK_FRONT_Z is the spine face and
         // it is negative — so standing a volume out means subtracting the reach.
-        bookMatrix.makeRotationY(outOfPlace ? disturbed.lean : 0)
-          .setPosition(x, y, bookCenterZ - (outOfPlace ? disturbed.reach : 0))
-          .premultiply(frameMatrix);
+        placeVolume(bookMatrix, x, shelfY, bookCenterZ - (outOfPlace ? disturbed.reach : 0), height,
+          outOfPlace ? disturbed.lean : 0).premultiply(frameMatrix);
         batch.matrices.push(bookMatrix.clone());
-        batch.tints.push([1, 1, 1]);
+        batch.tints.push(tint);
         batch.records.push(bookRecord(bookIndex, worldLocation));
         // Thousands of rectangular ink frames flattened the wall into a
         // technical diagram. The binding itself now supplies the silhouette;
         // typography is the only mark drawn on its face.
 
-        spineMatrix.makeRotationY(Math.PI).setPosition(x, y, BOOK_FRONT_Z - 0.015).premultiply(frameMatrix);
+        placeVolume(spineMatrix, x, shelfY, BOOK_FRONT_Z - 0.015, height, Math.PI).premultiply(frameMatrix);
         if (room.userData.deferSpines) {
           room.userData.deferredSpines.push({ bookIndex, matrix: spineMatrix.clone() });
         } else {
@@ -1008,7 +1119,7 @@ function hydrateOnePortalVolume(room) {
   const x = -((VOLUMES_PER_SHELF - 1) * CABINET_BOOK_STEP) / 2
     + state.localVolume * CABINET_BOOK_STEP;
   const shelfY = SHELF_BASE_Y + state.shelf * SHELF_PITCH;
-  const y = shelfY + SHELF_SURFACE_OFFSET + BOOK_HEIGHT / 2;
+  const { height } = volumeVariation(wallIndex, state.shelf, volumeIndex);
   const templateWasDisturbed = sameDisturbedVolume(
     state.templateDisturbed,
     canonicalWall,
@@ -1023,14 +1134,12 @@ function hydrateOnePortalVolume(room) {
   );
   if (templateWasDisturbed || outOfPlace) {
     const bookCenterZ = BOOK_FRONT_Z + BOOK_DEPTH / 2;
-    metadataBookMatrix.makeRotationY(outOfPlace ? state.disturbed.lean : 0)
-      .setPosition(x, y, bookCenterZ - (outOfPlace ? state.disturbed.reach : 0))
-      .premultiply(metadataFrameMatrix);
+    placeVolume(metadataBookMatrix, x, shelfY, bookCenterZ - (outOfPlace ? state.disturbed.reach : 0), height,
+      outOfPlace ? state.disturbed.lean : 0).premultiply(metadataFrameMatrix);
     bookMesh.setMatrixAt(state.record, metadataBookMatrix);
     bookMesh.instanceMatrix.needsUpdate = true;
   }
-  metadataSpineMatrix.makeRotationY(Math.PI)
-    .setPosition(x, y, BOOK_FRONT_Z - 0.015)
+  placeVolume(metadataSpineMatrix, x, shelfY, BOOK_FRONT_Z - 0.015, height, Math.PI)
     .premultiply(metadataFrameMatrix);
   appendSpine(room, bookIndex, metadataSpineMatrix);
 
