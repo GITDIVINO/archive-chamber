@@ -23,8 +23,6 @@ function digitsOf(log10) {
 
 const BOOK_SPACE_LOG10 = PAGES_PER_VOLUME * PAGE_LENGTH * Math.log10(ALPHABET.length);
 
-/** Decimal digits in the number of distinct volumes the catalogue holds. */
-export const BOOK_DIGITS = digitsOf(BOOK_SPACE_LOG10);
 /** Decimal digits in the number of chambers before the catalogue repeats. */
 export const CATALOGUE_HEX_DIGITS = digitsOf(BOOK_SPACE_LOG10 - Math.log10(Number(WORLD_VOLUMES_PER_ROOM)));
 

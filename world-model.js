@@ -73,7 +73,7 @@ export function isAddressableHex(q, r, level = 0n) {
   }
 }
 
-// w3 has no boundary: every axial neighbour on every level is a complete room.
+// The world has no boundary: every axial neighbour on every level is a complete room.
 export function catalogueCoordinates(center) {
   const level = center.level ?? 0n;
   const result = [{ q: center.q, r: center.r, level }];

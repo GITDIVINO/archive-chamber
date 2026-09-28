@@ -197,7 +197,6 @@ export const WELL_BALUSTRADE_PARTS = Object.freeze(parts);
 
 const DECK_RUNS = [[-DECK_REACH, -OPENING_HALF], [OPENING_HALF, DECK_REACH]];
 const bridgeParts = [];
-const distantBridgeParts = [];
 const DECK_BOARD_WIDTH = 0.34;
 
 for (const [from, to] of DECK_RUNS) {
@@ -217,27 +216,17 @@ for (const [from, to] of DECK_RUNS) {
       wood: true,
     });
   }
-  distantBridgeParts.push({
-    size: [length, DECK_THICKNESS, STAIR_WIDTH],
-    position: bridgePoint(centre, 0, -DECK_THICKNESS / 2),
-    rotation: BRIDGE_ROTATION,
-    wood: true,
-  });
 
   for (const side of [-1, 1]) {
     const v = side * (BRIDGE_HALF_WIDTH - WELL_POST_WIDTH / 2);
     for (const height of [WELL_GUARD_HEIGHT, WELL_GUARD_HEIGHT * 0.53]) {
-      const rail = {
+      bridgeParts.push({
         size: [length, WELL_RAIL_THICKNESS, WELL_RAIL_THICKNESS],
         position: bridgePoint(centre, v, height),
         rotation: BRIDGE_ROTATION,
         wood: true,
-      };
-      bridgeParts.push(rail);
-      distantBridgeParts.push(rail);
+      });
     }
-    // Balusters are most of the part count and the first thing to vanish down
-    // the shaft, so the distant copy keeps the rails and drops these.
     const count = Math.max(1, Math.round(length / BALUSTER_PITCH));
     for (let index = 1; index < count; index++) {
       bridgeParts.push({
@@ -255,7 +244,6 @@ for (const [from, to] of DECK_RUNS) {
 }
 
 export const WELL_BRIDGE_PARTS = Object.freeze(bridgeParts);
-export const WELL_DISTANT_BRIDGE_PARTS = Object.freeze(distantBridgeParts);
 
 // A lantern stands at either end of the opening, on the rail, where the deck
 // gives out and the flight begins. That is the one place on the crossing where
@@ -447,23 +435,6 @@ for (const side of [-1, 1]) {
 export const WELL_STAIR_LANTERNS = Object.freeze(stairLanterns);
 
 export const WELL_STAIR_PARTS = Object.freeze(stairParts);
-
-// A quarter of the treads and none of the railing: enough for the diagonal to
-// survive down a shaft where the whole flight is a few pixels tall.
-const distantStairParts = [];
-const DISTANT_STAIR_BLOCK = 4;
-for (let step = 0; step < STAIR_STEPS; step += DISTANT_STAIR_BLOCK) {
-  const span = Math.min(DISTANT_STAIR_BLOCK, STAIR_STEPS - step);
-  const u = -STAIR_HALF_RUN + (step + span / 2) * STAIR_TREAD;
-  const top = (step + span) * STAIR_RISER;
-  distantStairParts.push({
-    size: [span * STAIR_TREAD, STAIR_SOFFIT_DEPTH, STAIR_WIDTH],
-    position: bridgePoint(u, 0, top - STAIR_SOFFIT_DEPTH / 2),
-    rotation: BRIDGE_ROTATION,
-    wood: true,
-  });
-}
-export const WELL_DISTANT_STAIR_PARTS = Object.freeze(distantStairParts);
 
 // --- where the crossing is, and what it holds up ------------------------------
 

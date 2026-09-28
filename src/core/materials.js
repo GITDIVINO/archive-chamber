@@ -97,15 +97,6 @@ function timberTexture() {
   return texture;
 }
 
-export function pencilMaterial(texture, color = 0xffffff) {
-  return new THREE.MeshStandardMaterial({
-    color,
-    map: texture,
-    roughness: 0.96,
-    metalness: 0,
-  });
-}
-
 // One paper colour is shared by the whole architecture. Soft scene lighting
 // separates planes by direction, while vertex colour keeps the small recesses
 // inside shelves legible without introducing differently coloured panels.
@@ -121,7 +112,7 @@ function shadedMaterial(texture, color = 0xffffff, roughness = 0.9) {
 
 // The floor/ceiling/wall shell has no per-vertex authored recess tones, but it
 // still needs the same broad material response as the built-ins. Using the
-// unlit-looking colour multiplication of pencilMaterial twice darkened the
+// unlit-looking colour multiplication of a plain textured material twice darkened the
 // procedural texture; this neutral shell texture leaves the palette to the
 // constants and the form to actual lighting.
 function shellMaterial(color, roughness = 0.94) {

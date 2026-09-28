@@ -14,7 +14,6 @@ import {
   WORLD_SHELVES_PER_WALL,
   WORLD_VOLUMES_PER_ROOM,
   WORLD_VOLUMES_PER_SHELF,
-  W3_WORLD_BOOK_OFFSET,
   bookWallsForLevel,
   canonicalWallForWallIndex,
   catalogBookIndexFor,
@@ -191,55 +190,14 @@ assert.throws(() => parseWorldPageAddress('w4;0;2;2;13;411'), RangeError);
 assert.throws(() => parseWorldPageAddress('w4;0;5;2;13;197'), RangeError);
 assert.throws(() => parseWorldPageAddress('w4;0;2;16;13;197'), RangeError);
 assert.throws(() => parseWorldPageAddress('w4;0;2;2;193;197'), RangeError);
-assert.throws(() => parseWorldPageAddress('w3;0;2;6;13;197'), RangeError, 'w3 walls had five shelves');
-assert.throws(() => parseWorldPageAddress('w2;0;2;2;33;197'), RangeError);
 assert.throws(() => parseWorldPageAddress('w5;0;2;2;13;197'), TypeError);
 assert.throws(() => parseWorldRoomAddress('w4;0A'), TypeError);
 assert.throws(() => parseWorldRoomAddress('w4;007'), TypeError);
 
-// Published w3 addresses keep their 3840-slot placement and still open the
-// manifesto they named.
-const w3Manifesto = parseWorldPageAddress('w3;0;2;2;13;197');
-assert.equal(w3Manifesto.worldVersion, 'w3');
-assert.equal(catalogBookIndexFor(w3Manifesto), bookIndexFor(MANIFESTO_LOCATION));
-assert.equal(createWorldPageAddress(w3Manifesto), 'w3;0;2;2;13;197');
-assert.equal(W3_WORLD_BOOK_OFFSET, 780712640n, 'the w3 offset is frozen');
-// Every book a w3 room held is still in the catalogue under its old address:
-// the placements differ, the catalogue does not.
-assert.notEqual(
-  catalogBookIndexFor(parseWorldPageAddress('w3;1f;3;4;100;1')),
-  catalogBookIndexFor(parseWorldPageAddress('w4;1f;3;4;100;1')),
-);
-
-// Published w2 addresses retain their original 640-slot placement. They open
-// the same physical catalogue copy even though new rooms use the wider w3 map.
-const previousManifesto = parseWorldPageAddress('w2;0;2;2;13;197');
-assert.equal(previousManifesto.worldVersion, 'w2');
-assert.equal(catalogBookIndexFor(previousManifesto), bookIndexFor(MANIFESTO_LOCATION));
-assert.equal(createWorldPageAddress(previousManifesto), 'w2;0;2;2;13;197');
-
-// --- a w1 address still means something -------------------------------------
-// w1 enumerated the plane alone, so its indices name the level-0 rooms and are
-// translated rather than rejected.
-assert.equal(parseWorldRoomAddress('w1;0').level, 0n);
-assert.deepEqual(
-  [parseWorldRoomAddress('w1;0').q, parseWorldRoomAddress('w1;0').r],
-  [0n, 0n],
-);
-const legacy = parseWorldPageAddress('w1;7;2;2;13;197');
-assert.equal(legacy.level, 0n);
-assert.deepEqual([legacy.q, legacy.r], [-1n, 1n], 'w1;7 was the neighbour through wall 2');
-assert.throws(() => parseWorldRoomAddress('w1;0;'), TypeError);
-
-// A w1 index and a w2 index are read differently, so the same digits name
-// different rooms; only the origin is common to both.
-assert.deepEqual(
-  [parseWorldRoomAddress('w1;0').q, parseWorldRoomAddress('w1;0').r, parseWorldRoomAddress('w1;0').level],
-  [parseWorldRoomAddress('w2;0').q, parseWorldRoomAddress('w2;0').r, parseWorldRoomAddress('w2;0').level],
-);
-assert.notDeepEqual(
-  [parseWorldRoomAddress('w1;7').q, parseWorldRoomAddress('w1;7').r],
-  [parseWorldRoomAddress('w2;7').q, parseWorldRoomAddress('w2;7').r],
-);
+// Earlier world addresses are no longer read.
+for (const address of ['w3;0;2;2;13;197', 'w2;0;2;2;13;197', 'w1;7;2;2;13;197']) {
+  assert.throws(() => parseWorldPageAddress(address), TypeError);
+}
+assert.throws(() => parseWorldRoomAddress('w1;0'), TypeError);
 
 console.log('world-engine: all stacked placement invariants passed');

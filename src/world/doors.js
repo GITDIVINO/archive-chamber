@@ -33,11 +33,6 @@ import { galleryHeightAt } from './galleries.js';
 // Half-width the player's centre may reach before the jambs stop them.
 const DOOR_CLEAR_HALF_WIDTH = DOOR_HALF_WIDTH - PLAYER_RADIUS;
 
-/** Which walls a level leaves open. The pair turns as the player climbs. */
-export function doorWallsForLevel(level) {
-  return freeWallsForLevel(level);
-}
-
 export function isDoorWall(index, level) {
   return freeWallsForLevel(level).includes(index);
 }

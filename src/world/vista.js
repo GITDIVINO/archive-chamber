@@ -694,21 +694,7 @@ function addTemplateChamber(
 }
 
 /**
- * Builds the corridor once.
- *
- * Rooms are geometrically identical and the player always stands at the origin
- * of their own, so this never needs rebuilding — walking through a doorway
- * leaves the view unchanged, which is exactly the point.
- */
-export function buildVista(level) {
-  const steps = vistaBuilder(level);
-  let step = steps.next();
-  while (!step.done) step = steps.next();
-  return step.value;
-}
-
-/**
- * The same shaft as buildVista, a storey at a time.
+ * Builds the shaft a storey at a time.
  *
  * A whole shaft is most of a second of merging, and the walker meets it the
  * first time they climb onto a floor whose shaft has not been built. Built in

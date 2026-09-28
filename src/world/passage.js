@@ -35,9 +35,6 @@
 import { freeWallsForLevel } from '../../world-engine.js';
 import { WALL_DIRECTIONS } from '../../world-model.js';
 
-/** The four ways out of a passage, in the order a walker meets them. */
-export const PASSAGE_EXITS = Object.freeze(['back', 'left', 'right', 'ahead']);
-
 function neighbour(hex, direction) {
   const [dq, dr] = WALL_DIRECTIONS[direction];
   return { q: hex.q + dq, r: hex.r + dr, level: hex.level };

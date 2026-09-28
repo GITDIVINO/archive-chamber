@@ -230,15 +230,6 @@ export function bookIndexFor(location) {
   return assertAddressableVolume(normalizedLocation(location));
 }
 
-export function isAddressableVolume(location) {
-  try {
-    bookIndexFor(location);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 export function locationForBookIndex(index, page = 1) {
   const book = assertBookIndex(index);
   const room = book / VOLUMES_PER_HEX;
@@ -468,13 +459,6 @@ export function isManifestoBookIndex(bookIndex) {
 
 export function initialPageForBookIndex(bookIndex) {
   return isManifestoBookIndex(bookIndex) ? MANIFESTO_LOCATION.page : 1;
-}
-
-export function isManifestoVolume(addressOrLocation) {
-  const location = typeof addressOrLocation === 'string'
-    ? parseVolumeAddress(addressOrLocation)
-    : normalizedLocation({ ...addressOrLocation, page: 1 });
-  return isManifestoBookIndex(bookIndexForNormalizedLocation(location));
 }
 
 export function titleForVolume(addressOrLocation) {
