@@ -43,6 +43,7 @@ import { noteChamber, ordinalFor } from './register.js';
 import { buildSigns, disposeSigns } from './signs.js';
 import { disposeRoom, makePortalRoom, makeRoom, paintPendingSpines } from './room.js';
 import { vistaBuilder } from './vista.js';
+import { headSeenFrom } from './head.js';
 
 const roomRegistry = new Map();
 
@@ -571,6 +572,8 @@ function buildDestination(job, synchronousFallback = false) {
   portalRoot.position.copy(transform.centre);
   portalRoot.rotation.y = transform.rotation;
   portalRoot.add(destinationVista, portalRoom);
+  const destinationHead = headSeenFrom(transform.there);
+  if (destinationHead) portalRoot.add(destinationHead);
 
   const portalScene = new THREE.Scene();
   // A separately rendered scene otherwise clears the colour already laid down
@@ -737,6 +740,17 @@ function refreshSigns() {
   renderedWorld.add(signs);
 }
 
+// The one landmark in the library, when the walker's chamber looks at it.
+let head = null;
+// The head rides in the chamber it is seen from, not beside it in the scene:
+// the scene holds exactly one chamber and its vista, wherever the walker is.
+function refreshHead() {
+  head?.removeFromParent();
+  head = headSeenFrom(world.room);
+  const { q, r, level } = world.room;
+  if (head) roomRegistry.get(roomKey(q, r, level)).add(head);
+}
+
 export function buildCurrentRoom() {
   // Portal vistas share the current vertical-vista buffers. Release those
   // dependants before a level change can replace and dispose the source.
@@ -744,6 +758,7 @@ export function buildCurrentRoom() {
   refreshRoomRecord();
   refreshScene();
   refreshVista();
+  refreshHead();
   refreshSigns();
   // Start preparing the six views now, while the walker is in the chamber.
   // Entering either corridor never creates or swaps geometry.

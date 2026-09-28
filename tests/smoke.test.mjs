@@ -14,6 +14,7 @@ import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { DOOR_HEIGHT, HALL_OPENING_HEIGHT } from '../src/constants.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const CONTENT_TYPES = {
@@ -514,6 +515,7 @@ const chamberLayout = await page.evaluate(async () => {
     HALL_LENGTH,
     HALL_SIDE_CENTRE,
     HALL_SIDE_HALF,
+    WALL_HEIGHT,
   } = await import('./src/constants.js');
   const { wallBasis } = await import('./src/world/geometry.js');
   const room = renderedWorld.children.find(child => child.userData.q !== undefined);
@@ -596,6 +598,7 @@ const chamberLayout = await page.evaluate(async () => {
     sideAndForwardReachDifference: Math.abs(ALCOVE_REACH - HALL_SIDE_CENTRE),
     doorWidth: DOOR_WIDTH,
     doorHeight: DOOR_HEIGHT,
+    wallHeight: WALL_HEIGHT,
     hallWidth: HALL_HALF_WIDTH * 2,
     junctionChamfer: HALL_JUNCTION_CHAMFER,
     junctionSideWidth: HALL_SIDE_HALF * 2,
@@ -632,7 +635,12 @@ assert.ok(
   'side and forward exits must reach identical chamber doorways from the crossing',
 );
 assert.ok(chamberLayout.doorWidth <= 4.5, 'the doorway must remain human-scale inside the enlarged gallery');
-assert.ok(chamberLayout.doorHeight >= 3.2 && chamberLayout.doorHeight <= 4.2, 'the doorway needs a legible human height');
+// The width stays a person's; the height is the building's. A passage rises
+// most of a storey but never through the ceiling of the chamber it leaves.
+assert.ok(
+  chamberLayout.doorHeight >= 3.2 && chamberLayout.doorHeight < chamberLayout.wallHeight,
+  'the passage must stand at least a person high and stop below the storey above',
+);
 assert.ok(chamberLayout.hallWidth <= 5, 'the passage must read as a corridor, not a low hall');
 assert.equal(
   chamberLayout.junctionSideWidth,
@@ -1642,7 +1650,7 @@ for (const mark of upright) {
   assert.ok(mark.hangs > 0, 'a plaque over an entrance must not hang upside down');
   assert.ok(mark.acrossIsLevel < 1e-6, 'and its lettering must run level, not up the beam');
   assert.ok(
-    mark.height > 3.3 && mark.height < 3.7,
+    mark.height > HALL_OPENING_HEIGHT && mark.height < DOOR_HEIGHT,
     `a plaque belongs on the beam over the entrance, found at ${mark.height}`,
   );
 }

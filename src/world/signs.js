@@ -34,7 +34,9 @@ import { passageExits } from './passage.js';
 
 // The plaque over an entrance, flat on the wall above it — the band a walker
 // sees at the end of an arm.
-const PLAQUE_WIDTH = 2.05;
+// Filling most of the band: the band is ten metres up now, and a name there has
+// to be as large as the corridor is wide to be read from the crossing below.
+const PLAQUE_WIDTH = Math.min(3.8, HALL_LINTEL_HEIGHT * 4 * 0.62);
 const PLAQUE_HEIGHT = PLAQUE_WIDTH / 4;
 const PLAQUE_Y = HALL_OPENING_HEIGHT + HALL_LINTEL_HEIGHT / 2;
 // Just clear of the surface each is painted on, so the two never z-fight.

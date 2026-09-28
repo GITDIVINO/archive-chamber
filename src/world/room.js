@@ -79,6 +79,7 @@ import {
   drawDraftedLabel,
   hexCorners,
   mergedMesh,
+  mitredSlabFor,
   pointOnWall,
   sharedGeometries,
   wallBasis,
@@ -91,12 +92,50 @@ import {
   WELL_LIP_PARTS,
   WELL_STAIR_PARTS,
 } from './well.js';
+import { WELL_PIER_PARTS, doorColumnLanternPoints, doorColumnParts } from './columns.js';
+import { GALLERY_LEVELS, galleryParts } from './galleries.js';
 
 // Split up its height so the spine can carry a three-stop tone: a box corner
 // only has vertices at top and bottom, which is not enough to darken a volume
 // where it meets the board and again where the shelf overhangs it.
 export const bookGeometry = new THREE.BoxGeometry(BOOK_WIDTH, BOOK_HEIGHT, BOOK_DEPTH, 1, 2, 1);
 sharedGeometries.add(bookGeometry);
+// The spine (-z) and top (+y) faces of bookGeometry, with its own normals,
+// texture coordinates and three-stop tone, so a volume seen only from the
+// front — down the shaft, or on a gallery tier — is shaded exactly as a near
+// one wherever a near one could be seen, at a quarter of the vertices. Its
+// sides face their neighbours across a three-centimetre gap.
+const BOX_FACE_POSITIVE_Y = 2;
+const BOX_FACE_NEGATIVE_Z = 5;
+export const shelfFaceBookGeometry = (() => {
+  const geometry = new THREE.BufferGeometry();
+  const index = bookGeometry.getIndex();
+  const attributes = Object.entries(bookGeometry.attributes);
+  const values = Object.fromEntries(attributes.map(([name]) => [name, []]));
+  const indices = [];
+  const remap = new Map();
+  for (const face of [BOX_FACE_POSITIVE_Y, BOX_FACE_NEGATIVE_Z]) {
+    const group = bookGeometry.groups[face];
+    for (let element = group.start; element < group.start + group.count; element++) {
+      const vertex = index.getX(element);
+      if (!remap.has(vertex)) {
+        remap.set(vertex, remap.size);
+        for (const [name, attribute] of attributes) {
+          for (let component = 0; component < attribute.itemSize; component++) {
+            values[name].push(attribute.array[vertex * attribute.itemSize + component]);
+          }
+        }
+      }
+      indices.push(remap.get(vertex));
+    }
+  }
+  for (const [name, attribute] of attributes) {
+    geometry.setAttribute(name, new THREE.Float32BufferAttribute(values[name], attribute.itemSize));
+  }
+  geometry.setIndex(indices);
+  return geometry;
+})();
+sharedGeometries.add(shelfFaceBookGeometry);
 const lampGeometry = new THREE.SphereGeometry(0.17, 14, 10);
 sharedGeometries.add(lampGeometry);
 
@@ -541,18 +580,33 @@ export const WALL_CORNICE_BANDS = Object.freeze([
 ]);
 export const WALL_PILASTER_WIDTH = 0.18;
 
-function addWallJoinery(room, index) {
+// Where a cornice band runs along a wall, as [tangent, width] pairs. On a
+// doorway wall a band below the head of the opening stops either side of it
+// rather than crossing it: the doorway is cut nearly to the storey above now,
+// and a moulding run straight across would be a bar across the way through.
+const CORNICE_RUN = WALL_WIDTH - 0.58;
+const CORNICE_GAP_HALF = DOOR_WIDTH / 2 + 0.3;
+export function corniceRuns(band, doorway) {
+  if (!doorway || band.y - band.height / 2 > HALL_OPENING_HEIGHT) return [[0, CORNICE_RUN]];
+  const width = CORNICE_RUN / 2 - CORNICE_GAP_HALF;
+  const centre = CORNICE_GAP_HALF + width / 2;
+  return [[-centre, width], [centre, width]];
+}
+
+function addWallJoinery(room, index, doorway = false) {
   const basis = wallBasis(index);
   for (const band of WALL_CORNICE_BANDS) {
-    addBox(
-      room,
-      shelfMaterial,
-      [WALL_WIDTH - 0.58, band.height, band.depth],
-      pointOnWall(basis, 0, band.y, band.inset),
-      basis.rotation,
-      null,
-      { outlined: false },
-    );
+    for (const [tangent, width] of corniceRuns(band, doorway)) {
+      addBox(
+        room,
+        shelfMaterial,
+        [width, band.height, band.depth],
+        pointOnWall(basis, tangent, band.y, band.inset),
+        basis.rotation,
+        null,
+        { outlined: false },
+      );
+    }
   }
   const tangent = WALL_WIDTH / 2 - WALL_PILASTER_WIDTH / 2 - 0.12;
   for (const side of [-1, 1]) {
@@ -777,7 +831,7 @@ function addProud(room, size, x, y, proud, shade, material = shelfMaterial) {
   addBox(room, material, size, new THREE.Vector3(x, y, z), 0, frameMatrix, { outlined: false, shade });
 }
 
-function addCabinetCarving(room) {
+function addCabinetCarving(room, { labels = true, dentils = true } = {}) {
   for (const [height, depth, proud, extra, y] of CORNICE_PROFILE) {
     const centreY = CARCASE_HEIGHT + y;
     addProud(room, [CABINET_RUN_WIDTH + extra, height, depth], 0, centreY, proud, shelfBoardShade(centreY));
@@ -794,7 +848,7 @@ function addCabinetCarving(room) {
       shelfBoardShade(shelfY));
     const beadY = shelfY - lipHeight / 2 - SHELF_BEAD_HEIGHT / 2;
     addProud(room, [innerRun, SHELF_BEAD_HEIGHT, 0.02], 0, beadY, SHELF_LIP_PROUD + 0.008, shelfBoardShade(shelfY));
-    for (let section = 0; section < CABINET_SECTIONS_PER_WALL; section++) {
+    for (let section = 0; labels && section < CABINET_SECTIONS_PER_WALL; section++) {
       const x = (section - (CABINET_SECTIONS_PER_WALL - 1) / 2) * CABINET_SECTION_PITCH;
       addProud(room, LABEL_HOLDER_SIZE, x, shelfY, SHELF_LIP_PROUD + 0.012, null, brassMaterial);
       addProud(room, LABEL_CARD_SIZE, x, shelfY - 0.004, SHELF_LIP_PROUD + 0.016, () => 0.45);
@@ -802,9 +856,9 @@ function addCabinetCarving(room) {
   }
 
   const dentilY = CARCASE_HEIGHT - 0.055 - DENTIL_HEIGHT / 2;
-  const dentils = Math.floor((innerRun - DENTIL_WIDTH) / DENTIL_PITCH);
-  const firstDentil = -(dentils * DENTIL_PITCH) / 2;
-  for (let dentil = 0; dentil <= dentils; dentil++) {
+  const dentilCount = dentils ? Math.floor((innerRun - DENTIL_WIDTH) / DENTIL_PITCH) : -1;
+  const firstDentil = -(dentilCount * DENTIL_PITCH) / 2;
+  for (let dentil = 0; dentil <= dentilCount; dentil++) {
     addProud(room, [DENTIL_WIDTH, DENTIL_HEIGHT, 0.03], firstDentil + dentil * DENTIL_PITCH, dentilY, 0.03,
       shelfBoardShade(dentilY));
   }
@@ -828,25 +882,12 @@ function addCabinetCarving(room) {
   }
 }
 
-// Collects one wall's volumes into the room-wide batches instead of adding a
-// mesh per book.  Shelving itself stays merged too: there are only a handful
-// of carcase pieces per wall, but they share two materials across four walls.
-function collectBookWall(room, index, q, r, level, disturbed) {
-  const basis = wallBasis(index);
-  // On another level the same canonical wall faces a different way, so the
-  // number comes from the placement rather than from a fixed list.
-  const canonicalWall = canonicalWallForWallIndex(level, index);
+// The carcase of one run of cases along a wall, its foot at `frame`'s origin.
+function addCaseRun(room, frame) {
   const postHeight = CARCASE_HEIGHT - 2 * RAIL_THICKNESS;
   const carcase = { outlined: false, shade: nicheShade };
-  const { batches, outlinePositions } = room.userData;
-
-  const labelOffset = pointOnWall(basis, 0, 0, CABINET_WALL_INSET);
-  wallLabelMatrix.makeRotationY(basis.rotation).setPosition(labelOffset.x, labelOffset.y, labelOffset.z);
-  addWallNumber(room.userData.wallNumbers, canonicalWall, wallLabelMatrix);
-
-  // One built-in case runs along the wall. The six catalogue sections remain
-  // logical address groups only: the architecture has no internal partitions.
-  frameMatrix.copy(wallLabelMatrix);
+  const { outlinePositions } = room.userData;
+  frameMatrix.copy(frame);
   addBox(room, shelfMaterial, [CABINET_RUN_WIDTH, PLINTH_HEIGHT, CARCASE_DEPTH],
     new THREE.Vector3(0, PLINTH_HEIGHT / 2, CARCASE_CENTRE_Z), 0, frameMatrix, carcase);
   const headRailY = CARCASE_HEIGHT - RAIL_THICKNESS / 2;
@@ -869,6 +910,183 @@ function collectBookWall(room, index, q, r, level, disturbed) {
       { outlined: false, shade: shelfBoardShade(shelfY) });
     addShelfEdge(outlinePositions, frameMatrix, shelfY, CABINET_RUN_WIDTH);
   }
+}
+
+// The tiers of cases standing on the galleries. Built as the course on the
+// floor is built, and filled as it is, but their volumes carry no record: the
+// placement gives a wall five shelves and these are above them. They are drawn
+// apart from the catalogued volumes, as spines and tops only: nobody on a
+// gallery can see a volume's sides past its neighbours.
+function addGalleryCases(room, index) {
+  const basis = wallBasis(index);
+  const batch = room.userData.galleryVolumes;
+  for (const level of GALLERY_LEVELS) {
+    const offset = pointOnWall(basis, 0, level, CABINET_WALL_INSET);
+    const tierFrame = new THREE.Matrix4().makeRotationY(basis.rotation).setPosition(offset.x, offset.y, offset.z);
+    addCaseRun(room, tierFrame);
+    addCabinetCarving(room, { labels: false, dentils: false });
+    for (let section = 0; section < CABINET_SECTIONS_PER_WALL; section++) {
+      const tangent = (section - (CABINET_SECTIONS_PER_WALL - 1) / 2) * CABINET_SECTION_PITCH;
+      const frameOffset = pointOnWall(basis, tangent, level, CABINET_WALL_INSET);
+      frameMatrix.makeRotationY(basis.rotation).setPosition(frameOffset.x, frameOffset.y, frameOffset.z);
+      for (let shelfIndex = 0; shelfIndex < SHELVES_PER_WALL; shelfIndex++) {
+        const shelfY = SHELF_BASE_Y + shelfIndex * SHELF_PITCH;
+        for (let localVolume = 0; localVolume < VOLUMES_PER_SHELF; localVolume++) {
+          const x = -((VOLUMES_PER_SHELF - 1) * CABINET_BOOK_STEP) / 2 + localVolume * CABINET_BOOK_STEP;
+          // Varied as the course below is, but offset by the tier so that no
+          // two courses repeat the same pattern of heights and bindings.
+          const { height, tint } = volumeVariation(index + 7 * (level > GALLERY_LEVELS[0] ? 2 : 1), shelfIndex,
+            section * VOLUMES_PER_SHELF + localVolume);
+          placeVolume(bookMatrix, x, shelfY, BOOK_FRONT_Z + BOOK_DEPTH / 2, height).premultiply(frameMatrix);
+          batch.matrices.push(bookMatrix.clone());
+          batch.tints.push(tint);
+        }
+      }
+    }
+    // Reading lamps along each tier, as along the floor; the bodies glow, and
+    // the light comes from the three at the middle and the quarters.
+    for (const ratio of [-0.39, -0.195, 0, 0.195, 0.39]) {
+      const tangent = ratio * CABINET_RUN_WIDTH;
+      addBox(room, brassMaterial, [0.44, 0.045, 0.045],
+        pointOnWall(basis, tangent, level + CARCASE_HEIGHT - 0.04, 0.42), basis.rotation, null, { outlined: false });
+      addBox(room, lampMaterial, [0.19, 0.13, 0.14],
+        pointOnWall(basis, tangent, level + CARCASE_HEIGHT - 0.22, 0.62), basis.rotation, null, { outlined: false });
+    }
+  }
+}
+
+function addGalleries(room, doorWalls) {
+  for (const part of galleryParts(doorWalls)) {
+    const material = part.kind === 'iron' ? metalMaterial : (part.kind === 'stone' ? wallMaterial : shelfMaterial);
+    if (part.slab) {
+      const { left, right, depth, height } = part.slab;
+      const entry = mitredSlabFor(left, right, depth, height);
+      staticLocalMatrix.makeRotationY(part.rotation).setPosition(part.position.x, part.position.y, part.position.z);
+      appendMergedGeometry(staticBatchFor(room, material), entry.geometry, staticLocalMatrix);
+      continue;
+    }
+    addBox(room, material, part.size, part.position, part.rotation, null,
+      { outlined: false, rotationZ: part.rotationZ ?? 0 });
+  }
+}
+
+// The galleries and everything on them are the same in every chamber whose
+// doorways are on the same walls — and there are only three such
+// arrangements, one per level of the cycle. So they are built once for each,
+// kept as finished vertex arrays per material, and every chamber after that
+// copies them into its own batches as it merges them: building them box by box
+// doubled the time it took to put up a chamber, and drawing them as meshes of
+// their own cost a draw call per material in every chamber on screen.
+const galleryShells = new Map();
+function galleryShellFor(doorWalls, shelvedWalls) {
+  const key = doorWalls.join(',');
+  let shell = galleryShells.get(key);
+  if (shell) return shell;
+  const scratch = {
+    userData: {
+      staticBatches: new Map(),
+      outlinePositions: [],
+      galleryVolumes: { matrices: [], tints: [] },
+    },
+  };
+  for (const index of shelvedWalls) addGalleryCases(scratch, index);
+  addGalleries(scratch, doorWalls);
+  // The piers of the well and the columns at each doorway ride along: they
+  // too are the same in every chamber of an orientation.
+  for (const part of WELL_PIER_PARTS) {
+    addBox(scratch, part.stone ? wallMaterial : shelfMaterial, part.size, part.position, part.rotation, null,
+      { outlined: false });
+  }
+  for (const wall of doorWalls) {
+    for (const { size, position, rotation, stone } of doorColumnParts(wall)) {
+      addBox(scratch, stone ? wallMaterial : shelfMaterial, size, position, rotation, null, { outlined: false });
+    }
+  }
+  const batches = new Map();
+  for (const [material, batch] of scratch.userData.staticBatches) {
+    batches.set(material, {
+      positions: new Float32Array(batch.positions),
+      normals: new Float32Array(batch.normals),
+      uvs: new Float32Array(batch.uvs),
+      colors: new Float32Array(batch.colors),
+      indices: new Uint32Array(batch.indices),
+    });
+  }
+  const { matrices, tints } = scratch.userData.galleryVolumes;
+  const matrixArray = new Float32Array(matrices.length * 16);
+  const colorArray = new Float32Array(matrices.length * 3);
+  matrices.forEach((matrix, index) => {
+    matrix.toArray(matrixArray, index * 16);
+    colorArray.set(tints[index], index * 3);
+  });
+  shell = {
+    batches,
+    outlines: new Float32Array(scratch.userData.outlinePositions),
+    volumes: {
+      count: matrices.length,
+      matrix: new THREE.InstancedBufferAttribute(matrixArray, 16),
+      color: new THREE.InstancedBufferAttribute(colorArray, 3),
+    },
+  };
+  galleryShells.set(key, shell);
+  return shell;
+}
+
+const concatenated = (head, tail) => {
+  const joined = new Float32Array(head.length + tail.length);
+  joined.set(head);
+  joined.set(tail, head.length);
+  return joined;
+};
+
+// A chamber's own batch for a material with the shell's copy of it appended.
+function mergedWithShell(batch, shellBatch) {
+  if (!shellBatch) return mergedMesh(batch, batch.material);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(concatenated(batch.positions, shellBatch.positions), 3));
+  geometry.setAttribute('normal', new THREE.BufferAttribute(concatenated(batch.normals, shellBatch.normals), 3));
+  geometry.setAttribute('uv', new THREE.BufferAttribute(concatenated(batch.uvs, shellBatch.uvs), 2));
+  geometry.setAttribute('color', new THREE.BufferAttribute(concatenated(batch.colors, shellBatch.colors), 3));
+  const base = batch.positions.length / 3;
+  const indices = new Uint32Array(batch.indices.length + shellBatch.indices.length);
+  indices.set(batch.indices);
+  for (let element = 0; element < shellBatch.indices.length; element++) {
+    indices[batch.indices.length + element] = base + shellBatch.indices[element];
+  }
+  geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+  return new THREE.Mesh(geometry, batch.material);
+}
+
+// The gallery books: not in the catalogue, so they stand apart from the
+// chamber's own volumes, one instanced draw for every tier together.
+function addGalleryVolumes(room, shell) {
+  const volumes = new THREE.InstancedMesh(shelfFaceBookGeometry, bookMaterials[0], shell.volumes.count);
+  volumes.instanceMatrix = shell.volumes.matrix;
+  volumes.instanceColor = shell.volumes.color;
+  volumes.userData.galleryVolumes = true;
+  volumes.raycast = () => {};
+  volumes.castShadow = false;
+  volumes.receiveShadow = true;
+  room.add(volumes);
+}
+
+// Collects one wall's volumes into the room-wide batches instead of adding a
+// mesh per book.  Shelving itself stays merged too: there are only a handful
+// of carcase pieces per wall, but they share two materials across four walls.
+function collectBookWall(room, index, q, r, level, disturbed) {
+  const basis = wallBasis(index);
+  // On another level the same canonical wall faces a different way, so the
+  // number comes from the placement rather than from a fixed list.
+  const canonicalWall = canonicalWallForWallIndex(level, index);
+  const { batches } = room.userData;
+
+  const labelOffset = pointOnWall(basis, 0, 0, CABINET_WALL_INSET);
+  wallLabelMatrix.makeRotationY(basis.rotation).setPosition(labelOffset.x, labelOffset.y, labelOffset.z);
+  addWallNumber(room.userData.wallNumbers, canonicalWall, wallLabelMatrix);
+
+  // One built-in case runs along the wall. The six catalogue sections remain
+  // logical address groups only: the architecture has no internal partitions.
+  addCaseRun(room, wallLabelMatrix);
   addCabinetCarving(room);
 
   // Every volume on a wall is the wall's first slot plus its place along the
@@ -992,6 +1210,10 @@ function cloneVisualChild(source) {
     clone.instanceMatrix = source.instanceMatrix;
     clone.instanceColor = source.instanceColor ?? null;
     clone.userData.records = [];
+    if (source.userData.galleryVolumes) {
+      clone.userData.galleryVolumes = true;
+      clone.raycast = () => {};
+    }
   } else if (source.isLineSegments) {
     clone = new THREE.LineSegments(source.geometry, source.material);
   } else if (source.isLine) {
@@ -1014,7 +1236,7 @@ function cloneVisualRoom(source, q, r, level, template = false) {
     const clone = cloneVisualChild(child);
     if (!clone) continue;
     room.add(clone);
-    if (clone.isInstancedMesh) bookMeshes.push(clone);
+    if (clone.isInstancedMesh && !clone.userData.galleryVolumes) bookMeshes.push(clone);
   }
   const sourceDisturbed = source.userData.templateDisturbed
     ?? tracesFor(worldRoomIndexFor(source.userData.q, source.userData.r, source.userData.level), source.userData.level).disturbed;
@@ -1160,10 +1382,11 @@ function hydrateOnePortalVolume(room) {
   return state.wall === room.userData.shelvedWalls.length;
 }
 
-function finalizeRoom(room) {
+function finalizeRoom(room, shell = null) {
   const { batches, outlinePositions, staticBatches } = room.userData;
+  if (shell) for (const material of shell.batches.keys()) staticBatchFor(room, material);
   for (const batch of staticBatches.values()) {
-    const mesh = mergedMesh(batch, batch.material);
+    const mesh = mergedWithShell(batch, shell?.batches.get(batch.material));
     // The shell and timber carry the large architectural shadows. Tiny rails,
     // brass brackets and emissive lantern batches add several full shadow-map
     // submissions while changing no readable silhouette.
@@ -1198,9 +1421,12 @@ function finalizeRoom(room) {
     room.userData.bookMeshes.push(mesh);
   }
 
-  if (outlinePositions.length) {
+
+  if (outlinePositions.length || shell?.outlines.length) {
     const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(outlinePositions, 3));
+    geometry.setAttribute('position', new THREE.BufferAttribute(
+      shell ? concatenated(outlinePositions, shell.outlines) : new Float32Array(outlinePositions), 3,
+    ));
     const outlines = new THREE.LineSegments(geometry, outlineMaterial);
     outlines.renderOrder = 2;
     room.add(outlines);
@@ -1398,21 +1624,26 @@ export function makeRoom(q, r, level, { deferSpines = false } = {}) {
   room.userData.lampCount = doorWalls.length;
   for (const wall of doorWalls) {
     const basis = wallBasis(wall);
-    const globePosition = pointOnWall(basis, 0, WALL_LAMP_HEIGHT, 0.42);
-    const globe = new THREE.Mesh(lampGeometry, lampMaterial);
-    globe.position.copy(globePosition);
-    globe.raycast = () => {};
-    room.add(globe);
-
-    // A short bracket and cage give the source a scale and a reason to hang
-    // where it does.  All pieces join the room's static batches.
-    addBox(room, brassMaterial, [0.08, 0.72, 0.08],
-      pointOnWall(basis, 0, WALL_LAMP_HEIGHT + 0.16, 0.18), basis.rotation, null, { outlined: false });
-    addBox(room, brassMaterial, [0.62, 0.08, 0.08],
-      pointOnWall(basis, 0, WALL_LAMP_HEIGHT + 0.39, 0.43), basis.rotation, null, { outlined: false });
-    for (const side of [-1, 1]) {
-      addBox(room, brassMaterial, [0.035, 0.5, 0.035],
-        pointOnWall(basis, side * 0.2, WALL_LAMP_HEIGHT, 0.42), basis.rotation, null, { outlined: false });
+    // The doorway is cut far above lantern height now, so the lantern that hung
+    // over its head would hang in the opening. It is a pair instead, one on
+    // each of the columns that flank the way through, and the light they cast
+    // is still one source at the centre, as it always was.
+    for (const globePosition of doorColumnLanternPoints(wall, WALL_LAMP_HEIGHT)) {
+      // Merged like the rest of the lantern: a pair of globes on every
+      // doorway would otherwise be a pair of draw calls in every chamber.
+      staticLocalMatrix.makeTranslation(globePosition.x, globePosition.y, globePosition.z);
+      appendMergedGeometry(staticBatchFor(room, lampMaterial), lampGeometry, staticLocalMatrix);
+      // A short bracket and cage give the source a scale and a reason to hang
+      // where it does.  All pieces join the room's static batches.
+      const bracket = (size, rise, out, across = 0) => addBox(room, brassMaterial, size,
+        globePosition.clone()
+          .addScaledVector(new THREE.Vector3(basis.tx, 0, basis.tz), across)
+          .addScaledVector(new THREE.Vector3(basis.nx, 0, basis.nz), out)
+          .setY(globePosition.y + rise),
+        basis.rotation, null, { outlined: false });
+      bracket([0.08, 0.72, 0.08], 0.16, 0.24);
+      bracket([0.08, 0.08, 0.3], 0.39, 0.12);
+      for (const side of [-1, 1]) bracket([0.035, 0.5, 0.035], 0, 0, side * 0.2);
     }
 
     const light = new THREE.PointLight(LAMP_LIGHT_COLOR, LAMP_INTENSITY, LAMP_RANGE, 2);
@@ -1519,9 +1750,12 @@ export function makeRoom(q, r, level, { deferSpines = false } = {}) {
     addSolidWall(room, index);
     if (shelvedWalls.includes(index)) collectBookWall(room, index, q, r, level, traces.disturbed);
   }
-  for (let index = 0; index < 6; index++) addWallJoinery(room, index);
+  for (let index = 0; index < 6; index++) addWallJoinery(room, index, doorWalls.includes(index));
+  // After every catalogued volume, so that theirs are the first records.
   if (traces.tally) addTally(room, traces.tally);
-  finalizeRoom(room);
+  const shell = galleryShellFor(doorWalls, shelvedWalls);
+  finalizeRoom(room, shell);
+  addGalleryVolumes(room, shell);
   return room;
 }
 
@@ -1531,7 +1765,9 @@ export function disposeRoom(room) {
     if (object.geometry && !sharedGeometries.has(object.geometry)) geometries.add(object.geometry);
     // Instanced volumes own their matrix and colour buffers even though the box
     // geometry itself is shared across every room.
-    if (object.isInstancedMesh) object.dispose();
+    // The galleries' volumes share one buffer between every chamber of an
+    // orientation; releasing it would only make the next chamber upload it.
+    if (object.isInstancedMesh && !object.userData.galleryVolumes) object.dispose();
     // A lantern that casts shadows owns its shadow map, a render target the
     // renderer keeps until the light itself is disposed. Removing the room
     // from the scene does not release it, so without this every chamber

@@ -173,8 +173,15 @@ export const SHELVED_WALLS_PER_ROOM = 4;
 // therefore belong to a separate human-scale contract and never derive from
 // ROOM_RADIUS. The opening remains visible across the gallery without turning
 // the corridor into a low hangar.
+//
+// Width stays a person's; height does not. A doorway cut to a person's height
+// in a wall fourteen metres high is a mousehole, and it told a walker the one
+// thing the library must not: that it was built for them. The passage now rises
+// most of a storey, a slot four metres wide and twelve high, and the chamber's
+// own opening under its lintel is cut nearly as tall. Walking into one is
+// walking into a crevice between two cliffs of stone.
 export const DOOR_WIDTH = 4.2;
-export const DOOR_HEIGHT = 3.6;
+export const DOOR_HEIGHT = 12;
 export const DOOR_HALF_WIDTH = DOOR_WIDTH / 2;
 export const WALL_THICKNESS = 0.2;
 // The free walls are built deep, so a doorway is a short passage to walk
@@ -222,7 +229,9 @@ export const ALCOVE_DEPTH = HALL_SIDE_CENTRE - HALL_HALF_WIDTH;
 // carries a lintel. That band is the only surface in a passage wide enough and
 // square enough to write on, and a walker standing at the junction needs to be
 // told which chamber each of the three onward ways leads to. See world/signs.js.
-export const HALL_OPENING_HEIGHT = 3.15;
+// The band left above it is tall enough to carry a name that can be read from
+// the crossing below, looking up.
+export const HALL_OPENING_HEIGHT = 10.5;
 export const HALL_LINTEL_HEIGHT = DOOR_HEIGHT - HALL_OPENING_HEIGHT;
 // The far end has no wall to lower, so it gets a beam across it instead.
 export const HALL_TRANSOM_DEPTH = 0.18;
