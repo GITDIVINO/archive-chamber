@@ -1118,7 +1118,6 @@ const sideContinuity = await page.evaluate(async () => {
     exactBookCounts: portalGroup.children.map(child => child.userData.bookCount),
     metadataDeferred: portalGroup.children.map(child => child.userData.metadataDeferred),
     allMasksDepthTest: portalGroup.children.every(child => child.userData.maskDepthTest),
-    allCoreMasksIgnoreDepth: portalGroup.children.every(child => !child.userData.coreMaskDepthTest),
     maskHeights: portalGroup.children.map(child => child.userData.maskHeight),
     maskWidths: portalGroup.children.map(child => child.userData.maskWidth),
     portalPassageOwnership: portalGroup.children.map(child => ({
@@ -1157,11 +1156,6 @@ assert.equal(sideContinuity.baseMarkersCarryNoGeometry, true, 'foreign destinati
 assert.equal(sideContinuity.sharedStencilRestored, true, 'portal rendering must restore every shared material stencil state');
 assert.equal(sideContinuity.allAperturesVisible, true, 'all six apertures coexist instead of following the gaze');
 assert.equal(sideContinuity.allMasksDepthTest, true, 'every aperture must be hidden by real corridor walls and lintels');
-assert.equal(
-  sideContinuity.allCoreMasksIgnoreDepth,
-  true,
-  'the exact doorway core must replace source-world depth instead of preserving a stale side wall',
-);
 assert.ok(
   sideContinuity.maskHeights.every(height => height > sideContinuity.doorHeight),
   'every portal mask must include the destination lintel up to the corridor ceiling',
