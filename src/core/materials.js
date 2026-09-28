@@ -352,3 +352,12 @@ export const vistaOutlineMaterial = new THREE.LineBasicMaterial({
 // Every volume is the same paper white. Shape comes from the shared face tones,
 // outlines and spine lettering, never from alternating coloured materials.
 export const bookMaterials = [shadedMaterial(leatherTexture, BOOK_COLOR)];
+
+// The gallery tiers and the shaft's distant volumes stand far from any lamp,
+// and a real light for every tier costs the whole frame (about 40% in
+// software rendering). Their leather glows faintly of its own instead, as if
+// lit by the lamps on the tier, at no cost per light.
+export const galleryBookMaterial = shadedMaterial(leatherTexture, BOOK_COLOR);
+galleryBookMaterial.emissive = new THREE.Color(0x8a6f52);
+galleryBookMaterial.emissiveMap = leatherTexture;
+galleryBookMaterial.emissiveIntensity = 0.55;
