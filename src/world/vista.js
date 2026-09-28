@@ -644,10 +644,8 @@ function addTemplateChamber(
     const y = WALL_HEIGHT * HANGING_LAMP_HEIGHT_RATIO;
     const position = new THREE.Vector3(x, y, z);
     addBox(batches, lampMaterial, [0.22, 0.32, 0.22], position, 0, null, roomOffset, null);
-    addBox(batches, metalMaterial, [0.34, 0.06, 0.34],
-      new THREE.Vector3(x, y + 0.2, z), 0, null, roomOffset, null);
     addBox(batches, metalMaterial, [0.03, drop, 0.03],
-      new THREE.Vector3(x, y + 0.23 + drop / 2, z), 0, null, roomOffset, null);
+      new THREE.Vector3(x, y + 0.16 + drop / 2, z), 0, null, roomOffset, null);
     glow(position);
   }
   // Repeated cabinet lights turn the shaft into a receding constellation. No
@@ -658,8 +656,12 @@ function addTemplateChamber(
     for (const ratio of [-0.39, -0.195, 0, 0.195, 0.39]) {
       const tangent = ratio * CABINET_RUN_WIDTH;
       const position = pointOnWall(basis, tangent, CARCASE_HEIGHT - 0.22, 0.62);
-      addBox(batches, distantFixtureMaterial, [0.4, 0.045, 0.045],
-        pointOnWall(basis, tangent, CARCASE_HEIGHT - 0.04, 0.42), basis.rotation, null, roomOffset, null);
+      // The bracket over the lamp is about a pixel wide past the detailed
+      // storeys; leaving it out there is what pays for the hanging lamps.
+      if (!distant) {
+        addBox(batches, distantFixtureMaterial, [0.4, 0.045, 0.045],
+          pointOnWall(basis, tangent, CARCASE_HEIGHT - 0.04, 0.42), basis.rotation, null, roomOffset, null);
+      }
       addBox(batches, lampMaterial, [0.16, 0.11, 0.12],
         position, basis.rotation, null, roomOffset, null);
       glow(position);
