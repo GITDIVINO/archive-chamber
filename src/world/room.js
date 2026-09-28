@@ -100,42 +100,6 @@ import { GALLERY_LEVELS, galleryParts } from './galleries.js';
 // where it meets the board and again where the shelf overhangs it.
 export const bookGeometry = new THREE.BoxGeometry(BOOK_WIDTH, BOOK_HEIGHT, BOOK_DEPTH, 1, 2, 1);
 sharedGeometries.add(bookGeometry);
-// The spine (-z) and top (+y) faces of bookGeometry, with its own normals,
-// texture coordinates and three-stop tone, so a volume seen only from the
-// front — down the shaft, or on a gallery tier — is shaded exactly as a near
-// one wherever a near one could be seen, at a quarter of the vertices. Its
-// sides face their neighbours across a three-centimetre gap.
-const BOX_FACE_POSITIVE_Y = 2;
-const BOX_FACE_NEGATIVE_Z = 5;
-export const shelfFaceBookGeometry = (() => {
-  const geometry = new THREE.BufferGeometry();
-  const index = bookGeometry.getIndex();
-  const attributes = Object.entries(bookGeometry.attributes);
-  const values = Object.fromEntries(attributes.map(([name]) => [name, []]));
-  const indices = [];
-  const remap = new Map();
-  for (const face of [BOX_FACE_POSITIVE_Y, BOX_FACE_NEGATIVE_Z]) {
-    const group = bookGeometry.groups[face];
-    for (let element = group.start; element < group.start + group.count; element++) {
-      const vertex = index.getX(element);
-      if (!remap.has(vertex)) {
-        remap.set(vertex, remap.size);
-        for (const [name, attribute] of attributes) {
-          for (let component = 0; component < attribute.itemSize; component++) {
-            values[name].push(attribute.array[vertex * attribute.itemSize + component]);
-          }
-        }
-      }
-      indices.push(remap.get(vertex));
-    }
-  }
-  for (const [name, attribute] of attributes) {
-    geometry.setAttribute(name, new THREE.Float32BufferAttribute(values[name], attribute.itemSize));
-  }
-  geometry.setIndex(indices);
-  return geometry;
-})();
-sharedGeometries.add(shelfFaceBookGeometry);
 const lampGeometry = new THREE.SphereGeometry(0.17, 14, 10);
 sharedGeometries.add(lampGeometry);
 
@@ -230,6 +194,46 @@ export function placeVolume(target, x, shelfY, z, height, turn = 0) {
   }
   bookGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
 })();
+
+// The spine (-z) and top (+y) faces of bookGeometry, with its own normals,
+// texture coordinates and three-stop tone, so a volume seen only from the
+// front — down the shaft, or on a gallery tier — is shaded exactly as a near
+// one wherever a near one could be seen, at a quarter of the vertices. Its
+// sides face their neighbours across a three-centimetre gap.
+// Cut only after the faces are toned: cut before, it had no colour attribute,
+// a vertex-coloured material reads a missing one as black, and every volume
+// drawn with it was a black slat.
+const BOX_FACE_POSITIVE_Y = 2;
+const BOX_FACE_NEGATIVE_Z = 5;
+export const shelfFaceBookGeometry = (() => {
+  const geometry = new THREE.BufferGeometry();
+  const index = bookGeometry.getIndex();
+  const attributes = Object.entries(bookGeometry.attributes);
+  const values = Object.fromEntries(attributes.map(([name]) => [name, []]));
+  const indices = [];
+  const remap = new Map();
+  for (const face of [BOX_FACE_POSITIVE_Y, BOX_FACE_NEGATIVE_Z]) {
+    const group = bookGeometry.groups[face];
+    for (let element = group.start; element < group.start + group.count; element++) {
+      const vertex = index.getX(element);
+      if (!remap.has(vertex)) {
+        remap.set(vertex, remap.size);
+        for (const [name, attribute] of attributes) {
+          for (let component = 0; component < attribute.itemSize; component++) {
+            values[name].push(attribute.array[vertex * attribute.itemSize + component]);
+          }
+        }
+      }
+      indices.push(remap.get(vertex));
+    }
+  }
+  for (const [name, attribute] of attributes) {
+    geometry.setAttribute(name, new THREE.Float32BufferAttribute(values[name], attribute.itemSize));
+  }
+  geometry.setIndex(indices);
+  return geometry;
+})();
+sharedGeometries.add(shelfFaceBookGeometry);
 
 export function shortSpineTitle(title) {
   const value = title.replace(/\s+/g, ' ').trim().slice(0, 9);
