@@ -233,8 +233,6 @@ export const ALCOVE_DEPTH = HALL_SIDE_CENTRE - HALL_HALF_WIDTH;
 // the crossing below, looking up.
 export const HALL_OPENING_HEIGHT = 10.5;
 export const HALL_LINTEL_HEIGHT = DOOR_HEIGHT - HALL_OPENING_HEIGHT;
-// The far end has no wall to lower, so it gets a beam across it instead.
-export const HALL_TRANSOM_DEPTH = 0.18;
 export const ALCOVE_REACH = HALL_HALF_WIDTH + ALCOVE_DEPTH;
 // The far end of a side arm, where the chamber's own doorway begins — the same
 // place, and the same margin, at which the way ahead hands a walker over.
@@ -252,7 +250,6 @@ export const BOOK_HEIGHT = 0.46;
 export const SHELF_BASE_Y = 0.26;
 export const SHELF_PITCH = 0.66;
 export const BOOK_WIDTH = 0.19;
-export const BOOK_STEP = 0.22;
 // Depth of a volume as it recedes into the shelf. Kept well above BOOK_WIDTH
 // so the volume reads as a book lying spine-out on the shelf rather than a
 // square-section post; BOOK_FRONT_Z anchors the visible spine face.

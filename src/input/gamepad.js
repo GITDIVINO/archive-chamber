@@ -32,10 +32,6 @@ function activeGamepad() {
   return null;
 }
 
-export function isGamepadConnected() {
-  return activeGamepad() !== null;
-}
-
 /**
  * Reads one frame of gamepad state.  Button fields are edge-triggered so a
  * held button opens the reader once rather than every frame.
