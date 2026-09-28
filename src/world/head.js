@@ -21,7 +21,6 @@
 import * as THREE from 'three';
 import { STAIR_WELL_EDGE, WALL_HEIGHT } from '../constants.js';
 import { passageExits } from './passage.js';
-import { sharedGeometries } from './geometry.js';
 
 // The chamber it lies in: through the doorway beside which a walker first
 // wakes, straight on across the passage.
@@ -162,12 +161,10 @@ const headMaterial = new THREE.MeshStandardMaterial({
  * origin, its floor at y = 0.
  */
 export function makeHead() {
-  if (!headGeometry) {
-    headGeometry = buildHeadGeometry();
-    // Built once and kept: the chamber it rides in is released on leaving.
-    sharedGeometries.add(headGeometry);
-  }
-  const head = new THREE.Mesh(headGeometry, headMaterial);
+  if (!headGeometry) headGeometry = buildHeadGeometry();
+  // Carved once, and each chamber that shows it draws its own copy, released
+  // with the chamber: a walk that passes the head leaves nothing behind.
+  const head = new THREE.Mesh(headGeometry.clone(), headMaterial);
   // The bridge crosses along the stair edge's normal; the head lies off to one
   // side of it, on the cross-axis, face turned back towards it.
   const bridge = Math.PI / 6 + STAIR_WELL_EDGE * Math.PI / 3;

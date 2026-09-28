@@ -573,7 +573,7 @@ function buildDestination(job, synchronousFallback = false) {
   portalRoot.rotation.y = transform.rotation;
   portalRoot.add(destinationVista, portalRoom);
   const destinationHead = headSeenFrom(transform.there);
-  if (destinationHead) portalRoot.add(destinationHead);
+  if (destinationHead) portalRoom.add(destinationHead);
 
   const portalScene = new THREE.Scene();
   // A separately rendered scene otherwise clears the colour already laid down
@@ -741,14 +741,15 @@ function refreshSigns() {
 }
 
 // The one landmark in the library, when the walker's chamber looks at it.
-let head = null;
 // The head rides in the chamber it is seen from, not beside it in the scene:
 // the scene holds exactly one chamber and its vista, wherever the walker is.
+// A chamber adopted from a doorway view already carries it.
 function refreshHead() {
-  head?.removeFromParent();
-  head = headSeenFrom(world.room);
   const { q, r, level } = world.room;
-  if (head) roomRegistry.get(roomKey(q, r, level)).add(head);
+  const room = roomRegistry.get(roomKey(q, r, level));
+  if (room.children.some(child => child.userData.landmark === 'head')) return;
+  const head = headSeenFrom(world.room);
+  if (head) room.add(head);
 }
 
 export function buildCurrentRoom() {
