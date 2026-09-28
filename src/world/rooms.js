@@ -212,9 +212,16 @@ const PORTAL_MASK_OVERDRAW = 0.36;
 
 const depthResetScene = new THREE.Scene();
 const depthResetCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+// WebGL writes no depth at all while the depth test is off, so the reset has to
+// keep the test on and simply always pass. With it off, the source world's
+// depth survived inside the doorway, and anything of the destination farther
+// away than the nearest source wall behind the aperture was silently dropped:
+// at a side exit the far side of the shaft vanished behind the outside of the
+// walker's own chamber and left a blank wall standing in the middle of the hex.
 const depthResetMaterial = new THREE.ShaderMaterial({
   colorWrite: false,
-  depthTest: false,
+  depthFunc: THREE.AlwaysDepth,
+  depthTest: true,
   depthWrite: true,
   fragmentShader: 'void main() { gl_FragColor = vec4(0.0); }',
   stencilFail: THREE.KeepStencilOp,
