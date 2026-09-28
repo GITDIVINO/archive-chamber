@@ -41,8 +41,10 @@ import { consumeTouchLook, isTouchDevice, resetTouchControls, setupTouchControls
 import {
   addressInput,
   addressSubmit,
+  atlasButton,
   bookPanel,
   catalogueRecord,
+  closeAtlasButton,
   closeBookButton,
   closeSearchButton,
   cellElement,
@@ -51,6 +53,7 @@ import {
   registerButton,
   registerPanel,
   locationRecord,
+  mapCanvas,
   nextPage,
   previousPage,
   reticle,
@@ -61,6 +64,7 @@ import {
   startButton,
 } from './ui/dom.js';
 import { copyExactRecord, setChamberLabel, setPlaceLabel, setStartupState, showNotice } from './ui/hud.js';
+import { atlasKey, closeAtlas, isAtlasOpen, resizeAtlas, setAtlasCallbacks, toggleAtlas } from './ui/atlas.js';
 import { invalidateMap, resizeMapCanvas, syncMap } from './ui/map.js';
 import { closeBook, isReaderOpen, renderPage, setReaderCallbacks, showCatalogueVolume, turnPage } from './ui/reader.js';
 import {
@@ -89,6 +93,7 @@ const resumeChamber = () => (isTouchDevice ? enterChamber() : requestPointerLock
 setReaderCallbacks({ open: suspendChamber, close: resumeChamber });
 setCatalogueCallbacks({ open: suspendChamber, close: resumeChamber });
 setRegisterCallbacks({ open: suspendChamber, close: resumeChamber });
+setAtlasCallbacks({ open: suspendChamber, close: resumeChamber });
 
 onRoomChange(() => {
   setChamberLabel(world.ordinal, world.tag, world.address);
@@ -147,7 +152,7 @@ setupTouchControls(renderer.domElement, { onReadTap: () => openBook() });
 
 document.addEventListener('pointerlockchange', () => {
   player.locked = document.pointerLockElement === renderer.domElement;
-  intro.classList.toggle('gone', player.locked || bookPanel.classList.contains('visible') || searchPanel.classList.contains('visible') || registerPanel.classList.contains('visible'));
+  intro.classList.toggle('gone', player.locked || bookPanel.classList.contains('visible') || searchPanel.classList.contains('visible') || registerPanel.classList.contains('visible') || isAtlasOpen());
   reticle.style.display = player.locked ? 'block' : 'none';
   if (!player.locked) clearTarget();
   if (player.locked) startAudio();
@@ -156,7 +161,7 @@ document.addEventListener('pointerlockchange', () => {
 document.addEventListener('pointerlockerror', () => {
   player.locked = false;
   reticle.style.display = 'none';
-  if (!bookPanel.classList.contains('visible') && !searchPanel.classList.contains('visible') && !registerPanel.classList.contains('visible')) intro.classList.remove('gone');
+  if (!bookPanel.classList.contains('visible') && !searchPanel.classList.contains('visible') && !registerPanel.classList.contains('visible') && !isAtlasOpen()) intro.classList.remove('gone');
 });
 
 document.addEventListener('mousemove', event => {
@@ -165,6 +170,17 @@ document.addEventListener('mousemove', event => {
 });
 
 addEventListener('keydown', event => {
+  // The map opens and closes on the same key, from the chamber or from itself.
+  if (event.code === 'Tab' && (player.locked || player.touchMode || isAtlasOpen())) {
+    event.preventDefault();
+    toggleAtlas();
+    return;
+  }
+  if (isAtlasOpen()) {
+    if (event.code === 'Escape') closeAtlas();
+    else if (atlasKey(event)) event.preventDefault();
+    return;
+  }
   if (event.code === 'Escape' && isRegisterOpen()) {
     closeRegister();
     return;
@@ -189,6 +205,9 @@ function clearPointerFocus(event) {
 
 searchButton.addEventListener('click', openSearch);
 registerButton.addEventListener('click', toggleRegister);
+atlasButton.addEventListener('click', toggleAtlas);
+mapCanvas.addEventListener('click', toggleAtlas);
+closeAtlasButton.addEventListener('click', closeAtlas);
 closeRegisterButton.addEventListener('click', closeRegister);
 closeSearchButton.addEventListener('click', closeSearch);
 searchSubmit.addEventListener('click', runSearch);
@@ -224,6 +243,7 @@ nextPage.addEventListener('click', event => {
 addEventListener('resize', () => {
   resizeView();
   resizeMapCanvas();
+  resizeAtlas();
   if (bookPanel.classList.contains('visible')) renderPage();
   invalidateMap();
 });
@@ -244,6 +264,7 @@ function animate(now) {
       if (isReaderOpen()) closeBook();
       else if (isCatalogueOpen()) closeSearch();
       else if (isRegisterOpen()) closeRegister();
+      else if (isAtlasOpen()) closeAtlas();
     }
   }
 
