@@ -46,7 +46,7 @@ import {
   WELL_SLAB_THICKNESS,
 } from '../constants.js';
 import {
-  bookMaterials,
+  galleryBookMaterial,
   dustMaterial,
   distantFixtureMaterial,
   lanternGlowMaterial,
@@ -165,7 +165,7 @@ function dustTone(radius) {
 }
 
 function instancedVolumes(geometry, volumes) {
-  const mesh = new THREE.InstancedMesh(geometry, bookMaterials[0], volumes.count);
+  const mesh = new THREE.InstancedMesh(geometry, galleryBookMaterial, volumes.count);
   mesh.instanceMatrix = new THREE.InstancedBufferAttribute(
     volumes.matrices.subarray(0, volumes.count * 16),
     16,

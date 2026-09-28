@@ -61,6 +61,7 @@ import {
 import { renderer } from '../core/view.js';
 import {
   bookMaterials,
+  galleryBookMaterial,
   brassMaterial,
   ceilingMaterial,
   floorMaterial,
@@ -1070,7 +1071,7 @@ function mergedWithShell(batch, shellBatch) {
 // 6-15 of their wall; working out 7680 records would double the cost of a
 // chamber, so a record is worked out when a volume is first aimed at.
 function addGalleryVolumes(room, shell) {
-  const volumes = new THREE.InstancedMesh(shelfFaceBookGeometry, bookMaterials[0], shell.volumes.count);
+  const volumes = new THREE.InstancedMesh(shelfFaceBookGeometry, galleryBookMaterial, shell.volumes.count);
   volumes.instanceMatrix = shell.volumes.matrix;
   volumes.instanceColor = shell.volumes.color;
   volumes.userData.galleryVolumes = true;
