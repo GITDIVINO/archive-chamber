@@ -39,7 +39,7 @@ const LONGEST_TALLY = 17;
 // range a 32-bit mixer can take before anything else happens. The fold keeps
 // every limb: taking the low bits alone would make whole regions of the plane
 // share a trace.
-function seedFor(roomIndex) {
+export function seedFor(roomIndex) {
   let seed = 0;
   let rest = roomIndex < 0n ? -roomIndex : roomIndex;
   while (rest > 0n) {
@@ -51,7 +51,7 @@ function seedFor(roomIndex) {
 
 // Separate draws from one seed, so "is there a tally" and "how long is it" do
 // not move together.
-function draw(seed, salt) {
+export function draw(seed, salt) {
   let value = (seed ^ (salt * 2654435761)) >>> 0;
   value = Math.imul(value ^ (value >>> 15), 2246822507) >>> 0;
   value = Math.imul(value ^ (value >>> 13), 3266489909) >>> 0;

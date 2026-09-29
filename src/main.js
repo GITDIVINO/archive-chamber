@@ -7,7 +7,7 @@
  * from importing one another in a circle.
  */
 
-import { camera, nextFrameShown, render, renderer, resizeView } from './core/view.js';
+import { camera, nextFrameShown, render, renderer, resizeView, scene } from './core/view.js';
 import {
   PLAYER_START_PITCH,
   PLAYER_START_X,
@@ -26,6 +26,7 @@ import {
   syncStair,
   world,
 } from './world/rooms.js';
+import { librarianMesh, placeLibrarians, updateLibrarians } from './world/librarians.js';
 import {
   applyLook,
   clearTarget,
@@ -95,7 +96,13 @@ setCatalogueCallbacks({ open: suspendChamber, close: resumeChamber });
 setRegisterCallbacks({ open: suspendChamber, close: resumeChamber });
 setAtlasCallbacks({ open: suspendChamber, close: resumeChamber });
 
+// The readers belong to the scene rather than to a chamber: a chamber is
+// cloned into the doorway views, and a moving figure copied there would cost a
+// draw call in every one of them.
+scene.add(librarianMesh);
+
 onRoomChange(() => {
+  placeLibrarians(world.room);
   setChamberLabel(world.ordinal, world.tag, world.address);
   syncPlace();
   setPlaceLabel(world.placeLabel);
@@ -300,6 +307,8 @@ function animate(now) {
   // The room the walker just entered still owes its spine lettering. A slice a
   // frame keeps it off the frame that built the room, where it would show.
   paintRoomLabels(3);
+  // The readers keep walking whether or not anybody is watching.
+  updateLibrarians(delta, camera.position);
   refreshTargetedVolume();
   camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
   syncMap();
