@@ -351,4 +351,11 @@ export const bookMaterials = [shadedMaterial(leatherTexture, BOOK_COLOR)];
 export const galleryBookMaterial = shadedMaterial(leatherTexture, BOOK_COLOR);
 galleryBookMaterial.emissive = new THREE.Color(0x8a6f52);
 galleryBookMaterial.emissiveMap = leatherTexture;
-galleryBookMaterial.emissiveIntensity = 0.55;
+galleryBookMaterial.emissiveIntensity = 0.3;
+// The glow takes each volume's own binding and shade, as its colour does, so a
+// gallery reads as bound in many colours like the floor and not as one cream
+// wash.
+galleryBookMaterial.onBeforeCompile = shader => {
+  shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>',
+    '#include <emissivemap_fragment>\n      totalEmissiveRadiance *= vColor.rgb;');
+};
