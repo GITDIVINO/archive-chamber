@@ -291,7 +291,7 @@ function createSpineAtlas(room) {
 const SPINE_BAND_INSET = 6;
 const SPINE_LABEL_INSET = 17;
 const SPINE_TITLE_FONT = 12;
-function paintSpineLabel(context, column, row, label) {
+function paintSpineLabel(context, column, row, label, plateAlpha = 0.5) {
   const x = column * SPINE_CELL_WIDTH;
   const y = row * SPINE_CELL_HEIGHT;
   const left = x + 2;
@@ -313,7 +313,7 @@ function paintSpineLabel(context, column, row, label) {
 
   const labelTop = y + SPINE_LABEL_INSET;
   const labelHeight = SPINE_CELL_HEIGHT - 2 * SPINE_LABEL_INSET;
-  context.globalAlpha = 0.5;
+  context.globalAlpha = plateAlpha;
   context.fillStyle = '#1a0f0a';
   context.fillRect(x + 3, labelTop, SPINE_CELL_WIDTH - 6, labelHeight);
   context.globalAlpha = 0.42;
@@ -931,6 +931,9 @@ const GALLERY_ATLAS_WIDTH = 2048;
 const GALLERY_ATLAS_COLUMNS = Math.floor(GALLERY_ATLAS_WIDTH / SPINE_CELL_WIDTH);
 const GALLERY_ATLAS_ROWS = Math.ceil(GALLERY_SPINE_LABELS / GALLERY_ATLAS_COLUMNS);
 const GALLERY_ATLAS_HEIGHT = GALLERY_ATLAS_ROWS * SPINE_CELL_HEIGHT;
+// The floor's plates are laid over dark leather; a gallery volume glows, so its
+// plate is deeper to read as the same dark lettering piece.
+const GALLERY_PLATE_ALPHA = 0.8;
 const GALLERY_FIRST_SHELF = SHELVES_PER_WALL + 1;
 
 const galleryLabelAtlas = { texture: null };
@@ -943,7 +946,7 @@ function ensureGalleryLabelAtlas() {
   for (let cell = 0; cell < GALLERY_SPINE_LABELS; cell++) {
     const shelf = GALLERY_FIRST_SHELF + Math.floor(cell / VOLUMES_PER_WALL_SHELF);
     const volume = String(cell % VOLUMES_PER_WALL_SHELF + 1).padStart(3, '0');
-    paintSpineLabel(context, cell % GALLERY_ATLAS_COLUMNS, Math.floor(cell / GALLERY_ATLAS_COLUMNS), `${shelf}\u00b7${volume}`);
+    paintSpineLabel(context, cell % GALLERY_ATLAS_COLUMNS, Math.floor(cell / GALLERY_ATLAS_COLUMNS), `${shelf}\u00b7${volume}`, GALLERY_PLATE_ALPHA);
   }
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -1007,6 +1010,7 @@ galleryLetteredMaterial.onBeforeCompile = shader => {
         diffuseColor.rgb = mix(diffuseColor.rgb, spineLabel.rgb, spineLabel.a);
       }`)
     .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+      totalEmissiveRadiance *= vColor.rgb * (1.0 - spineLabel.a);
       totalEmissiveRadiance += spineLabel.rgb * spineLabel.a * 0.4;`);
 };
 
