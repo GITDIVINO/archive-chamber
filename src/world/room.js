@@ -246,15 +246,15 @@ function spineTitleFor(bookIndex) {
   return shortSpineTitle(titleForBookIndex(bookIndex));
 }
 
-// A spine is lettered with its shelfmark, shelf and volume as the catalogue
-// addresses it ("2·112"), on the floor and on the galleries alike. A title is a
-// division of a very large number, and 11520 of them a chamber would cost more
-// than building the chamber; a shelfmark costs nothing and is the same in every
-// chamber. The title is what opening the volume shows.
-function shelfmarkFor(shelf, volume) {
-  return `${shelf}\u00b7${String(volume).padStart(3, '0')}`;
-}
-const shelfmark = ({ shelf, volume }) => shelfmarkFor(shelf, volume);
+// A spine is lettered with its shelfmark, wall, shelf and volume as the
+// catalogue addresses them ("3·2" and "112"), on the floor and on the
+// galleries alike. A title is a division of a very large number, and 11520 of
+// them a chamber would cost more than building the chamber; a shelfmark costs
+// nothing and is the same in every chamber. The title is what opening the
+// volume shows.
+const volumeMark = volume => String(volume).padStart(3, '0');
+const shelfMark = (wall, shelf) => `${wall}\u00b7${shelf}`;
+const shelfmark = ({ wall, shelf, volume }) => ({ lower: shelfMark(wall, shelf), upper: volumeMark(volume) });
 
 // A volume's title is a dozen divisions of a very large number, and a room has
 // 3840 volumes: working them all out was a sixth of building a room, for
@@ -301,7 +301,7 @@ function createSpineAtlas(room) {
 const SPINE_BAND_INSET = 6;
 const SPINE_LABEL_INSET = 17;
 const SPINE_TITLE_FONT = 12;
-function paintSpineLabel(context, column, row, label, plateAlpha = 0.5) {
+function paintSpineLabel(context, column, row, { lower = '', upper = '' }, plateAlpha = 0.5) {
   const x = column * SPINE_CELL_WIDTH;
   const y = row * SPINE_CELL_HEIGHT;
   const left = x + 2;
@@ -331,21 +331,29 @@ function paintSpineLabel(context, column, row, label, plateAlpha = 0.5) {
   context.lineWidth = 1;
   context.strokeRect(x + 3.5, labelTop + 0.5, SPINE_CELL_WIDTH - 7, labelHeight - 1);
 
-  // The title is fitted to the lettering piece: a long one is condensed rather
-  // than allowed to run past it.
+  // The address is lettered in two groups along the plate, wall and shelf
+  // first, the volume after: the spine reads from its foot up. A group is
+  // fitted to its half of the plate and condensed rather than allowed to run
+  // past it.
   context.globalAlpha = 0.98;
   context.fillStyle = BOOK_LETTER_COLOR;
-  context.translate(x + SPINE_CELL_WIDTH / 2, labelTop + labelHeight / 2);
-  context.rotate(-Math.PI / 2);
   context.font = `700 ${SPINE_TITLE_FONT}px "Courier New", monospace`;
-  const room = labelHeight - 6;
-  const measured = context.measureText(label).width;
-  if (measured > room) context.scale(room / measured, 1);
   context.shadowColor = 'rgba(0, 0, 0, .72)';
   context.shadowBlur = 1;
   context.textAlign = 'center';
   context.textBaseline = 'middle';
-  context.fillText(label, 0, 0.5);
+  const groups = [[lower, 0.75], [upper, 0.25]];
+  for (const [text, at] of groups) {
+    if (!text) continue;
+    context.save();
+    context.translate(x + SPINE_CELL_WIDTH / 2, labelTop + labelHeight * at);
+    context.rotate(-Math.PI / 2);
+    const room = labelHeight / 2 - 4;
+    const measured = context.measureText(text).width;
+    if (measured > room) context.scale(room / measured, 1);
+    context.fillText(text, 0, 0.5);
+    context.restore();
+  }
   context.restore();
 }
 
@@ -936,7 +944,13 @@ function addCaseRun(room, frame) {
 // label there is, 10 shelves of 192, is painted once on one atlas, and each
 // volume of the gallery mesh picks its cell in the shader: no draw call more.
 const GALLERY_SPINE_SHELVES = GALLERY_LEVELS.length * SHELVES_PER_WALL;
-const GALLERY_SPINE_LABELS = GALLERY_SPINE_SHELVES * VOLUMES_PER_WALL_SHELF;
+const GALLERY_MAX_WALLS = 6;
+// Two kinds of cell: one for each volume of a shelf, lettered on the upper half
+// of the plate, and one for each wall and shelf, lettered on the lower half.
+// A volume of the gallery mesh wears the upper half of its volume's cell and
+// the lower half of its wall and shelf's, and the plate joins between them.
+const GALLERY_VOLUME_CELLS = VOLUMES_PER_WALL_SHELF;
+const GALLERY_SPINE_LABELS = GALLERY_VOLUME_CELLS + GALLERY_MAX_WALLS * GALLERY_SPINE_SHELVES;
 const GALLERY_ATLAS_WIDTH = 2048;
 const GALLERY_ATLAS_COLUMNS = Math.floor(GALLERY_ATLAS_WIDTH / SPINE_CELL_WIDTH);
 const GALLERY_ATLAS_ROWS = Math.ceil(GALLERY_SPINE_LABELS / GALLERY_ATLAS_COLUMNS);
@@ -954,9 +968,15 @@ function ensureGalleryLabelAtlas() {
   canvas.height = GALLERY_ATLAS_HEIGHT;
   const context = canvas.getContext('2d', { willReadFrequently: true });
   for (let cell = 0; cell < GALLERY_SPINE_LABELS; cell++) {
-    const shelf = GALLERY_FIRST_SHELF + Math.floor(cell / VOLUMES_PER_WALL_SHELF);
-    paintSpineLabel(context, cell % GALLERY_ATLAS_COLUMNS, Math.floor(cell / GALLERY_ATLAS_COLUMNS),
-      shelfmarkFor(shelf, cell % VOLUMES_PER_WALL_SHELF + 1), GALLERY_PLATE_ALPHA);
+    const marks = {};
+    if (cell < GALLERY_VOLUME_CELLS) marks.upper = volumeMark(cell + 1);
+    else {
+      const place = cell - GALLERY_VOLUME_CELLS;
+      const wall = Math.floor(place / GALLERY_SPINE_SHELVES) + 1;
+      marks.lower = shelfMark(wall, GALLERY_FIRST_SHELF + place % GALLERY_SPINE_SHELVES);
+    }
+    paintSpineLabel(context, cell % GALLERY_ATLAS_COLUMNS, Math.floor(cell / GALLERY_ATLAS_COLUMNS), marks,
+      GALLERY_PLATE_ALPHA);
   }
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -972,20 +992,21 @@ function ensureGalleryLabelAtlas() {
 // walls, then tiers, then sections, shelves and volumes, as they were placed.
 const GALLERY_VOLUMES_PER_TIER = CABINET_SECTIONS_PER_WALL * SHELVES_PER_WALL * VOLUMES_PER_SHELF;
 const GALLERY_VOLUMES_PER_SECTION = SHELVES_PER_WALL * VOLUMES_PER_SHELF;
-const GALLERY_MAX_WALLS = 6;
 const galleryLetteredGeometry = (() => {
   const geometry = shelfFaceBookGeometry.clone();
   const perWall = GALLERY_VOLUMES_PER_TIER * GALLERY_LEVELS.length;
-  const cells = new Float32Array(perWall * GALLERY_MAX_WALLS);
-  for (let id = 0; id < cells.length; id++) {
+  const cells = new Float32Array(perWall * GALLERY_MAX_WALLS * 2);
+  for (let id = 0; id < perWall * GALLERY_MAX_WALLS; id++) {
+    const wall = Math.floor(id / perWall);
     const tier = Math.floor((id % perWall) / GALLERY_VOLUMES_PER_TIER);
     const inTier = id % GALLERY_VOLUMES_PER_TIER;
     const section = Math.floor(inTier / GALLERY_VOLUMES_PER_SECTION);
     const shelf = Math.floor((inTier % GALLERY_VOLUMES_PER_SECTION) / VOLUMES_PER_SHELF);
     const volume = section * VOLUMES_PER_SHELF + (inTier % VOLUMES_PER_SHELF);
-    cells[id] = (tier * SHELVES_PER_WALL + shelf) * VOLUMES_PER_WALL_SHELF + volume;
+    cells[id * 2] = volume;
+    cells[id * 2 + 1] = GALLERY_VOLUME_CELLS + wall * GALLERY_SPINE_SHELVES + tier * SHELVES_PER_WALL + shelf;
   }
-  geometry.setAttribute('spineCell', new THREE.InstancedBufferAttribute(cells, 1));
+  geometry.setAttribute('spineCell', new THREE.InstancedBufferAttribute(cells, 2));
   return geometry;
 })();
 sharedGeometries.add(galleryLetteredGeometry);
@@ -994,12 +1015,12 @@ const galleryLetteredMaterial = galleryBookMaterial.clone();
 galleryLetteredMaterial.onBeforeCompile = shader => {
   shader.uniforms.spineAtlas = { value: ensureGalleryLabelAtlas() };
   const declarations = `
-    varying float vSpineCell;
+    varying vec2 vSpineCell;
     varying float vSpineFace;
     varying vec2 vSpineUv;`;
   shader.vertexShader = shader.vertexShader
     .replace('#include <common>', `#include <common>
-      attribute float spineCell;${declarations}`)
+      attribute vec2 spineCell;${declarations}`)
     .replace('#include <begin_vertex>', `#include <begin_vertex>
       vSpineCell = spineCell;
       vSpineFace = normal.z < -0.5 ? 1.0 : 0.0;
@@ -1010,8 +1031,9 @@ galleryLetteredMaterial.onBeforeCompile = shader => {
     .replace('#include <map_fragment>', `#include <map_fragment>
       vec4 spineLabel = vec4(0.0);
       if (vSpineFace > 0.5) {
-        float column = mod(vSpineCell, ${GALLERY_ATLAS_COLUMNS}.0);
-        float row = floor(vSpineCell / ${GALLERY_ATLAS_COLUMNS}.0);
+        float cell = vSpineUv.y >= 0.5 ? vSpineCell.x : vSpineCell.y;
+        float column = mod(cell, ${GALLERY_ATLAS_COLUMNS}.0);
+        float row = floor(cell / ${GALLERY_ATLAS_COLUMNS}.0);
         vec2 within = vSpineUv;
         vec2 at = vec2(
           (column * ${SPINE_CELL_WIDTH}.0 + 1.0 + within.x * ${SPINE_CELL_WIDTH - 2}.0) / ${GALLERY_ATLAS_WIDTH}.0,
