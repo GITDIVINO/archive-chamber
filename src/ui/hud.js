@@ -1,6 +1,6 @@
 /** Status line, transient notices and the copy-to-clipboard affordance. */
 
-import { cellElement, noticeElement, startupElement } from './dom.js';
+import { cellElement, noticeElement, startupElement, whisperElement } from './dom.js';
 
 let noticeTimer = 0;
 
@@ -14,6 +14,15 @@ export function showNotice(text) {
   noticeElement.classList.add('visible');
   clearTimeout(noticeTimer);
   noticeTimer = setTimeout(() => noticeElement.classList.remove('visible'), 1700);
+}
+
+/**
+ * A line a librarian is whispering, or null when none is near enough to make
+ * one out. The line stays while it fades, so it does not vanish mid-word.
+ */
+export function setWhisper(text) {
+  if (text && whisperElement.textContent !== text) whisperElement.textContent = text;
+  whisperElement.classList.toggle('visible', Boolean(text));
 }
 
 /**
