@@ -15,7 +15,7 @@ import {
   PLAYER_START_Z,
 } from './constants.js';
 import { isEngaged, keys, player } from './player.js';
-import { startAudio, toggleAudio } from './audio.js';
+import { setWhispers, startAudio, toggleAudio } from './audio.js';
 import {
   buildCurrentRoom,
   onRoomChange,
@@ -26,7 +26,9 @@ import {
   syncStair,
   world,
 } from './world/rooms.js';
-import { librarianMesh, placeLibrarians, updateLibrarians } from './world/librarians.js';
+import {
+  keepOutOfLibrarians, librarianMeshes, listenToLibrarians, placeLibrarians, updateLibrarians,
+} from './world/librarians.js';
 import {
   applyLook,
   clearTarget,
@@ -64,7 +66,7 @@ import {
   searchSubmit,
   startButton,
 } from './ui/dom.js';
-import { copyExactRecord, setChamberLabel, setPlaceLabel, setStartupState, showNotice } from './ui/hud.js';
+import { copyExactRecord, setChamberLabel, setPlaceLabel, setStartupState, setWhisper, showNotice } from './ui/hud.js';
 import { atlasKey, closeAtlas, isAtlasOpen, resizeAtlas, setAtlasCallbacks, toggleAtlas } from './ui/atlas.js';
 import { invalidateMap, resizeMapCanvas, syncMap } from './ui/map.js';
 import { closeBook, isReaderOpen, renderPage, setReaderCallbacks, showCatalogueVolume, turnPage } from './ui/reader.js';
@@ -99,7 +101,7 @@ setAtlasCallbacks({ open: suspendChamber, close: resumeChamber });
 // The readers belong to the scene rather than to a chamber: a chamber is
 // cloned into the doorway views, and a moving figure copied there would cost a
 // draw call in every one of them.
-scene.add(librarianMesh);
+for (const mesh of librarianMeshes) scene.add(mesh);
 
 onRoomChange(() => {
   placeLibrarians(world.room);
@@ -281,6 +283,9 @@ function animate(now) {
     const forward = keyboard.forward || pad?.forward || touch?.forward || 0;
     const strafe = keyboard.strafe || pad?.strafe || touch?.strafe || 0;
     movePlayer(delta, forward, strafe, keyboard.running || Boolean(pad?.running));
+    // The librarians are people, not ghosts: the walker goes round them. Up
+    // on a gallery or a stair there is nobody to bump into.
+    if (camera.position.y < 3) keepOutOfLibrarians(camera.position);
     // Reaching the head or the foot of the flight is a change of floor, and it
     // is the only one there is: no doorway leads up or down. The walker keeps
     // where they stand and only the storey under them changes.
@@ -309,6 +314,11 @@ function animate(now) {
   paintRoomLabels(3);
   // The readers keep walking whether or not anybody is watching.
   updateLibrarians(delta, camera.position);
+  // And they whisper. The words show only while the walker is in the library,
+  // not over an open book or panel.
+  const heard = listenToLibrarians(camera.position, player.yaw, delta);
+  setWhisper(isEngaged() ? heard.caption : null);
+  setWhispers(heard.murmurs);
   refreshTargetedVolume();
   camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
   syncMap();

@@ -80,6 +80,8 @@ button:focus-visible, .location-record:focus-visible { outline: 1px solid var(--
 #open-atlas { right: 178px; }
 #open-search:hover, #open-register:hover, #open-atlas:hover { background: transparent; color: var(--ink); }
 #notice { position: absolute; bottom: 54px; left: 50%; max-width: calc(100vw - 48px); color: #6d614e; font: 11px "Courier New", monospace; letter-spacing: .04em; opacity: 0; transform: translate(-50%, 4px); transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out); white-space: nowrap; }
+#whisper { position: absolute; bottom: 78px; left: 50%; max-width: calc(100vw - 48px); color: #9a8d74; font: italic 12px Georgia, "Times New Roman", serif; letter-spacing: .03em; text-align: center; text-shadow: 0 0 6px #000; opacity: 0; transform: translateX(-50%); transition: opacity 1.2s ease; pointer-events: none; }
+#whisper.visible { opacity: .72; }
 #notice.visible { opacity: 1; transform: translate(-50%, 0); }
 
 #search-panel, #register-panel { display: none; position: absolute; width: min(560px, calc(100vw - 42px)); left: 50%; top: 50%; padding: 28px; pointer-events: auto; transform: translate(-50%, -50%); }

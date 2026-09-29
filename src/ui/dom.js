@@ -6,6 +6,7 @@ export const mapCanvas = find('#hex-map');
 export const cellElement = find('#cell');
 export const soundElement = find('#sound');
 export const noticeElement = find('#notice');
+export const whisperElement = find('#whisper');
 export const startupElement = find('#startup-state');
 export const intro = find('#intro');
 export const startButton = find('#start');
