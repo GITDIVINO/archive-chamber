@@ -918,6 +918,98 @@ function addCaseRun(room, frame) {
   }
 }
 
+// Gallery spines are lettered with their shelfmark, shelf and volume as the
+// catalogue addresses them ("07·112"), not with a title. A title is a division
+// of a very large number: 7680 of them a chamber would double what a chamber
+// costs to build, and lettering them as the floor's are lettered would add
+// nineteen draw calls. A shelfmark is the same in every chamber, so every
+// label there is, 10 shelves of 192, is painted once on one atlas, and each
+// volume of the gallery mesh picks its cell in the shader: no draw call more.
+const GALLERY_SPINE_SHELVES = GALLERY_LEVELS.length * SHELVES_PER_WALL;
+const GALLERY_SPINE_LABELS = GALLERY_SPINE_SHELVES * VOLUMES_PER_WALL_SHELF;
+const GALLERY_ATLAS_WIDTH = 2048;
+const GALLERY_ATLAS_COLUMNS = Math.floor(GALLERY_ATLAS_WIDTH / SPINE_CELL_WIDTH);
+const GALLERY_ATLAS_ROWS = Math.ceil(GALLERY_SPINE_LABELS / GALLERY_ATLAS_COLUMNS);
+const GALLERY_ATLAS_HEIGHT = GALLERY_ATLAS_ROWS * SPINE_CELL_HEIGHT;
+const GALLERY_FIRST_SHELF = SHELVES_PER_WALL + 1;
+
+const galleryLabelAtlas = { texture: null };
+function ensureGalleryLabelAtlas() {
+  if (galleryLabelAtlas.texture) return galleryLabelAtlas.texture;
+  const canvas = document.createElement('canvas');
+  canvas.width = GALLERY_ATLAS_WIDTH;
+  canvas.height = GALLERY_ATLAS_HEIGHT;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  for (let cell = 0; cell < GALLERY_SPINE_LABELS; cell++) {
+    const shelf = GALLERY_FIRST_SHELF + Math.floor(cell / VOLUMES_PER_WALL_SHELF);
+    const volume = String(cell % VOLUMES_PER_WALL_SHELF + 1).padStart(3, '0');
+    paintSpineLabel(context, cell % GALLERY_ATLAS_COLUMNS, Math.floor(cell / GALLERY_ATLAS_COLUMNS), `${shelf}\u00b7${volume}`);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
+  texture.generateMipmaps = true;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  galleryLabelAtlas.texture = texture;
+  return texture;
+}
+
+// Which label a volume of the gallery mesh wears, from its place in the mesh:
+// walls, then tiers, then sections, shelves and volumes, as they were placed.
+const GALLERY_VOLUMES_PER_TIER = CABINET_SECTIONS_PER_WALL * SHELVES_PER_WALL * VOLUMES_PER_SHELF;
+const GALLERY_VOLUMES_PER_SECTION = SHELVES_PER_WALL * VOLUMES_PER_SHELF;
+const GALLERY_MAX_WALLS = 6;
+const galleryLetteredGeometry = (() => {
+  const geometry = shelfFaceBookGeometry.clone();
+  const perWall = GALLERY_VOLUMES_PER_TIER * GALLERY_LEVELS.length;
+  const cells = new Float32Array(perWall * GALLERY_MAX_WALLS);
+  for (let id = 0; id < cells.length; id++) {
+    const tier = Math.floor((id % perWall) / GALLERY_VOLUMES_PER_TIER);
+    const inTier = id % GALLERY_VOLUMES_PER_TIER;
+    const section = Math.floor(inTier / GALLERY_VOLUMES_PER_SECTION);
+    const shelf = Math.floor((inTier % GALLERY_VOLUMES_PER_SECTION) / VOLUMES_PER_SHELF);
+    const volume = section * VOLUMES_PER_SHELF + (inTier % VOLUMES_PER_SHELF);
+    cells[id] = (tier * SHELVES_PER_WALL + shelf) * VOLUMES_PER_WALL_SHELF + volume;
+  }
+  geometry.setAttribute('spineCell', new THREE.InstancedBufferAttribute(cells, 1));
+  return geometry;
+})();
+sharedGeometries.add(galleryLetteredGeometry);
+
+const galleryLetteredMaterial = galleryBookMaterial.clone();
+galleryLetteredMaterial.onBeforeCompile = shader => {
+  shader.uniforms.spineAtlas = { value: ensureGalleryLabelAtlas() };
+  const declarations = `
+    varying float vSpineCell;
+    varying float vSpineFace;
+    varying vec2 vSpineUv;`;
+  shader.vertexShader = shader.vertexShader
+    .replace('#include <common>', `#include <common>
+      attribute float spineCell;${declarations}`)
+    .replace('#include <begin_vertex>', `#include <begin_vertex>
+      vSpineCell = spineCell;
+      vSpineFace = normal.z < -0.5 ? 1.0 : 0.0;
+      vSpineUv = uv;`);
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', `#include <common>
+      uniform sampler2D spineAtlas;${declarations}`)
+    .replace('#include <map_fragment>', `#include <map_fragment>
+      vec4 spineLabel = vec4(0.0);
+      if (vSpineFace > 0.5) {
+        float column = mod(vSpineCell, ${GALLERY_ATLAS_COLUMNS}.0);
+        float row = floor(vSpineCell / ${GALLERY_ATLAS_COLUMNS}.0);
+        vec2 within = vSpineUv;
+        vec2 at = vec2(
+          (column * ${SPINE_CELL_WIDTH}.0 + 1.0 + within.x * ${SPINE_CELL_WIDTH - 2}.0) / ${GALLERY_ATLAS_WIDTH}.0,
+          1.0 - (row * ${SPINE_CELL_HEIGHT}.0 + 1.0 + (1.0 - within.y) * ${SPINE_CELL_HEIGHT - 2}.0) / ${GALLERY_ATLAS_HEIGHT}.0);
+        spineLabel = texture2D(spineAtlas, at);
+        diffuseColor.rgb = mix(diffuseColor.rgb, spineLabel.rgb, spineLabel.a);
+      }`)
+    .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+      totalEmissiveRadiance += spineLabel.rgb * spineLabel.a * 0.4;`);
+};
+
 // The tiers of cases standing on the galleries: shelves 6-15 of each wall.
 // Built as the course on the floor is built, and filled as it is. They are
 // drawn apart from the floor's volumes, as spines and tops only: nobody on a
@@ -1071,7 +1163,10 @@ function mergedWithShell(batch, shellBatch) {
 // 6-15 of their wall; working out 7680 records would double the cost of a
 // chamber, so a record is worked out when a volume is first aimed at.
 function addGalleryVolumes(room, shell) {
-  const volumes = new THREE.InstancedMesh(shelfFaceBookGeometry, galleryBookMaterial, shell.volumes.count);
+  // Painted with the first chamber, while the walker is still on the start
+  // screen, not in the first frame that draws a gallery volume.
+  ensureGalleryLabelAtlas();
+  const volumes = new THREE.InstancedMesh(galleryLetteredGeometry, galleryLetteredMaterial, shell.volumes.count);
   volumes.instanceMatrix = shell.volumes.matrix;
   volumes.instanceColor = shell.volumes.color;
   volumes.userData.galleryVolumes = true;
@@ -1118,9 +1213,6 @@ function raycastGalleryVolumes(raycaster, intersects) {
     galleryHits.length = 0;
   }
 }
-
-const GALLERY_VOLUMES_PER_TIER = CABINET_SECTIONS_PER_WALL * SHELVES_PER_WALL * VOLUMES_PER_SHELF;
-const GALLERY_VOLUMES_PER_SECTION = SHELVES_PER_WALL * VOLUMES_PER_SHELF;
 
 /** The catalogue record of one gallery volume, in the order addGalleryCases lays them. */
 export function galleryRecordFor(mesh, instanceId) {
