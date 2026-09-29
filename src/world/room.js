@@ -246,6 +246,16 @@ function spineTitleFor(bookIndex) {
   return shortSpineTitle(titleForBookIndex(bookIndex));
 }
 
+// A spine is lettered with its shelfmark, shelf and volume as the catalogue
+// addresses it ("2·112"), on the floor and on the galleries alike. A title is a
+// division of a very large number, and 11520 of them a chamber would cost more
+// than building the chamber; a shelfmark costs nothing and is the same in every
+// chamber. The title is what opening the volume shows.
+function shelfmarkFor(shelf, volume) {
+  return `${shelf}\u00b7${String(volume).padStart(3, '0')}`;
+}
+const shelfmark = ({ shelf, volume }) => shelfmarkFor(shelf, volume);
+
 // A volume's title is a dozen divisions of a very large number, and a room has
 // 3840 volumes: working them all out was a sixth of building a room, for
 // titles nobody reads until they pick the book up or its spine is lettered.
@@ -342,7 +352,7 @@ function paintSpineLabel(context, column, row, label, plateAlpha = 0.5) {
 const spineCorner = new THREE.Vector3();
 // Spine quads are baked into room space and merged per atlas, so a whole room
 // of 3840 labels costs one draw call per atlas instead of one per volume.
-function appendSpine(room, bookIndex, matrix) {
+function appendSpine(room, label, matrix) {
   let atlas = room.userData.spineAtlases.at(-1);
   if (!atlas || atlas.next === SPINES_PER_ATLAS) atlas = createSpineAtlas(room);
   const cell = atlas.next++;
@@ -354,7 +364,7 @@ function appendSpine(room, bookIndex, matrix) {
   // upload size, and none of it belongs in the threshold frame:
   // they arrive at the far doorway, where a spine is a smudge anyway.
   // The title itself is worked out when the label is painted: see bookRecord.
-  room.userData.pendingSpines.push({ atlas, column, row, bookIndex });
+  room.userData.pendingSpines.push({ atlas, column, row, label });
   const inset = 1;
   const u0 = (column * SPINE_CELL_WIDTH + inset) / SPINE_ATLAS_SIZE;
   const u1 = ((column + 1) * SPINE_CELL_WIDTH - inset) / SPINE_ATLAS_SIZE;
@@ -945,8 +955,8 @@ function ensureGalleryLabelAtlas() {
   const context = canvas.getContext('2d', { willReadFrequently: true });
   for (let cell = 0; cell < GALLERY_SPINE_LABELS; cell++) {
     const shelf = GALLERY_FIRST_SHELF + Math.floor(cell / VOLUMES_PER_WALL_SHELF);
-    const volume = String(cell % VOLUMES_PER_WALL_SHELF + 1).padStart(3, '0');
-    paintSpineLabel(context, cell % GALLERY_ATLAS_COLUMNS, Math.floor(cell / GALLERY_ATLAS_COLUMNS), `${shelf}\u00b7${volume}`, GALLERY_PLATE_ALPHA);
+    paintSpineLabel(context, cell % GALLERY_ATLAS_COLUMNS, Math.floor(cell / GALLERY_ATLAS_COLUMNS),
+      shelfmarkFor(shelf, cell % VOLUMES_PER_WALL_SHELF + 1), GALLERY_PLATE_ALPHA);
   }
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -1316,9 +1326,9 @@ function collectBookWall(room, index, q, r, level, disturbed) {
 
         placeVolume(spineMatrix, x, shelfY, BOOK_FRONT_Z - 0.015, height, Math.PI).premultiply(frameMatrix);
         if (room.userData.deferSpines) {
-          room.userData.deferredSpines.push({ bookIndex, matrix: spineMatrix.clone() });
+          room.userData.deferredSpines.push({ label: shelfmark(worldLocation), matrix: spineMatrix.clone() });
         } else {
-          appendSpine(room, bookIndex, spineMatrix);
+          appendSpine(room, shelfmark(worldLocation), spineMatrix);
         }
       }
     }
@@ -1536,7 +1546,7 @@ function hydrateOnePortalVolume(room) {
   }
   placeVolume(metadataSpineMatrix, x, shelfY, BOOK_FRONT_Z - 0.015, height, Math.PI)
     .premultiply(metadataFrameMatrix);
-  appendSpine(room, bookIndex, metadataSpineMatrix);
+  appendSpine(room, shelfmark(worldLocation), metadataSpineMatrix);
 
   state.record++;
   state.localVolume++;
@@ -1649,16 +1659,16 @@ export function paintPendingSpines(room, budgetMs) {
     // Order is immaterial because every quad carries its own world matrix. Pop
     // avoids repeatedly moving thousands of array entries while a newly
     // adopted portal room materialises its labels.
-    const { bookIndex, matrix } = deferred.pop();
-    appendSpine(room, bookIndex, matrix);
+    const { label, matrix } = deferred.pop();
+    appendSpine(room, label, matrix);
   }
   if (deferred?.length) return false;
   const pending = room.userData.pendingSpines;
   if (pending?.length) {
     let painted = 0;
     while (painted < pending.length && performance.now() < deadline) {
-      const { atlas, column, row, bookIndex } = pending[painted++];
-      paintSpineLabel(atlas.context, column, row, spineTitleFor(bookIndex));
+      const { atlas, column, row, label } = pending[painted++];
+      paintSpineLabel(atlas.context, column, row, label);
     }
     pending.splice(0, painted);
     if (pending.length) return false;
