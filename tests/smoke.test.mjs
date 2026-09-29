@@ -120,9 +120,9 @@ assert.match(
 // same calls every frame, so two frames are a full sample even when software
 // WebGL takes seconds over each. The shaft's gallery tiers made a software
 // frame about seven seconds, so each wait allows thirty (ALEX, 2026-09-28).
-await page.waitForFunction(() => window.__draw.frames > 2, null, { timeout: 30000 });
+await page.waitForFunction(() => window.__draw.frames > 2, null, { timeout: 45000 });
 await page.evaluate(() => Object.assign(window.__draw, { calls: 0, frames: 0, drew: false }));
-await page.waitForFunction(() => window.__draw.frames > 1, null, { timeout: 30000 });
+await page.waitForFunction(() => window.__draw.frames > 1, null, { timeout: 45000 });
 const perFrame = await page.evaluate(() => Math.round(window.__draw.calls / window.__draw.frames));
 assert.ok(perFrame > 0, 'the room must actually render');
 assert.ok(
@@ -1733,7 +1733,7 @@ for (const [name, query] of Object.entries(visualQueries)) {
   // Frames are paced to the chip, so a fixed pause can end before the view is
   // drawn. At a doorway the first frames can still show black in CI's browser
   // while the view settles; four drawn frames show the finished view.
-  await page.waitForFunction(() => window.__draw.frames > 3, null, { timeout: 30000 });
+  await page.waitForFunction(() => window.__draw.frames > 3, null, { timeout: 45000 });
   const screenshot = await page.screenshot();
   // Sampled from what is on screen, not from the WebGL canvas: without a
   // preserved drawing buffer, current Chrome hands a script a cleared buffer.
