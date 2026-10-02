@@ -1038,7 +1038,11 @@ galleryLetteredMaterial.onBeforeCompile = shader => {
         vec2 at = vec2(
           (column * ${SPINE_CELL_WIDTH}.0 + 1.0 + within.x * ${SPINE_CELL_WIDTH - 2}.0) / ${GALLERY_ATLAS_WIDTH}.0,
           1.0 - (row * ${SPINE_CELL_HEIGHT}.0 + 1.0 + (1.0 - within.y) * ${SPINE_CELL_HEIGHT - 2}.0) / ${GALLERY_ATLAS_HEIGHT}.0);
-        spineLabel = texture2D(spineAtlas, at);
+        // The two halves come from different cells of the atlas, so the derivatives
+        // are taken from the spine's own coordinate: taken from the cell, the
+        // texture's detail level jumps across the join and draws a seam.
+        vec2 toAtlas = vec2(${SPINE_CELL_WIDTH - 2}.0 / ${GALLERY_ATLAS_WIDTH}.0, -${SPINE_CELL_HEIGHT - 2}.0 / ${GALLERY_ATLAS_HEIGHT}.0);
+        spineLabel = textureGrad(spineAtlas, at, dFdx(within) * toAtlas, dFdy(within) * toAtlas);
         diffuseColor.rgb = mix(diffuseColor.rgb, spineLabel.rgb, spineLabel.a);
       }`)
     .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
