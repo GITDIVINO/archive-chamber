@@ -66,6 +66,7 @@ import {
   searchSubmit,
   startButton,
 } from './ui/dom.js';
+import { paintNotebookEntry } from './ui/intro.js';
 import { copyExactRecord, setChamberLabel, setPlaceLabel, setStartupState, setWhisper, showNotice } from './ui/hud.js';
 import { atlasKey, closeAtlas, isAtlasOpen, resizeAtlas, setAtlasCallbacks, toggleAtlas } from './ui/atlas.js';
 import { invalidateMap, resizeMapCanvas, syncMap } from './ui/map.js';
@@ -249,8 +250,11 @@ nextPage.addEventListener('click', event => {
   clearPointerFocus(event);
 });
 
+paintNotebookEntry();
+
 addEventListener('resize', () => {
   resizeView();
+  paintNotebookEntry();
   resizeMapCanvas();
   resizeAtlas();
   if (bookPanel.classList.contains('visible')) renderPage();
