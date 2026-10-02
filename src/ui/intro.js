@@ -17,8 +17,11 @@ const entryElement = document.querySelector('#notebook-entry');
 
 // The same measure as the reader's page: a Courier New letter is 0.6 em wide.
 function columns() {
-  const fontSize = Number.parseFloat(getComputedStyle(entryElement).fontSize) || 10;
-  return Math.min(MAX_PAGE_COLUMNS, Math.max(24, Math.floor(entryElement.clientWidth / (fontSize * 0.6))));
+  const style = getComputedStyle(entryElement);
+  const fontSize = Number.parseFloat(style.fontSize) || 10;
+  const padding = Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.paddingRight);
+  const usableWidth = Math.max(1, entryElement.clientWidth - padding);
+  return Math.min(MAX_PAGE_COLUMNS, Math.max(24, Math.floor(usableWidth / (fontSize * 0.6))));
 }
 
 export function paintNotebookEntry() {
