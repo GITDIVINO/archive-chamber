@@ -53,6 +53,9 @@ canvas { display: block; filter: contrast(1.035) saturate(.88); }
    read there. */
 .attribution { max-width: 420px; margin: 22px auto 0; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font: 9px/1.6 "Courier New", monospace; letter-spacing: .04em; }
 .eyebrow { margin: 0 0 16px; color: #555; font: 700 10px/1.25 "Courier New", monospace; letter-spacing: .16em; }
+.notebook-entry { max-width: 420px; margin: 4px auto 0; color: var(--muted); font: italic 13px/1.6 Georgia, "Times New Roman", serif; letter-spacing: .01em; }
+.notebook-entry p { margin: 0; }
+.startup-state.ready { visibility: hidden; }
 .library-description, .controls, .startup-state { margin: 0 auto; font: 10px/1.55 "Courier New", monospace; }
 .library-description { max-width: 420px; color: #333; letter-spacing: .08em; }
 .startup-state { min-height: 16px; margin-top: 18px; color: var(--muted); }

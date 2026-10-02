@@ -7,6 +7,9 @@ let noticeTimer = 0;
 export function setStartupState(text, error = false) {
   startupElement.textContent = text;
   startupElement.classList.toggle('error', error);
+  // Once the chamber is ready the button says so; the word stays in the
+  // page for the tests but not in front of the notebook.
+  startupElement.classList.toggle('ready', text === 'ready');
 }
 
 export function showNotice(text) {
