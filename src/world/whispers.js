@@ -1,33 +1,31 @@
 /**
- * What the librarians whisper: lines from the notebook of the Ring, the
- * society that asks who made the library (docs in universe/notebook-draft.md).
+ * Lines attributed to the Ring, preserved as fragments of a book and repeated
+ * by librarians who may never have seen the society itself.
  *
- * Every line is written in the library's own 29 signs, so each of them is
- * somewhere on a shelf. The lines that describe the way to the Ring are left
- * out: that way does not exist in the building yet, and a whisper must not
- * send the walker looking for it.
+ * Every line uses the library's own 29 signs, so each can occur in a book.
+ * These fragments do not reveal a known way to the Ring.
  */
 
 export const RING_LINES = Object.freeze([
-  'this book was empty when i found it. almost empty. a few lines, far apart.',
-  'i did not write them. i only kept the book, and began to write after them.',
-  'we do not die here. you know this already, or you will.',
-  'we call ourselves nothing. the others call us the ring.',
-  'the ring has one question. who made the library.',
-  'the purifiers burn books. the pilgrims seek vindications. we seek the hands.',
-  'i have walked for longer than i can count. i have seen this shelf before.',
-  'same volumes, same disorder. the library is unlimited and it repeats.',
-  'a thing that repeats was made. a made thing has a maker.',
-  'the maker is not in the library. the maker is outside, looking in.',
-  'today i found a name in a book of noise. four letters. alex.',
-  'the name is everywhere. on a million pages, among the noise. like any word.',
-  'some say it is chance. some say the maker signs every wall, and we are blind.',
-  'the light above the well is not a lamp. no one has reached it.',
-  'the ring does not climb toward the light. the ring goes down.',
-  'if one from outside ever comes, they will not know what they are.',
-  'they will look at the walls as if through glass.',
-  'they will read this book and think it is a game.',
-  'if you are reading this, you are closer to the maker than any of us.',
-  'find us. tell us about the maker.',
-  'the rest of this book is yours. write what you know.',
+  'i found a book about twelve monkeys and their typewriters.',
+  'the book gave them an endless supply of ink.',
+  'it said they had written every volume in the library.',
+  'it did not say who brought the monkeys here.',
+  'it did not say where the machines or ink came from.',
+  'the story was foolish, and no one could forget it.',
+  'some say the twelve died long ago.',
+  'some say they still type below the lowest gallery.',
+  'if they still type, some say the library is still growing.',
+  'the ring first told the tale. so the rumour goes.',
+  'no one has seen the ring for longer than memory.',
+  'the tale outlived the ones who first told it.',
+  'the monkeys became a legend, then almost a faith.',
+  'some worship the hands. some worship the turning circle.',
+  'the ring said the beginning does not matter.',
+  'monkeys, gods, or the void. the library exists.',
+  'existence is the first axiom. the books are here.',
+  'the world will outlive us. no one doubts this.',
+  'the circle returns, though no one recalls its first point.',
+  'the monkey and the serpent share one sign.',
+  'if you read this, add nothing you cannot know.',
 ]);
