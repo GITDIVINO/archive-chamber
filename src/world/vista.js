@@ -274,6 +274,32 @@ function isThinPart(size) {
   return size[0] < 0.08 && size[2] < 0.08;
 }
 
+// Most of the shaft's lamps are out. A constellation of identical flames at
+// every lantern on every storey read as a string of fairy lights rather than
+// as a building where somebody, somewhere, is still reading; a few lit lamps
+// among many dark ones make each flame an event. Which lamps burn is fixed by
+// where they hang, so every walker sees the same lamps lit in the same shaft.
+const LIT_SHARE = Object.freeze({
+  balustrade: 0.3,
+  well: 0.45,
+  stair: 0.3,
+  hanging: 0.5,
+  cabinet: 0.2,
+  tier: 0.2,
+});
+
+const litPoint = new THREE.Vector3();
+function lampIsLit(position, roomOffset, share) {
+  litPoint.copy(position).applyMatrix4(roomOffset);
+  let hash = Math.imul(Math.round(litPoint.x * 8), 73856093)
+    ^ Math.imul(Math.round(litPoint.y * 8), 19349663)
+    ^ Math.imul(Math.round(litPoint.z * 8), 83492791);
+  hash = Math.imul(hash ^ (hash >>> 15), 0x2c1b3c6d);
+  hash = Math.imul(hash ^ (hash >>> 12), 0x297a2d39);
+  hash ^= hash >>> 15;
+  return (hash >>> 0) / 4294967296 < share;
+}
+
 /**
  * A storey's share of a stone balustrade (balustrade.js), in the shaft's
  * batches. With its balusters (`balustered`) it keeps every band they stand
@@ -297,10 +323,11 @@ function addVistaBalustrade(batches, parts, roomOffset, glow, {
     } else if (part.kind === 'metal') {
       continue;
     }
-    const material = part.kind === 'lamp' ? lampMaterial : wallMaterial;
+    const lit = part.kind === 'lamp' && lampIsLit(part.position, roomOffset, LIT_SHARE.balustrade);
+    const material = part.kind === 'lamp' ? (lit ? lampMaterial : metalMaterial) : wallMaterial;
     addBox(batches, material, part.size, part.position, part.rotation, null, roomOffset,
       part.kind === 'stone' ? stoneShade(part.tone, part.floor) : null);
-    if (part.kind === 'lamp') glow(part.position);
+    if (lit) glow(part.position);
   }
 }
 
@@ -597,7 +624,7 @@ function addTemplateChamber(
   for (const position of WELL_LANTERN_POSITIONS) {
     addBox(
       batches,
-      lampMaterial,
+      lampIsLit(position, roomOffset, LIT_SHARE.well) ? lampMaterial : metalMaterial,
       [0.18, 0.27, 0.18],
       position,
       0,
@@ -642,10 +669,11 @@ function addTemplateChamber(
   // light thirty metres down contributes nothing but its own brightness, and
   // the bloom pass is what turns these into flames. All of them land in one
   // batch, so the whole constellation is two draw calls.
-  for (const { position } of [
-    ...WELL_LANTERN_POSITIONS.map(position => ({ position })),
-    ...WELL_STAIR_LANTERNS,
+  for (const { position, share } of [
+    ...WELL_LANTERN_POSITIONS.map(position => ({ position, share: LIT_SHARE.well })),
+    ...WELL_STAIR_LANTERNS.map(({ position }) => ({ position, share: LIT_SHARE.stair })),
   ]) {
+    const lit = lampIsLit(position, roomOffset, share);
     addBox(batches, metalMaterial, [0.34, 0.08, 0.34],
       new THREE.Vector3(position.x, position.y - 0.19, position.z), 0, null, roomOffset, null, null);
     addBox(batches, metalMaterial, [0.29, 0.07, 0.29],
@@ -654,8 +682,9 @@ function addTemplateChamber(
       addBox(batches, metalMaterial, [0.035, 0.34, 0.035],
         new THREE.Vector3(position.x + dx, position.y, position.z + dz), 0, null, roomOffset, null, null);
     }
-    addBox(batches, lampMaterial, [0.19, 0.28, 0.19], position, 0, null, roomOffset, null, null);
-    glow(position);
+    addBox(batches, lit ? lampMaterial : metalMaterial, [0.19, 0.28, 0.19], position, 0, null, roomOffset,
+      null, null);
+    if (lit) glow(position);
   }
   // Lamps hung in the open air of the well on long chains, as the reference
   // has: thin vertical lines that show how far it is to the top, and a warm
@@ -672,7 +701,8 @@ function addTemplateChamber(
     const z = Math.sin(angle) * WELL_RADIUS * HANGING_LAMP_RADIUS_RATIO;
     const y = WALL_HEIGHT * HANGING_LAMP_HEIGHT_RATIO;
     const position = new THREE.Vector3(x, y, z);
-    addBox(batches, lampMaterial, [0.22, 0.32, 0.22], position, 0, null, roomOffset, null);
+    const lit = lampIsLit(position, roomOffset, LIT_SHARE.hanging);
+    addBox(batches, lit ? lampMaterial : metalMaterial, [0.22, 0.32, 0.22], position, 0, null, roomOffset, null);
     addBox(batches, metalMaterial, [0.03, drop, 0.03],
       new THREE.Vector3(x, y + 0.16 + drop / 2, z), 0, null, roomOffset, null);
   }
@@ -690,9 +720,10 @@ function addTemplateChamber(
         addBox(batches, distantFixtureMaterial, [0.4, 0.045, 0.045],
           pointOnWall(basis, tangent, CARCASE_HEIGHT - 0.04, 0.42), basis.rotation, null, roomOffset, null);
       }
-      addBox(batches, lampMaterial, [0.16, 0.11, 0.12],
+      const lit = lampIsLit(position, roomOffset, LIT_SHARE.cabinet);
+      addBox(batches, lit ? lampMaterial : metalMaterial, [0.16, 0.11, 0.12],
         position, basis.rotation, null, roomOffset, null);
-      glow(position);
+      if (lit) glow(position);
     }
   }
   for (const index of bookWallsForLevel(level)) {
@@ -738,7 +769,8 @@ function addTemplateChamber(
       // The tiers' reading lamps, as haze only: a point each in the one glow
       // cloud, which costs the shaft no geometry at all.
       for (const ratio of [-0.39, -0.195, 0, 0.195, 0.39]) {
-        glow(pointOnWall(basis, ratio * CABINET_RUN_WIDTH, tier + CARCASE_HEIGHT - 0.22, 0.62));
+        const position = pointOnWall(basis, ratio * CABINET_RUN_WIDTH, tier + CARCASE_HEIGHT - 0.22, 0.62);
+        if (lampIsLit(position, roomOffset, LIT_SHARE.tier)) glow(position);
       }
     }
   }
