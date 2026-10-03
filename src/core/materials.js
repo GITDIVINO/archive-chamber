@@ -221,11 +221,6 @@ export const roomLineMaterial = new THREE.LineBasicMaterial({
 // flame is still a point of light at the bottom of the shaft: that is how the
 // reference shows its depth, as hundreds of lanterns hanging in dark air.
 export const lampMaterial = new THREE.MeshBasicMaterial({ color: LAMP_GLOBE_COLOR, toneMapped: false, fog: false });
-// Distant fixtures occupy only a few pixels and receive no useful modelling
-// from a lit metal shader. Sharing the emissive material with their flame keeps
-// the constellation in one draw call. This alias belongs after lampMaterial:
-// module initialisation must never read the binding before it exists.
-export const distantFixtureMaterial = lampMaterial;
 export const lampHaloMaterial = new THREE.MeshBasicMaterial({
   color: 0xffaa62,
   transparent: true,
@@ -339,7 +334,9 @@ export const lightShaftMaterial = new THREE.ShaderMaterial({
         + 0.16 * sin(vAngle * 30.0 + 1.3);
       body *= rays;
       float fade = 1.0 - smoothstep(0.35, 1.0, abs(vHeight));
-      float source = mix(0.12, 1.3, smoothstep(-0.45, 0.7, vRise));
+      // Brightest overhead, gone a little below the eye: the light comes from
+      // above and does not reach the bottom, so nothing down there is lit.
+      float source = mix(0.0, 1.3, smoothstep(-0.3, 0.7, vRise));
       gl_FragColor = vec4(color * body * fade * source * strength, 1.0);
     }
   `,
@@ -381,11 +378,13 @@ export const bookMaterials = [shadedMaterial(leatherTexture, BOOK_COLOR)];
 // The gallery tiers and the shaft's distant volumes stand far from any lamp,
 // and a real light for every tier costs the whole frame (about 40% in
 // software rendering). Their leather glows faintly of its own instead, as if
-// lit by the lamps on the tier, at no cost per light.
+// lit by the lamps on the tier, at no cost per light. Faintly: only a quarter
+// of the tier lamps burn, and at 0.3 the books outshone the lit stone around
+// them several times over, warm where no lamp was.
 export const galleryBookMaterial = shadedMaterial(leatherTexture, BOOK_COLOR);
 galleryBookMaterial.emissive = new THREE.Color(0xa56a42);
 galleryBookMaterial.emissiveMap = leatherTexture;
-galleryBookMaterial.emissiveIntensity = 0.3;
+galleryBookMaterial.emissiveIntensity = 0.14;
 // The glow takes each volume's own binding and shade, as its colour does, so a
 // gallery reads as bound in many colours like the floor and not as one cream
 // wash.

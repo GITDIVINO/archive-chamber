@@ -27,10 +27,19 @@ import {
 // The steepness at which each tint is fully reached, as the sine of the angle
 // above or below the horizon. Haze barely changes until the eye is well off
 // level, so a walker looking along a gallery sees the room as before.
+// Downward the ramp is short: the level slate is paler than lit stone, and
+// while it reached all the way to the floors three storeys down it lightened
+// them instead of letting them sink.
 const ABOVE_FROM = 0.08;
 const ABOVE_TO = 0.92;
-const BELOW_FROM = 0.05;
-const BELOW_TO = 0.8;
+const BELOW_FROM = 0.04;
+const BELOW_TO = 0.45;
+// How much thicker the haze is looking straight down than looking level. With
+// the same density in every direction a floor eight storeys below was still
+// a seventh visible; this takes the shaft to black by the fourth storey,
+// while every view along a gallery or a corridor keeps the density it was
+// tuned with (view.js).
+const BELOW_THICKENING = 1.5;
 
 const level = new THREE.Color(WORLD_DISTANCE_COLOR);
 const above = new THREE.Color(WORLD_HAZE_ABOVE_COLOR);
@@ -74,12 +83,14 @@ THREE.ShaderChunk.fog_pars_fragment = `
 
 THREE.ShaderChunk.fog_fragment = `
 #ifdef USE_FOG
+  float fogRise = vFogOffset.y / max( length( vFogOffset ), 1e-4 );
   #ifdef FOG_EXP2
-    float fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );
+    float fogThickness = fogDensity * ( 1.0 + ${BELOW_THICKENING.toFixed(3)}
+      * smoothstep( ${BELOW_FROM.toFixed(3)}, ${BELOW_TO.toFixed(3)}, - fogRise ) );
+    float fogFactor = 1.0 - exp( - fogThickness * fogThickness * vFogDepth * vFogDepth );
   #else
     float fogFactor = smoothstep( fogNear, fogFar, vFogDepth );
   #endif
-  float fogRise = vFogOffset.y / max( length( vFogOffset ), 1e-4 );
   gl_FragColor.rgb = mix( gl_FragColor.rgb, hazeColor( fogRise ), fogFactor );
 #endif`;
 

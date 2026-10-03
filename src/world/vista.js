@@ -37,6 +37,7 @@ import {
   SHELF_BASE_Y,
   SHELF_PITCH,
   ROOM_RADIUS,
+  SHELL_RING_TONE,
   WALL_HEIGHT,
   DOOR_WALL_OFFSET,
   DOOR_WALL_THICKNESS,
@@ -49,7 +50,6 @@ import {
   galleryBookMaterial,
   DUST_WARM_COLOR,
   dustMaterial,
-  distantFixtureMaterial,
   lanternGlowMaterial,
   lampMaterial,
   lightShaftMaterial,
@@ -264,10 +264,13 @@ function addBox(batches, material, size, position, rotation, parentMatrix, roomO
 // shaft meant to fall away for storeys ends six centimetres below the tread.
 // Each sits a hair below the passage's own floor and above its ceiling, so
 // wherever the two meet the passage wins and nothing is coplanar.
+// Toned as the walker's own floor and ceiling are (room.js), so a storey keeps
+// its brightness when a climb turns it into the chamber.
+const slabTone = () => SHELL_RING_TONE;
 function addChamberSlab(batches, material, roomOffset, y, rotationX) {
   const geometry = new THREE.RingGeometry(WELL_RADIUS, ROOM_RADIUS, 6);
   worldMatrix.makeRotationX(rotationX).setPosition(0, y, 0).premultiply(roomOffset);
-  appendMergedGeometry(batchFor(batches, material), geometry, worldMatrix);
+  appendMergedGeometry(batchFor(batches, material), geometry, worldMatrix, slabTone);
   geometry.dispose();
 }
 
@@ -700,8 +703,10 @@ function addTemplateChamber(
       const position = pointOnWall(basis, tangent, CARCASE_HEIGHT - 0.22, 0.62);
       // The bracket over the lamp is about a pixel wide past the detailed
       // storeys; leaving it out there is what pays for the hanging lamps.
+      // Dark metal, as the brass bracket in the chamber reads at this distance:
+      // in the flame material every bracket glowed, lamp lit or not.
       if (!distant) {
-        addBox(batches, distantFixtureMaterial, [0.4, 0.045, 0.045],
+        addBox(batches, metalMaterial, [0.4, 0.045, 0.045],
           pointOnWall(basis, tangent, CARCASE_HEIGHT - 0.04, 0.42), basis.rotation, null, roomOffset, null);
       }
       const burning = lit('sconce', position);

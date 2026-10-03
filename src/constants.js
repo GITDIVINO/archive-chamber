@@ -17,23 +17,37 @@ export const ROOM_RADIUS = 8.9 * ROOM_SCALE;
 export const WORLD_SURFACE_COLOR = 0x5f5e5b;
 export const WORLD_FLOOR_COLOR = 0x52514e;
 export const WORLD_CEILING_COLOR = 0x37373a;
-// Dark amber, as in the reference: the haze is where the timber goes, and only
-// the lanterns come back out of it. It used to sit brighter than an unlit wall
-// (0x2e1e12) so each further plane came up out of the dark; that gave depth,
-// but it turned the whole shaft into one flat brown field. Depth is now carried
-// by the lantern glows, which fog does not touch (see lanternGlowMaterial).
+// The floor and ceiling around the well are toned a little below the walls,
+// so the floor stays the darkest plane in the room rather than a lit sheet
+// under the walker's feet. The same tone on every storey of the shaft.
+export const SHELL_RING_TONE = 0.75;
+// Slate, as in the reference: the haze is where the stone goes, and only the
+// lanterns come back out of it. It used to be a dark amber that turned the
+// whole shaft into one flat brown field. Depth is carried by the lantern
+// glows, which fog does not touch (see lanternGlowMaterial).
 export const WORLD_DISTANCE_COLOR = 0x35414b;
 // The same haze seen steeply up or down the shaft (see core/haze.js). Above it
-// is pale and cold, light from a source no one has reached; below it is close
-// to black. Level with the eye the haze is WORLD_DISTANCE_COLOR exactly.
+// is pale and cold, light from a source no one has reached; below it is
+// black, with only enough blue left in it that the glows of distant lamps
+// still sit in air rather than on a painted ground. Level with the eye the
+// haze is WORLD_DISTANCE_COLOR exactly.
 export const WORLD_HAZE_ABOVE_COLOR = 0x7b8895;
-export const WORLD_HAZE_BELOW_COLOR = 0x0b0e11;
+export const WORLD_HAZE_BELOW_COLOR = 0x030406;
 // Cold air, warm flames: the reference's whole trick. Fill light and haze are
 // slate, and so is the column of light down the well; only lanterns and their
 // glows stay amber, so a flame reads as a flame against air it does not colour.
 export const WORLD_SKY_FILL_COLOR = 0x6f8296;
-export const WORLD_GROUND_FILL_COLOR = 0x2a2a30;
-export const WORLD_AMBIENT_COLOR = 0xb4c4d4;
+// The fill is a quarter weaker than it was, and colder, so that the stone
+// between two lamps is in shadow rather than merely unlit. What it loses comes
+// out of the ambient, which lit every face alike; the ground term, which is
+// what lights a ceiling, is raised a little instead, so the vault overhead
+// stays a shape on a dark phone screen rather than going to black.
+export const WORLD_GROUND_FILL_COLOR = 0x3a3d45;
+export const WORLD_AMBIENT_COLOR = 0xa9bdd4;
+// Shared by the main scene (view.js) and every doorway's scene (rooms.js): a
+// difference between the two is a seam down the middle of a doorway.
+export const WORLD_HEMISPHERE_INTENSITY = 1.15;
+export const WORLD_AMBIENT_INTENSITY = 0.36;
 
 // --- the warm palette ---------------------------------------------------------
 // Everything a hand touches is wood; everything that holds the building up is
@@ -68,8 +82,10 @@ export const LAMP_LIGHT_COLOR = 0xffc48a;
 // went grey, so that a pool lights the stone without dyeing it.
 export const LAMP_INTENSITY = 22.0;
 // Far enough to wash the wall behind it and reach the treads, short enough that
-// two lanterns do not add into a flat field.
-export const LAMP_RANGE = 30;
+// two lanterns do not add into a flat field. Shortened from 30 when the fill
+// was cut: against a darker room a lamp's tail carried its warmth a third of
+// the way across the chamber, and warmth belongs near the flame.
+export const LAMP_RANGE = 20;
 export const LANTERN_HEIGHT = 1.42;
 // A reading lamp over a cabinet, not a lantern on a rail: shorter reach, and
 // there are twenty of them to a chamber rather than a handful. Sized so that

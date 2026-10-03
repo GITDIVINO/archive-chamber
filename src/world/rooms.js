@@ -24,8 +24,10 @@ import {
   SIDE_EXIT_REACH,
   WALL_HEIGHT,
   WORLD_AMBIENT_COLOR,
+  WORLD_AMBIENT_INTENSITY,
   WORLD_DISTANCE_COLOR,
   WORLD_GROUND_FILL_COLOR,
+  WORLD_HEMISPHERE_INTENSITY,
   WORLD_SKY_FILL_COLOR,
 } from '../constants.js';
 import {
@@ -584,8 +586,8 @@ function buildDestination(job, synchronousFallback = false) {
   // Must track view.js exactly. A destination is seen through an opening a few
   // centimetres away, so any difference between the two lightings is a seam
   // drawn straight down the middle of a doorway.
-  portalScene.add(new THREE.HemisphereLight(WORLD_SKY_FILL_COLOR, WORLD_GROUND_FILL_COLOR, 1.6));
-  portalScene.add(new THREE.AmbientLight(WORLD_AMBIENT_COLOR, 0.5));
+  portalScene.add(new THREE.HemisphereLight(WORLD_SKY_FILL_COLOR, WORLD_GROUND_FILL_COLOR, WORLD_HEMISPHERE_INTENSITY));
+  portalScene.add(new THREE.AmbientLight(WORLD_AMBIENT_COLOR, WORLD_AMBIENT_INTENSITY));
   // The destination room and its key light share one local frame. Leaving the
   // light at a fixed world coordinate made the same room brighter or darker
   // depending on whether it was seen ahead, left or right, and the light then

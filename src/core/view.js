@@ -5,8 +5,10 @@ import {
   PLAYER_START_X,
   PLAYER_START_Z,
   WORLD_AMBIENT_COLOR,
+  WORLD_AMBIENT_INTENSITY,
   WORLD_DISTANCE_COLOR,
   WORLD_GROUND_FILL_COLOR,
+  WORLD_HEMISPHERE_INTENSITY,
   WORLD_SKY_FILL_COLOR,
 } from '../constants.js';
 import { composeFrame, resizeBloom, sceneTarget } from './bloom.js';
@@ -99,27 +101,23 @@ renderer.shadowMap.render = function (lights, shadowScene, shadowCamera) {
   shadowSignatures.set(shadowScene, signature);
   drawShadows.call(this, lights, shadowScene, shadowCamera);
 };
+// Inert as things stand: three.js tone-maps only what is drawn straight to the
+// canvas, and the world is drawn into the bloom buffer (bloom.js), whose
+// composite does not tone-map. Brightness is set by the lights below and the
+// composite, not by these two lines.
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 2.4;
 document.body.prepend(renderer.domElement);
 
-// Warmed, and left near its old strength rather than cut. A vertical wall takes
-// nothing at all from a key pointing straight down, so the ambient is what
-// carries every wall in the building; halving it turned the galleries to mud
-// before a single lantern had been placed. The lantern earns its pool by being
-// bright, not by the room being dark, and the tone mapping above is what keeps
-// the top end from flattening into paper again.
-// Darkness is the base state. A small neutral sky fill preserves the shape of
-// an unlit wall; all warmth belongs to actual lanterns in the architecture.
-// Nearly nothing, and nearly directionless. Almost three units of flat fill
-// used to be poured in from here, which meant the darkness in this room was
-// paint rather than light: every corner was already lit, so no lantern could
-// carve anything out of it and no surface had a falloff. Sky and ground are
-// held close together on purpose — a hemisphere with a bright sky lights every
-// upward face at full strength, and that is what made the floor the brightest
-// thing in the frame when it should be among the darkest.
-scene.add(new THREE.HemisphereLight(WORLD_SKY_FILL_COLOR, WORLD_GROUND_FILL_COLOR, 1.6));
-scene.add(new THREE.AmbientLight(WORLD_AMBIENT_COLOR, 0.5));
+// Darkness is the base state; a cold fill only keeps the shape of unlit stone,
+// and all warmth belongs to actual lanterns. The fill sets how dark the room is
+// between two lamps (the tone mapping above does nothing), so its strength and
+// colour live in constants.js, shared with every doorway's scene in rooms.js.
+// The ambient is what carries every wall, since a vertical face takes nothing
+// from a key pointing straight down; the hemisphere's ground term is what
+// lights a ceiling.
+scene.add(new THREE.HemisphereLight(WORLD_SKY_FILL_COLOR, WORLD_GROUND_FILL_COLOR, WORLD_HEMISPHERE_INTENSITY));
+scene.add(new THREE.AmbientLight(WORLD_AMBIENT_COLOR, WORLD_AMBIENT_INTENSITY));
 // Straight down, and it has to be. A crossing is the same corridor four times
 // and a chamber is the same wall six times, so the world claims two symmetries:
 // a quarter turn about the passage axis and a sixth turn about the room. The

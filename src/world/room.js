@@ -51,6 +51,7 @@ import {
   LAMP_RANGE,
   SCONCE_INTENSITY,
   SCONCE_RANGE,
+  SHELL_RING_TONE,
   WELL_RADIUS,
   WELL_SLAB_THICKNESS,
   DOOR_WALL_OFFSET,
@@ -462,9 +463,6 @@ function addBalustradeParts(room, parts) {
   }
 }
 
-// Toned a little below the walls, so the floor stays the darkest plane in the
-// room rather than a lit sheet under the walker's feet.
-const SHELL_RING_TONE = 0.75;
 function litRing() {
   const ring = new THREE.RingGeometry(WELL_RADIUS, ROOM_RADIUS, 6);
   const count = ring.getAttribute('position').count;

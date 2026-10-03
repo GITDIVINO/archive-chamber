@@ -112,9 +112,11 @@ const compositeMaterial = new THREE.ShaderMaterial({
       vec3 glow = texture2D(tBloom, vUv).rgb;
       vec3 colour = base + glow * strength;
       // Dark corners frame the view the way the reference's foreground does.
-      // Radial and centred, so it is symmetric by construction.
+      // Radial and centred, so it is symmetric by construction. Lighter than it
+      // was once the fill came down, or the corners of a dark room fell below
+      // anything a phone screen can show.
       vec2 centred = vUv - 0.5;
-      colour *= 1.0 - 0.55 * smoothstep(0.28, 0.82, dot(centred, centred) * 2.0);
+      colour *= 1.0 - 0.42 * smoothstep(0.28, 0.82, dot(centred, centred) * 2.0);
       gl_FragColor = vec4(colour, 1.0);
       #include <colorspace_fragment>
     }`,
