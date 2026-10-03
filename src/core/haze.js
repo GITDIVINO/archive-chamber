@@ -33,13 +33,13 @@ import {
 const ABOVE_FROM = 0.08;
 const ABOVE_TO = 0.92;
 const BELOW_FROM = 0.04;
-const BELOW_TO = 0.45;
+const BELOW_TO = 0.55;
 // How much thicker the haze is looking straight down than looking level. With
 // the same density in every direction a floor eight storeys below was still
-// a seventh visible; this takes the shaft to black by the fourth storey,
-// while every view along a gallery or a corridor keeps the density it was
-// tuned with (view.js).
-const BELOW_THICKENING = 1.5;
+// a seventh visible; this lets the shaft go to black a few storeys down while
+// the first storey below stays a shape, and every view along a gallery or a
+// corridor keeps the density it was tuned with (view.js).
+const BELOW_THICKENING = 0.6;
 
 const level = new THREE.Color(WORLD_DISTANCE_COLOR);
 const above = new THREE.Color(WORLD_HAZE_ABOVE_COLOR);

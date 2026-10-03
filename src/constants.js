@@ -37,17 +37,17 @@ export const WORLD_HAZE_BELOW_COLOR = 0x030406;
 // slate, and so is the column of light down the well; only lanterns and their
 // glows stay amber, so a flame reads as a flame against air it does not colour.
 export const WORLD_SKY_FILL_COLOR = 0x6f8296;
-// The fill is a quarter weaker than it was, and colder, so that the stone
+// The fill is about half what it was, and colder, so that the stone
 // between two lamps is in shadow rather than merely unlit. What it loses comes
 // out of the ambient, which lit every face alike; the ground term, which is
 // what lights a ceiling, is raised a little instead, so the vault overhead
 // stays a shape on a dark phone screen rather than going to black.
-export const WORLD_GROUND_FILL_COLOR = 0x3a3d45;
+export const WORLD_GROUND_FILL_COLOR = 0x464a52;
 export const WORLD_AMBIENT_COLOR = 0xa9bdd4;
 // Shared by the main scene (view.js) and every doorway's scene (rooms.js): a
 // difference between the two is a seam down the middle of a doorway.
-export const WORLD_HEMISPHERE_INTENSITY = 1.15;
-export const WORLD_AMBIENT_INTENSITY = 0.36;
+export const WORLD_HEMISPHERE_INTENSITY = 0.9;
+export const WORLD_AMBIENT_INTENSITY = 0.25;
 
 // --- the warm palette ---------------------------------------------------------
 // Everything a hand touches is wood; everything that holds the building up is
