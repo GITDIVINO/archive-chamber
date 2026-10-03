@@ -10,6 +10,7 @@ import {
   WORLD_SKY_FILL_COLOR,
 } from '../constants.js';
 import { composeFrame, resizeBloom, sceneTarget } from './bloom.js';
+import { hazeBackground } from './haze.js';
 
 // A hidden or zero-height viewport would otherwise make the aspect NaN, which
 // poisons the projection matrix and silently breaks picking as well as render.
@@ -21,7 +22,10 @@ export const scene = new THREE.Scene();
 // real opening, so a different clear colour showed through it as a vast beige
 // panel when a chamber was viewed from its passage.
 const DISTANCE = WORLD_DISTANCE_COLOR;
-scene.background = new THREE.Color(DISTANCE);
+// Past the last storey there is only haze, in the colour the fog itself takes
+// in that direction: pale overhead, near black underfoot, the distance tone
+// level with the eye (core/haze.js). Distant floors fade into it without a seam.
+scene.background = hazeBackground();
 // Recession comes from the density of graphite lines rather than a second
 // colour field. Keeping distance on the same paper tone prevents the open well
 // from dividing a room into false foreground and background panels.
@@ -131,7 +135,9 @@ scene.add(new THREE.AmbientLight(WORLD_AMBIENT_COLOR, 0.5));
 // their arrises, never by their tone. What is kept is the separation of floor
 // from wall from ceiling, which depends only on how far a surface is turned
 // from the vertical, and the shadow the cabinets drop on the floor.
-export const keyLight = new THREE.DirectionalLight(0xffe8cc, 0.18);
+// Neutral to cold, like the haze it stands for: the warm tint it used to carry
+// was laid over every surface in the building, lamp or no lamp.
+export const keyLight = new THREE.DirectionalLight(0xe8edf2, 0.22);
 keyLight.position.set(0, 72, 0);
 keyLight.castShadow = true;
 keyLight.shadow.mapSize.set(1536, 1536);

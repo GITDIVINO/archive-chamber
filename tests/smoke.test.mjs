@@ -152,6 +152,7 @@ const vertical = await page.evaluate(async () => {
     WORLD_FLOOR_COLOR,
     WORLD_SURFACE_COLOR,
   } = await import('./src/constants.js');
+  const { hazeColorAt } = await import('./src/core/haze.js');
   const { VERTICAL_VISTA_DEPTH } = await import('./src/world/vista.js');
   const { constrainFromWell, WELL_BALUSTRADE_PARTS } = await import('./src/world/well.js');
   const vista = renderedWorld.children.find(child => child.userData.verticalChambers !== undefined);
@@ -184,7 +185,9 @@ const vertical = await page.evaluate(async () => {
       wallMaterial.color.getHex(),
       vistaFloorMaterial.color.getHex(),
       vistaCeilingMaterial.color.getHex(),
-      scene.background.getHex(),
+      // The background is the haze in every direction; level with the eye it
+      // is the distance colour, as the fog is.
+      hazeColorAt(0).getHex(),
       scene.fog.color.getHex(),
     ],
     expectedStructuralColours: [
@@ -195,6 +198,9 @@ const vertical = await page.evaluate(async () => {
       WORLD_CEILING_COLOR,
     ],
     expectedDistanceColour: WORLD_DISTANCE_COLOR,
+    backgroundIsHaze: Boolean(scene.background?.isTexture && scene.background.userData.haze),
+    hazeDarkensDownward: hazeColorAt(-1).getHSL({}).l < hazeColorAt(0).getHSL({}).l,
+    hazeBrightensUpward: hazeColorAt(1).getHSL({}).l > hazeColorAt(0).getHSL({}).l,
     structuralMaterialsAreLit: [
       floorMaterial,
       ceilingMaterial,
@@ -247,6 +253,11 @@ assert.ok(
     && vertical.structuralColours.slice(5).every(colour => colour === vertical.expectedDistanceColour),
   'floor, ceiling and wall keep a stable material palette while fog and the open well share one darker distance colour',
 );
+assert.equal(vertical.backgroundIsHaze, true, 'past the last storey the background is the haze itself');
+assert.ok(
+  vertical.hazeDarkensDownward && vertical.hazeBrightensUpward,
+  'the haze is lit from above: pale up the shaft, dark down it',
+);
 assert.equal(vertical.structuralMaterialsAreLit, true, 'one paper colour must still respond to scene lighting');
 assert.ok(vertical.litVistaMeshCount > 0, 'the vista must contain lit structural meshes');
 assert.equal(vertical.litVistaMeshesHaveNormals, true, 'merged lit geometry must carry surface normals');
@@ -266,7 +277,12 @@ assert.equal(vertical.vistaShadowCasters, 0, 'distant geometry must never spend 
 // the desk in each of the six corners. Nothing else in a chamber may add a point
 // light.
 assert.equal(vertical.lampCount, 2, 'the room records one canonical lamp at each exit');
-assert.equal(vertical.readingLampCount, 5 * vertical.bookWallCount, 'five sconces to every cabinet wall, each a real light');
+// Five sconces to every cabinet wall; only the burning ones (lamps.js) are
+// lights, and a chamber is never left without any.
+assert.ok(
+  vertical.readingLampCount > 0 && vertical.readingLampCount <= 5 * vertical.bookWallCount,
+  `some of the five sconces on each cabinet wall burn, each a real light (${vertical.readingLampCount})`,
+);
 assert.equal(vertical.deskLampCount, 6, 'a desk lamp in each corner, each a real light');
 assert.equal(
   vertical.roomPointLights,

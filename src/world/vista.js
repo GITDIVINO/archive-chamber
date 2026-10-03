@@ -47,6 +47,7 @@ import {
 } from '../constants.js';
 import {
   galleryBookMaterial,
+  DUST_WARM_COLOR,
   dustMaterial,
   distantFixtureMaterial,
   lanternGlowMaterial,
@@ -111,6 +112,7 @@ import {
 import { WELL_DISTANT_PIER_PARTS, doorColumnParts } from './columns.js';
 import { GALLERY_LEVELS, galleryBalustrade, galleryParts } from './galleries.js';
 import { distantBalusterGeometry, instancedBalusters, stoneShade } from './balustrade.js';
+import { lampIsLit, storeyResidue } from './lamps.js';
 
 // Looking straight up or down exposes a column of chambers. Twenty-eight in
 // either direction reaches 134 metres; the existing fog has erased the last
@@ -167,12 +169,15 @@ const HANGING_LAMP_HEIGHT_RATIO = 0.36;
 // Motes packed into the column of light, on top of the 720 round the well.
 const SHAFT_DUST_COUNT = 360;
 
-// A mote is lit by the column when it is inside it and by nothing else when it
-// is out in the shaft, so it brightens from the rim of the light inwards.
+// A mote is lit by the column when it is inside it and by the lanterns when it
+// is out in the shaft, so from the rim of the light inwards it both brightens
+// and takes the column's pale, cold colour instead of the lanterns' amber.
+const dustColor = new THREE.Color();
 function dustTone(radius) {
   const inside = 1 - Math.min(1, Math.max(0, (radius - LIGHT_SHAFT_RADIUS * 0.7) / (LIGHT_SHAFT_RADIUS * 0.6)));
-  const tone = 1 + 1.6 * inside;
-  return [tone, tone, tone];
+  dustColor.copy(DUST_WARM_COLOR).lerp(lightShaftMaterial.uniforms.color.value, inside)
+    .multiplyScalar(1 + 1.3 * inside);
+  return [dustColor.r, dustColor.g, dustColor.b];
 }
 
 function instancedVolumes(geometry, volumes) {
@@ -274,32 +279,6 @@ function isThinPart(size) {
   return size[0] < 0.08 && size[2] < 0.08;
 }
 
-// Most of the shaft's lamps are out. A constellation of identical flames at
-// every lantern on every storey read as a string of fairy lights rather than
-// as a building where somebody, somewhere, is still reading; a few lit lamps
-// among many dark ones make each flame an event. Which lamps burn is fixed by
-// where they hang, so every walker sees the same lamps lit in the same shaft.
-const LIT_SHARE = Object.freeze({
-  balustrade: 0.3,
-  well: 0.45,
-  stair: 0.3,
-  hanging: 0.5,
-  cabinet: 0.2,
-  tier: 0.2,
-});
-
-const litPoint = new THREE.Vector3();
-function lampIsLit(position, roomOffset, share) {
-  litPoint.copy(position).applyMatrix4(roomOffset);
-  let hash = Math.imul(Math.round(litPoint.x * 8), 73856093)
-    ^ Math.imul(Math.round(litPoint.y * 8), 19349663)
-    ^ Math.imul(Math.round(litPoint.z * 8), 83492791);
-  hash = Math.imul(hash ^ (hash >>> 15), 0x2c1b3c6d);
-  hash = Math.imul(hash ^ (hash >>> 12), 0x297a2d39);
-  hash ^= hash >>> 15;
-  return (hash >>> 0) / 4294967296 < share;
-}
-
 /**
  * A storey's share of a stone balustrade (balustrade.js), in the shaft's
  * batches. With its balusters (`balustered`) it keeps every band they stand
@@ -308,7 +287,7 @@ function lampIsLit(position, roomOffset, share) {
  * a lantern is left out where `lanternPillarsOnly` says so. Every lantern's
  * globe is kept, and is a point in the haze as well.
  */
-function addVistaBalustrade(batches, parts, roomOffset, glow, {
+function addVistaBalustrade(batches, parts, roomOffset, glow, lit, {
   balustered = false,
   railOnly = false,
   lanternPillarsOnly = false,
@@ -323,19 +302,19 @@ function addVistaBalustrade(batches, parts, roomOffset, glow, {
     } else if (part.kind === 'metal') {
       continue;
     }
-    const lit = part.kind === 'lamp' && lampIsLit(part.position, roomOffset, LIT_SHARE.balustrade);
-    const material = part.kind === 'lamp' ? (lit ? lampMaterial : metalMaterial) : wallMaterial;
+    const burning = part.kind === 'lamp' && lit('balustrade', part.position);
+    const material = part.kind === 'lamp' ? (burning ? lampMaterial : metalMaterial) : wallMaterial;
     addBox(batches, material, part.size, part.position, part.rotation, null, roomOffset,
       part.kind === 'stone' ? stoneShade(part.tone, part.floor) : null);
-    if (lit) glow(part.position);
+    if (burning) glow(part.position);
   }
 }
 
-function addDistantBalustrade(batches, roomOffset, glow, balustered) {
+function addDistantBalustrade(batches, roomOffset, glow, lit, balustered) {
   // Past the storeys with balusters only the pillars that carry a lantern
   // stand: a bare post forty metres down is a pixel, and the lanterns are what
   // set the ring out.
-  addVistaBalustrade(batches, WELL_BALUSTRADE_PARTS, roomOffset, glow, {
+  addVistaBalustrade(batches, WELL_BALUSTRADE_PARTS, roomOffset, glow, lit, {
     balustered,
     lanternPillarsOnly: !balustered,
   });
@@ -617,14 +596,17 @@ function addTemplateChamber(
     const world = position.clone().applyMatrix4(roomOffset);
     glowPositions.push(world.x, world.y, world.z);
   };
-  addDistantBalustrade(batches, roomOffset, glow, storeys <= VISTA_BALUSTER_STOREYS);
+  // Which lamps burn on this storey: the same answer the storey gives when it
+  // is the walker's own chamber (lamps.js), so a climb changes none of them.
+  const lit = (kind, position) => lampIsLit(kind, position, level);
+  addDistantBalustrade(batches, roomOffset, glow, lit, storeys <= VISTA_BALUSTER_STOREYS);
   // The real lamps are point lights only in the active chamber.  Their distant
   // globes remain visible on every storey as a single batched constellation;
   // this is what lets darkness communicate scale instead of simply erasing it.
   for (const position of WELL_LANTERN_POSITIONS) {
     addBox(
       batches,
-      lampIsLit(position, roomOffset, LIT_SHARE.well) ? lampMaterial : metalMaterial,
+      lit('deck', position) ? lampMaterial : metalMaterial,
       [0.18, 0.27, 0.18],
       position,
       0,
@@ -669,11 +651,11 @@ function addTemplateChamber(
   // light thirty metres down contributes nothing but its own brightness, and
   // the bloom pass is what turns these into flames. All of them land in one
   // batch, so the whole constellation is two draw calls.
-  for (const { position, share } of [
-    ...WELL_LANTERN_POSITIONS.map(position => ({ position, share: LIT_SHARE.well })),
-    ...WELL_STAIR_LANTERNS.map(({ position }) => ({ position, share: LIT_SHARE.stair })),
+  for (const { position, kind } of [
+    ...WELL_LANTERN_POSITIONS.map(position => ({ position, kind: 'deck' })),
+    ...WELL_STAIR_LANTERNS.map(({ position }) => ({ position, kind: 'stair' })),
   ]) {
-    const lit = lampIsLit(position, roomOffset, share);
+    const burning = lit(kind, position);
     addBox(batches, metalMaterial, [0.34, 0.08, 0.34],
       new THREE.Vector3(position.x, position.y - 0.19, position.z), 0, null, roomOffset, null, null);
     addBox(batches, metalMaterial, [0.29, 0.07, 0.29],
@@ -682,9 +664,9 @@ function addTemplateChamber(
       addBox(batches, metalMaterial, [0.035, 0.34, 0.035],
         new THREE.Vector3(position.x + dx, position.y, position.z + dz), 0, null, roomOffset, null, null);
     }
-    addBox(batches, lit ? lampMaterial : metalMaterial, [0.19, 0.28, 0.19], position, 0, null, roomOffset,
+    addBox(batches, burning ? lampMaterial : metalMaterial, [0.19, 0.28, 0.19], position, 0, null, roomOffset,
       null, null);
-    if (lit) glow(position);
+    if (burning) glow(position);
   }
   // Lamps hung in the open air of the well on long chains, as the reference
   // has: thin vertical lines that show how far it is to the top, and a warm
@@ -694,15 +676,17 @@ function addTemplateChamber(
   // the lanterns above, so no extra draw call. No point-sprite halo: the bloom
   // pass gives the lamp its glow, and a sprite that size close to the walker
   // costs more fill than the software renderer in CI can spare.
-  const drop = 5 + ((Math.abs(Math.round(roomOffset.elements[13] / WALL_HEIGHT)) * 7) % 5);
+  // By the storey's residue, not its distance from the walker: a chain must
+  // not change length when a climb makes this storey one nearer.
+  const drop = 5 + storeyResidue(level) * 2;
   for (let k = 0; k < 6; k++) {
     const angle = Math.PI / 6 + k * Math.PI / 3;
     const x = Math.cos(angle) * WELL_RADIUS * HANGING_LAMP_RADIUS_RATIO;
     const z = Math.sin(angle) * WELL_RADIUS * HANGING_LAMP_RADIUS_RATIO;
     const y = WALL_HEIGHT * HANGING_LAMP_HEIGHT_RATIO;
     const position = new THREE.Vector3(x, y, z);
-    const lit = lampIsLit(position, roomOffset, LIT_SHARE.hanging);
-    addBox(batches, lit ? lampMaterial : metalMaterial, [0.22, 0.32, 0.22], position, 0, null, roomOffset, null);
+    addBox(batches, lit('hanging', position) ? lampMaterial : metalMaterial, [0.22, 0.32, 0.22], position, 0, null,
+      roomOffset, null);
     addBox(batches, metalMaterial, [0.03, drop, 0.03],
       new THREE.Vector3(x, y + 0.16 + drop / 2, z), 0, null, roomOffset, null);
   }
@@ -720,10 +704,10 @@ function addTemplateChamber(
         addBox(batches, distantFixtureMaterial, [0.4, 0.045, 0.045],
           pointOnWall(basis, tangent, CARCASE_HEIGHT - 0.04, 0.42), basis.rotation, null, roomOffset, null);
       }
-      const lit = lampIsLit(position, roomOffset, LIT_SHARE.cabinet);
-      addBox(batches, lit ? lampMaterial : metalMaterial, [0.16, 0.11, 0.12],
+      const burning = lit('sconce', position);
+      addBox(batches, burning ? lampMaterial : metalMaterial, [0.16, 0.11, 0.12],
         position, basis.rotation, null, roomOffset, null);
-      if (lit) glow(position);
+      if (burning) glow(position);
     }
   }
   for (const index of bookWallsForLevel(level)) {
@@ -757,7 +741,7 @@ function addTemplateChamber(
       part.rotationZ ?? 0);
   }
   const galleryBalustered = storeys <= VISTA_GALLERY_BALUSTER_STOREYS;
-  addVistaBalustrade(batches, galleryBalustrade(doorWalls).parts, roomOffset, glow, {
+  addVistaBalustrade(batches, galleryBalustrade(doorWalls).parts, roomOffset, glow, lit, {
     balustered: galleryBalustered,
     railOnly: true,
     lanternPillarsOnly: !galleryBalustered,
@@ -770,7 +754,7 @@ function addTemplateChamber(
       // cloud, which costs the shaft no geometry at all.
       for (const ratio of [-0.39, -0.195, 0, 0.195, 0.39]) {
         const position = pointOnWall(basis, ratio * CABINET_RUN_WIDTH, tier + CARCASE_HEIGHT - 0.22, 0.62);
-        if (lampIsLit(position, roomOffset, LIT_SHARE.tier)) glow(position);
+        if (lit('tier', position)) glow(position);
       }
     }
   }
