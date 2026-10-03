@@ -33,7 +33,7 @@ import {
   WALL_HEIGHT,
   WALL_THICKNESS,
 } from '../constants.js';
-import { addPillar, addRun, BALUSTRADE_DEPTH, balustradeSet } from './balustrade.js';
+import { addPillar, addRun, BALUSTRADE_DEPTH, balustradeSet, PILLAR_HEIGHT, PILLAR_WIDTH } from './balustrade.js';
 import { pointOnWall, wallBasis } from './geometry.js';
 
 /** Floor levels of the two galleries, a third and two thirds of the storey. */
@@ -120,6 +120,9 @@ const GUARD_HALF_SIDE = HALF_SIDE(GUARD_LINE);
 // centre line of the short run that closes it.
 const GUARD_DOOR_END = GALLERY_DOOR_END + BALUSTRADE_DEPTH / 2;
 const GUARD_BAY = 5;
+// Where the short run across a doorway gallery's end stops, at the gap the
+// spiral's landing comes through.
+const GUARD_GAP_FROM = SPIRAL_INWARD - SPIRAL_LANDING_HALF;
 /** How far in from a railed edge the walker is held: the stone, and a little air. */
 const GUARD_REACH = BALUSTRADE_DEPTH + 0.16;
 
@@ -181,7 +184,7 @@ export function galleryBalustrade(doorWalls) {
           // The short run across the end of the gallery, at a right angle to
           // the wall, from the wall to the gap where the stair arrives, and a
           // pillar there to close it.
-          const gapFrom = SPIRAL_INWARD - SPIRAL_LANDING_HALF;
+          const gapFrom = GUARD_GAP_FROM;
           addRun(set, {
             origin: pointOnWall(basis, side * GUARD_DOOR_END, 0, 0),
             angle: Math.atan2(-basis.nz, -basis.nx),
@@ -331,6 +334,26 @@ export function galleryParts(doorWalls, detailed = true) {
 
 const EDGE_MARGIN = PLAYER_RADIUS;
 const LANDING_REACH = GALLERY_DOOR_END - 0.12;
+// The two pillars either side of a landing's gap, as distances in from the
+// wall; a walker coming off the stair passes between them, not through them.
+const LANDING_PILLARS = [GUARD_INWARD, GUARD_GAP_FROM];
+const PILLAR_CLEAR = PILLAR_WIDTH / 2 + EDGE_MARGIN;
+
+function besideLandingPillar(tangent, normal) {
+  const along = Math.abs(tangent) - GUARD_DOOR_END;
+  return LANDING_PILLARS.some(inward => Math.hypot(along, APOTHEM - inward - normal) < PILLAR_CLEAR);
+}
+
+// Whether x/z is within a body's width of a landing pillar on any doorway wall.
+// The stair's top tread reaches the gallery's edge pillar as well, so it is
+// held off the stone the same way.
+function nearLandingPillar(x, z, doorWalls) {
+  for (const wall of doorWalls) {
+    const basis = wallBasis(wall);
+    if (besideLandingPillar(basis.tx * x + basis.tz * z, basis.nx * x + basis.nz * z)) return true;
+  }
+  return false;
+}
 
 function onGallery(x, z, doorWalls) {
   for (let wall = 0; wall < 6; wall++) {
@@ -405,9 +428,11 @@ export function galleryHeightAt(x, z, doorWalls, footY, ground) {
   if (!spiral || !spiral.blocksFloor) candidates.push(ground);
   if (spiral) candidates.push(...spiral.heights);
   if (onGallery(x, z, doorWalls)) candidates.push(...GALLERY_LEVELS);
+  const pillared = nearLandingPillar(x, z, doorWalls);
   let best = null;
   for (const height of candidates) {
     if (Math.abs(height - footY) > STAIR_MOUNT_REACH) continue;
+    if (pillared && GALLERY_LEVELS.some(level => height > level - 0.05 && height < level + PILLAR_HEIGHT)) continue;
     if (best === null || Math.abs(height - footY) < Math.abs(best - footY)) best = height;
   }
   if (best !== null) return best;

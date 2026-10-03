@@ -47,8 +47,9 @@ import * as THREE from 'three';
 export const BALUSTRADE_HEIGHT = 1.09;
 /** The widest member of a run, front to back: the footing. */
 export const BALUSTRADE_DEPTH = 0.38;
-/** Width of a pillar's shaft. */
-export const PILLAR_WIDTH = 0.34;
+/** Width of a pillar's shaft: a little wider than any band of a run, so no
+ * face of a run lies in the plane of a pillar's face it passes through. */
+export const PILLAR_WIDTH = 0.36;
 /** Centre to centre of two balusters, before a bay evens it out. */
 export const BALUSTER_PITCH = 0.26;
 const BALUSTER_FOOT = 0.19;
@@ -200,9 +201,21 @@ export function addLantern(out, x, z, y, rotation) {
  * are the distances at which a pillar stands, each `{ t, build, lantern }`:
  * `build: false` reserves the place without building a pillar, for a pillar
  * another run (or a corner) supplies. A run's ends that are not stations stop
- * flat against whatever they meet: a wall, or the end of a gap.
+ * flat against whatever they meet: a wall, the end of a gap, or a pier the run
+ * is buried in. `balusterFrom` and `balusterTo` keep the balusters to a
+ * shorter stretch than the run itself, for a run whose ends are buried.
  */
-export function addRun(out, { origin, angle, floor = 0, from, to, stations = [], seed = 0 }) {
+export function addRun(out, {
+  origin,
+  angle,
+  floor = 0,
+  from,
+  to,
+  stations = [],
+  seed = 0,
+  balusterFrom = from,
+  balusterTo = to,
+}) {
   const length = to - from;
   if (length <= 0) return;
   const dx = Math.cos(angle);
@@ -222,11 +235,13 @@ export function addRun(out, { origin, angle, floor = 0, from, to, stations = [],
   });
 
   // The bays between pillar faces, or between a pillar and a flat end.
+  const lo = Math.max(from, balusterFrom);
+  const hi = Math.min(to, balusterTo);
   const marks = [
-    { t: from, pillar: pillars.some(station => Math.abs(station.t - from) < 1e-6) },
-    ...pillars.filter(station => station.t > from + 1e-6 && station.t < to - 1e-6)
+    { t: lo, pillar: pillars.some(station => Math.abs(station.t - lo) < 1e-6) },
+    ...pillars.filter(station => station.t > lo + 1e-6 && station.t < hi - 1e-6)
       .map(station => ({ t: station.t, pillar: true })),
-    { t: to, pillar: pillars.some(station => Math.abs(station.t - to) < 1e-6) },
+    { t: hi, pillar: pillars.some(station => Math.abs(station.t - hi) < 1e-6) },
   ];
   for (let index = 1; index < marks.length; index++) {
     const start = marks[index - 1].t + (marks[index - 1].pillar ? PILLAR_WIDTH / 2 : 0);
@@ -255,16 +270,16 @@ export function addRun(out, { origin, angle, floor = 0, from, to, stations = [],
 // [radius, height]: a square-cut foot, a narrow neck, the swelling body, a
 // waist, and a block at the top to take the rail. Octagonal throughout, each
 // facet flat, so the carved stone catches a lantern face by face.
+// Seven bands of eight facets, 224 vertices: three thousand of them in a
+// chamber are still most of a million vertices a draw, so every band has to
+// earn its place in the silhouette.
 const BALUSTER_PROFILE = [
   [0.064, 0],
   [0.064, 0.05],
-  [0.044, 0.08],
-  [0.04, 0.12],
+  [0.04, 0.11],
   [0.06, 0.24],
-  [0.056, 0.34],
-  [0.036, 0.46],
-  [0.034, 0.5],
-  [0.052, 0.53],
+  [0.035, 0.46],
+  [0.052, 0.52],
   [0.058, 0.55],
   [0.058, BALUSTER_HEIGHT],
 ];

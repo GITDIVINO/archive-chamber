@@ -97,7 +97,9 @@ import {
 } from './well.js';
 import { WELL_PIER_PARTS, doorColumnLanternPoints, doorColumnParts } from './columns.js';
 import { GALLERY_LEVELS, galleryBalustrade, galleryParts } from './galleries.js';
-import { LANTERN_GLOBE_SIZE, balusterGeometry, instancedBalusters, stoneShade } from './balustrade.js';
+import {
+  LANTERN_GLOBE_SIZE, balusterGeometry, distantBalusterGeometry, instancedBalusters, stoneShade,
+} from './balustrade.js';
 
 // Split up its height so the spine can carry a three-stop tone: a box corner
 // only has vertices at top and bottom, which is not enough to darken a volume
@@ -107,6 +109,7 @@ sharedGeometries.add(bookGeometry);
 const lampGeometry = new THREE.SphereGeometry(0.17, 14, 10);
 sharedGeometries.add(lampGeometry);
 sharedGeometries.add(balusterGeometry);
+sharedGeometries.add(distantBalusterGeometry);
 
 // The catalogue still addresses six logical groups, but the furniture does not
 // reveal them. All 192 volumes in a row share one even physical rhythm across
@@ -1163,9 +1166,8 @@ function galleryShellFor(doorWalls, shelvedWalls) {
   }
   // So does the stone balustrade round the well, and every baluster in the
   // chamber, round the well and along both galleries: those are one instanced
-  // draw whose buffers every chamber of the orientation shares. Three thousand
-  // faceted stones merged into the batches would be a quarter of a million
-  // vertices.
+  // draw whose buffers every chamber of the orientation shares, rather than
+  // some thousands of faceted stones merged into the batches.
   addBalustradeParts(scratch, WELL_BALUSTRADE_PARTS);
   const balusterTemplate = instancedBalusters(balusterGeometry, wallMaterial, [
     { balusters: WELL_BALUSTERS },
@@ -1267,7 +1269,9 @@ function addBalusters(room, shell) {
   balusters.boundingSphere = sphere.clone();
   balusters.userData.balusters = count;
   balusters.raycast = () => {};
-  balusters.castShadow = true;
+  // Thousands of turned stones in every shadow pass would cost more than the
+  // shadows they throw, which the rails and plinths already cast.
+  balusters.castShadow = false;
   balusters.receiveShadow = true;
   room.add(balusters);
 }
@@ -1472,6 +1476,12 @@ function cloneVisualChild(source) {
     clone.instanceMatrix = source.instanceMatrix;
     clone.instanceColor = source.instanceColor ?? null;
     clone.userData.records = [];
+    // Seen down a passage, a baluster is a few pixels: the portal copy draws
+    // the four-sided stone until the room is adopted (adoptedBalusters).
+    if (source.userData.balusters) {
+      clone.geometry = distantBalusterGeometry;
+      clone.boundingSphere = source.boundingSphere?.clone() ?? null;
+    }
   } else if (source.isLineSegments) {
     clone = new THREE.LineSegments(source.geometry, source.material);
   } else if (source.isLine) {
@@ -1536,6 +1546,13 @@ function cloneVisualRoom(source, q, r, level, template = false) {
 }
 
 /** Creates a complete visual neighbour without rebuilding its shared shell. */
+/** A portal room becoming the walker's own gets back its full balusters. */
+export function adoptedBalusters(room) {
+  for (const child of room.children) {
+    if (child.userData.balusters) child.geometry = balusterGeometry;
+  }
+}
+
 export function makePortalRoom(source, q, r, level) {
   const orientation = levelOrientation(level);
   let template = portalVisualTemplates.get(orientation);

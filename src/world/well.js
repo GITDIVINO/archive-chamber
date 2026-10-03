@@ -27,7 +27,8 @@
  */
 
 import * as THREE from 'three';
-import { addPillar, addRun, balustradeSet } from './balustrade.js';
+import { addRun, BALUSTRADE_DEPTH, balustradeSet } from './balustrade.js';
+import { PIER_BASE_WIDTH, PIER_CENTRE_RADIUS, PIER_WIDTH } from './columns.js';
 import {
   LANTERN_HEIGHT,
   PLAYER_RADIUS,
@@ -129,15 +130,42 @@ const GUARD_BAYS_PER_HALF = 4;
 // corner: four to an edge, twenty-four round the well, every edge the same.
 const GUARD_LANTERN_BAYS = [0, GUARD_BAYS_PER_HALF / 2];
 
+// The corners of the guard are the piers' (columns.js): each edge's run goes
+// on into the pier at either end and stops inside it, where neither its end
+// nor the other edge's run can show, and its balusters stop where the line of
+// the run leaves the pier's moulded base. Found by walking in from the corner
+// in centimetres, in the pier's own frame: radial and across.
+function cornerInsets() {
+  const cos = Math.cos(Math.PI / 6);
+  const sin = Math.sin(Math.PI / 6);
+  // Distance `across` from the centre and `along` the edge, measured from the
+  // pier at the edge's positive end.
+  const inPier = (across, along, half) => {
+    const radial = across * cos + along * sin - PIER_CENTRE_RADIUS;
+    const lateral = -across * sin + along * cos;
+    return Math.abs(radial) <= half && Math.abs(lateral) <= half;
+  };
+  const body = PIER_WIDTH / 2 - 0.05;
+  const base = PIER_BASE_WIDTH / 2 + 0.08;
+  let end = 0;
+  while (![-1, 1].every(side => inPier(GUARD_LINE + side * BALUSTRADE_DEPTH / 2, GUARD_HALF_EDGE - end, body))) {
+    end += 0.01;
+  }
+  let balusters = 0;
+  while (inPier(GUARD_LINE, GUARD_HALF_EDGE - balusters, base)) balusters += 0.01;
+  return { end: GUARD_HALF_EDGE - end, balusters: GUARD_HALF_EDGE - balusters };
+}
+const GUARD_ENDS = cornerInsets();
+
 function guardStations() {
   const stations = [];
   const bay = (GUARD_HALF_EDGE - CROSSING_HALF) / GUARD_BAYS_PER_HALF;
   for (const side of [-1, 1]) {
-    for (let index = 0; index <= GUARD_BAYS_PER_HALF; index++) {
+    // The last bay runs on into the pier instead of ending on a pillar.
+    for (let index = 0; index < GUARD_BAYS_PER_HALF; index++) {
       stations.push({
         t: side * (CROSSING_HALF + index * bay),
-        // The corners' pillars stand on the bisector, built once below.
-        build: index < GUARD_BAYS_PER_HALF,
+        build: true,
         lantern: GUARD_LANTERN_BAYS.includes(index),
       });
     }
@@ -153,8 +181,8 @@ for (let edge = 0; edge < 6; edge++) {
   const origin = edgePoint(angle, GUARD_LINE, 0, 0);
   const stations = guardStations();
   const runs = BRIDGE_EDGES.includes(edge)
-    ? [[-GUARD_HALF_EDGE, -CROSSING_HALF], [CROSSING_HALF, GUARD_HALF_EDGE]]
-    : [[-GUARD_HALF_EDGE, GUARD_HALF_EDGE]];
+    ? [[-GUARD_ENDS.end, -CROSSING_HALF], [CROSSING_HALF, GUARD_ENDS.end]]
+    : [[-GUARD_ENDS.end, GUARD_ENDS.end]];
   runs.forEach(([from, to], run) => {
     addRun(guard, {
       origin,
@@ -163,14 +191,10 @@ for (let edge = 0; edge < 6; edge++) {
       to,
       stations: stations.filter(station => station.t >= from - 1e-6 && station.t <= to + 1e-6),
       seed: edge * 2 + run + 1,
+      balusterFrom: Math.max(from, -GUARD_ENDS.balusters),
+      balusterTo: Math.min(to, GUARD_ENDS.balusters),
     });
   });
-  // The corner at the end of this edge, square to the bisector so the two
-  // runs meeting there are mirror images across it.
-  const corner = edge * Math.PI / 3 + Math.PI / 3;
-  const radius = GUARD_LINE / Math.cos(Math.PI / 6);
-  addPillar(guard, Math.cos(corner) * radius, Math.sin(corner) * radius, 0, -corner,
-    { seed: 100 + edge });
 }
 
 export const WELL_BALUSTRADE_PARTS = Object.freeze(guard.parts);

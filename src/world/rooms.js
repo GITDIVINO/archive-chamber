@@ -44,7 +44,7 @@ import { wallBasis } from './geometry.js';
 import { arrivalWallFor, passageEnds, passageExits } from './passage.js';
 import { noteChamber, ordinalFor } from './register.js';
 import { buildSigns, disposeSigns } from './signs.js';
-import { disposeRoom, makePortalRoom, makeRoom, paintPendingSpines } from './room.js';
+import { adoptedBalusters, disposeRoom, makePortalRoom, makeRoom, paintPendingSpines } from './room.js';
 import { vistaBuilder } from './vista.js';
 
 const roomRegistry = new Map();
@@ -790,6 +790,7 @@ function stepThrough(wall, exit) {
     transform.portalRoom.rotation.set(0, 0, 0);
     transform.portalRoom.scale.set(1, 1, 1);
     transform.portalRoom.userData.deferSpines = false;
+    adoptedBalusters(transform.portalRoom);
     transform.adopted = true;
     roomRegistry.set(
       roomKey(transform.there.q, transform.there.r, transform.there.level),

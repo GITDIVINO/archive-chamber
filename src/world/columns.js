@@ -51,6 +51,8 @@ const PIER_TOP = WALL_HEIGHT - WELL_SLAB_THICKNESS;
 // passes the pier, so each storey is marked on it the way a floor line is
 // marked on a tower.
 const PIER_BASE = { width: PIER_WIDTH + 0.36, height: 0.7 };
+/** Width of a pier's moulded base, the widest part of it a railing meets. */
+export const PIER_BASE_WIDTH = PIER_BASE.width;
 const PIER_BASE_TORUS = { width: PIER_WIDTH + 0.2, height: 0.18 };
 const PIER_CAPITAL = { width: PIER_WIDTH + 0.3, height: 0.55 };
 const PIER_ABACUS = { width: PIER_WIDTH + 0.5, height: 0.22 };
