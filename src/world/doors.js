@@ -29,6 +29,7 @@ import {
 import { wallBasis } from './geometry.js';
 import { constrainFromWell, stairSurfaceAt } from './well.js';
 import { galleryHeightAt } from './galleries.js';
+import { constrainFromReadingCorners } from './reading.js';
 
 // Half-width the player's centre may reach before the jambs stop them.
 const DOOR_CLEAR_HALF_WIDTH = DOOR_HALF_WIDTH - PLAYER_RADIUS;
@@ -72,6 +73,7 @@ const DOOR_THRESHOLD_DEPTH = APOTHEM - WALL_THICKNESS / 2;
  */
 function constrainToRoom(position, level, footY) {
   constrainFromWell(position, footY);
+  constrainFromReadingCorners(position, footY);
   const free = freeWallsForLevel(level);
   for (let index = 0; index < 6; index++) {
     const { basis, normal, tangent } = wallCoordinates(index, position.x, position.z);

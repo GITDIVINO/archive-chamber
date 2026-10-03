@@ -219,6 +219,7 @@ const vertical = await page.evaluate(async () => {
     roomPointLights,
     lampCount: room.userData.lampCount,
     readingLampCount: room.userData.readingLampCount,
+    deskLampCount: room.userData.deskLampCount,
     bookWallCount: room.userData.bookWallCount,
     litLanternCount: room.userData.litLanternCount,
     openingCount: openings.length,
@@ -261,14 +262,16 @@ assert.equal(vertical.shadowLights, 1, 'one bounded key light supplies shadows w
 assert.ok(vertical.shadowCasters > 0, 'the active room architecture must cast shadows');
 assert.equal(vertical.vistaShadowCasters, 0, 'distant geometry must never spend the active shadow budget');
 // The library is lit by its own lanterns (see a68af94): one at each exit, five
-// sconces to every cabinet wall, and the lit lanterns of the well. Nothing else
-// in a chamber may add a point light.
+// sconces to every cabinet wall, the lit lanterns of the well, and the lamp on
+// the desk in each of the six corners. Nothing else in a chamber may add a point
+// light.
 assert.equal(vertical.lampCount, 2, 'the room records one canonical lamp at each exit');
 assert.equal(vertical.readingLampCount, 5 * vertical.bookWallCount, 'five sconces to every cabinet wall, each a real light');
+assert.equal(vertical.deskLampCount, 6, 'a desk lamp in each corner, each a real light');
 assert.equal(
   vertical.roomPointLights,
-  vertical.lampCount + vertical.readingLampCount + vertical.litLanternCount,
-  'the exit lamps, the sconces and the lit well lanterns are the only local lights',
+  vertical.lampCount + vertical.readingLampCount + vertical.litLanternCount + vertical.deskLampCount,
+  'the exit lamps, the sconces, the lit well lanterns and the desk lamps are the only local lights',
 );
 assert.equal(vertical.openingCount, 2, 'the current chamber needs the same opening in its floor and ceiling');
 assert.ok(vertical.openingRadii.every(radius => radius === vertical.expectedRadius), 'both openings must follow the frozen well radius');
