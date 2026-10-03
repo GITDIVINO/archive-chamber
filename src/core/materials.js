@@ -131,7 +131,11 @@ const leatherTexture = pencilTexture('#c4c4c4', '#171717', 145);
 // Floor, ceiling and wall are one continuous paper architecture. Their former
 // three greys made the opening of the well and every change of plane read as
 // inserted panels when seen from a passage.
-export const floorMaterial = shellMaterial(WORLD_FLOOR_COLOR, 0.88);
+// Wet stone: the reference's floor holds a lamp as a long bright stroke, and
+// at the old 0.88 a lamp left only a dull patch. Low roughness is the whole
+// effect, so it is the same shared material in the chamber, the passages and
+// the distant storeys, and costs nothing more to draw.
+export const floorMaterial = shellMaterial(WORLD_FLOOR_COLOR, 0.24);
 export const ceilingMaterial = shellMaterial(WORLD_CEILING_COLOR);
 
 // Distance may remove a floor through fog, but direction never may. Earlier
@@ -199,7 +203,15 @@ export const roomLineMaterial = new THREE.LineBasicMaterial({
 // Fog does not reach it. Haze swallows the timber a few floors down, but a
 // flame is still a point of light at the bottom of the shaft: that is how the
 // reference shows its depth, as hundreds of lanterns hanging in dark air.
-export const lampMaterial = new THREE.MeshBasicMaterial({ color: LAMP_GLOBE_COLOR, toneMapped: false, fog: false });
+// Every lamp batch is merged and carries a tone per vertex, one for a flame and
+// less for the faint light left burning behind the books, so a single material
+// and a single draw serve both.
+export const lampMaterial = new THREE.MeshBasicMaterial({
+  color: LAMP_GLOBE_COLOR,
+  vertexColors: true,
+  toneMapped: false,
+  fog: false,
+});
 // Distant fixtures occupy only a few pixels and receive no useful modelling
 // from a lit metal shader. Sharing the emissive material with their flame keeps
 // the constellation in one draw call. This alias belongs after lampMaterial:
