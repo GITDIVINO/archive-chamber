@@ -1862,13 +1862,13 @@ export function makeRoom(q, r, level, { deferSpines = false } = {}) {
 
   const outerCorners = hexCorners();
 
-  for (const corner of outerCorners) {
-    const line = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(corner.x, 0.02, corner.z),
-      new THREE.Vector3(corner.x, WALL_HEIGHT, corner.z),
-    ]);
-    room.add(new THREE.Line(line, roomLineMaterial));
-  }
+  // The six arrises where the walls meet, one line set: as six lines they were
+  // a draw call each in the chamber and again in every doorway that shows it.
+  const cornerLines = new THREE.BufferGeometry().setFromPoints(outerCorners.flatMap(corner => [
+    new THREE.Vector3(corner.x, 0.02, corner.z),
+    new THREE.Vector3(corner.x, WALL_HEIGHT, corner.z),
+  ]));
+  room.add(new THREE.LineSegments(cornerLines, roomLineMaterial));
 
   // What this chamber carries of the people who were here before. Derived from
   // its own index, so a trace is as real as its books: always there, findable
