@@ -100,6 +100,7 @@ import {
   volumeVariation,
 } from './room.js';
 import {
+  WELL_BALUSTERS,
   WELL_BALUSTRADE_PARTS,
   WELL_BRIDGE_PARTS,
   WELL_LANTERN_POSITIONS,
@@ -108,7 +109,8 @@ import {
   WELL_STAIR_PARTS,
 } from './well.js';
 import { WELL_DISTANT_PIER_PARTS, doorColumnParts } from './columns.js';
-import { GALLERY_LEVELS, galleryParts } from './galleries.js';
+import { GALLERY_LEVELS, galleryBalustrade, galleryParts } from './galleries.js';
+import { distantBalusterGeometry, instancedBalusters, stoneShade } from './balustrade.js';
 
 // Looking straight up or down exposes a column of chambers. Twenty-eight in
 // either direction reaches 134 metres; the existing fog has erased the last
@@ -146,6 +148,11 @@ export const VISTA_BOOK_STOREYS = 2;
 
 // How far up and down the shaft a storey keeps its bars. See isThinPart.
 export const VISTA_DETAIL_STOREYS = 3;
+// How far the well's balustrade keeps its balusters, and the galleries'. Past
+// them a balustrade is its footing, its rail and its pillars, which is what
+// still reads of it through that much haze.
+export const VISTA_BALUSTER_STOREYS = 2;
+export const VISTA_GALLERY_BALUSTER_STOREYS = 1;
 
 // The column of light down the well: a quarter of the well's radius, wide
 // enough to read as daylight falling rather than a lamp's beam, narrow enough
@@ -267,25 +274,44 @@ function isThinPart(size) {
   return size[0] < 0.08 && size[2] < 0.08;
 }
 
-function addDistantBalustrade(batches, outlinePositions, roomOffset, simplified = false) {
-  for (const part of WELL_BALUSTRADE_PARTS) {
-    // At vertical vista distance the thin balusters collapse into a grey block
-    // and account for most of the shaft geometry. Keep the two continuous rails
-    // and the six corner posts; they preserve the exact hex without thousands
-    // of sub-pixel boxes.
-    if (simplified && isThinPart(part.size)) continue;
-    addBox(
-      batches,
-      metalMaterial,
-      part.size,
-      part.position,
-      part.rotation,
-      null,
-      roomOffset,
-      null,
-      null,
-    );
+/**
+ * A storey's share of a stone balustrade (balustrade.js), in the shaft's
+ * batches. With its balusters (`balustered`) it keeps every band they stand
+ * between; without, only the footing and the mass of the rail, or the rail
+ * alone (`railOnly`). Pillars are one box each out here, and a pillar without
+ * a lantern is left out where `lanternPillarsOnly` says so. Every lantern's
+ * globe is kept, and is a point in the haze as well.
+ */
+function addVistaBalustrade(batches, parts, roomOffset, glow, {
+  balustered = false,
+  railOnly = false,
+  lanternPillarsOnly = false,
+} = {}) {
+  for (const part of parts) {
+    if (part.role === 'pillar') {
+      if (!part.distantOnly) continue;
+      if (lanternPillarsOnly && !part.lantern) continue;
+    } else if (part.kind === 'stone') {
+      if (part.keep < (balustered ? 1 : 2)) continue;
+      if (railOnly && !balustered && part.role !== 'rail') continue;
+    } else if (part.kind === 'metal') {
+      continue;
+    }
+    const material = part.kind === 'lamp' ? lampMaterial : wallMaterial;
+    addBox(batches, material, part.size, part.position, part.rotation, null, roomOffset,
+      part.kind === 'stone' ? stoneShade(part.tone, part.floor) : null);
+    if (part.kind === 'lamp') glow(part.position);
   }
+}
+
+function addDistantBalustrade(batches, roomOffset, glow, balustered) {
+  // Past the storeys with balusters only the pillars that carry a lantern
+  // stand: a bare post forty metres down is a pixel, and the lanterns are what
+  // set the ring out.
+  addVistaBalustrade(batches, WELL_BALUSTRADE_PARTS, roomOffset, glow, {
+    balustered,
+    lanternPillarsOnly: !balustered,
+  });
   for (const part of WELL_LIP_PARTS) {
     addBox(
       batches,
@@ -557,13 +583,14 @@ function addTemplateChamber(
   distant = false,
   glowPositions = [],
   tierVolumes = null,
+  storeys = VISTA_DETAIL_STOREYS + 1,
 ) {
   const doorWalls = freeWallsForLevel(level);
   const glow = position => {
     const world = position.clone().applyMatrix4(roomOffset);
     glowPositions.push(world.x, world.y, world.z);
   };
-  addDistantBalustrade(batches, outlinePositions, roomOffset, distant);
+  addDistantBalustrade(batches, roomOffset, glow, storeys <= VISTA_BALUSTER_STOREYS);
   // The real lamps are point lights only in the active chamber.  Their distant
   // globes remain visible on every storey as a single batched constellation;
   // this is what lets darkness communicate scale instead of simply erasing it.
@@ -698,6 +725,12 @@ function addTemplateChamber(
     addBox(batches, material, part.size, part.position, part.rotation, null, roomOffset, null, null,
       part.rotationZ ?? 0);
   }
+  const galleryBalustered = storeys <= VISTA_GALLERY_BALUSTER_STOREYS;
+  addVistaBalustrade(batches, galleryBalustrade(doorWalls).parts, roomOffset, glow, {
+    balustered: galleryBalustered,
+    railOnly: true,
+    lanternPillarsOnly: !galleryBalustered,
+  });
   for (const index of bookWallsForLevel(level)) {
     const basis = wallBasis(index);
     for (const tier of GALLERY_LEVELS) {
@@ -751,6 +784,7 @@ export function* vistaBuilder(level) {
   );
   let verticalPassages = 0;
   const glowPositions = [];
+  const balusterLists = [];
   // A wall index is its own axial direction, so the corridor axis follows
   // straight from which wall carries a doorway.
   const doorWalls = freeWallsForLevel(level);
@@ -787,7 +821,18 @@ export function* vistaBuilder(level) {
       storeys > VISTA_DETAIL_STOREYS,
       glowPositions,
       storeys <= VISTA_WHOLE_BOOK_STOREYS ? distantVolumes : null,
+      storeys,
     );
+    // The balusters of the nearer storeys, all of them one instanced draw.
+    if (storeys <= VISTA_BALUSTER_STOREYS) {
+      balusterLists.push({ balusters: WELL_BALUSTERS, offsetY: WALL_HEIGHT * delta });
+    }
+    if (storeys <= VISTA_GALLERY_BALUSTER_STOREYS) {
+      balusterLists.push({
+        balusters: galleryBalustrade(freeWallsForLevel(stackedLevel)).balusters,
+        offsetY: WALL_HEIGHT * delta,
+      });
+    }
 
     // One real passage begins behind each visible doorway. That is enough to
     // keep the background from reading as a coloured panel, without growing a
@@ -885,6 +930,7 @@ export function* vistaBuilder(level) {
   // still present and becomes canonical without a visual substitute.
   if (volumes.count) group.add(instancedVolumes(bookGeometry, volumes));
   if (distantVolumes.count) group.add(instancedVolumes(shelfFaceBookGeometry, distantVolumes));
+  if (balusterLists.length) group.add(instancedBalusters(distantBalusterGeometry, wallMaterial, balusterLists));
   yield* finishVistaGeometryInSteps(group, batches, outlinePositions);
 
   for (let n = -1; n < 1; n++) {

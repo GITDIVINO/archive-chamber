@@ -44,7 +44,7 @@ import { wallBasis } from './geometry.js';
 import { arrivalWallFor, passageEnds, passageExits } from './passage.js';
 import { noteChamber, ordinalFor } from './register.js';
 import { buildSigns, disposeSigns } from './signs.js';
-import { disposeRoom, makePortalRoom, makeRoom, paintPendingSpines } from './room.js';
+import { adoptedBalusters, disposeRoom, makePortalRoom, makeRoom, paintPendingSpines } from './room.js';
 import { vistaBuilder } from './vista.js';
 
 const roomRegistry = new Map();
@@ -500,6 +500,10 @@ function cloneDestinationVista(template, arrivalWall) {
   const clone = template.clone(true);
   for (const child of [...clone.children]) {
     if (child.userData.vistaPassageWall !== undefined) clone.remove(child);
+    // The balusters of the storeys above and below are one more draw in every
+    // doorway; through a doorway those storeys are far enough off that their
+    // rails and footings carry the balustrade on their own.
+    else if (child.userData.balusters) clone.remove(child);
   }
   clone.userData.omittedArrivalPassage = arrivalWall;
   clone.userData.remainingPassageWalls = [];
@@ -786,6 +790,7 @@ function stepThrough(wall, exit) {
     transform.portalRoom.rotation.set(0, 0, 0);
     transform.portalRoom.scale.set(1, 1, 1);
     transform.portalRoom.userData.deferSpines = false;
+    adoptedBalusters(transform.portalRoom);
     transform.adopted = true;
     roomRegistry.set(
       roomKey(transform.there.q, transform.there.r, transform.there.level),
