@@ -26,7 +26,11 @@ export const HEX_COUNT = (BOOK_SPACE_SIZE + VOLUMES_PER_HEX - 1n) / VOLUMES_PER_
 
 // This identifier, the three constants below, and the regression vectors in
 // the test suite freeze the universe.  Changing any of them requires v4.
-export const V3_FINGERPRINT = 'v3-book-block-affine-29-3200-410-20260802';
+// The one exception was deliberate: on 2026-10-03 the manifesto transposition
+// was removed, as docs/IDEAS.md planned, so that no volume is planted.  It
+// swapped exactly two volumes, so every other v3 address still names the same
+// book and the prefix stayed; the date in the identifier records the change.
+export const V3_FINGERPRINT = 'v3-book-block-affine-29-3200-410-20261003';
 
 const BASE = BigInt(ALPHABET.length);
 const ROOM_CACHE_LIMIT = 32;
@@ -367,30 +371,8 @@ function deterministicFiller(length, seed) {
   return chars.join('');
 }
 
-export const MANIFESTO_LOCATION = Object.freeze({ q: 362n, r: -419n, wall: 2, shelf: 2, volume: 13, page: 197 });
-export const MANIFESTO_TEXT = 'the library is larger than the universe. somewhere inside it may be a sentence you have been looking for all your life. every book has a location. every page can be revisited. every discovery can be shared. explore the hexes. record the coordinates. compare your findings with people from around the world. we are not searching for one official answer. we are searching for the words that change the questions.';
-export const MANIFESTO_TEXT_OFFSET = 1260;
-
-const manifestoPrefix = deterministicFiller(MANIFESTO_TEXT_OFFSET, 0x6f1d2c93);
-const manifestoSuffix = deterministicFiller(PAGE_LENGTH - MANIFESTO_TEXT_OFFSET - MANIFESTO_TEXT.length, 0x9a41e85d);
-const MANIFESTO_PAGE_VALUE = pageValueForText(manifestoPrefix + MANIFESTO_TEXT + manifestoSuffix);
-const MANIFESTO_TARGET_BOOK_INDEX = bookIndexFor(MANIFESTO_LOCATION);
-const MANIFESTO_SOURCE_BLOCK = modulo((MANIFESTO_PAGE_VALUE - BigInt(MANIFESTO_LOCATION.page) * PAGE_OFFSET) * PAGE_BLOCK_INVERSE, PAGE_SPACE_SIZE);
-const MANIFESTO_SOURCE_BOOK_INDEX = MANIFESTO_SOURCE_BLOCK * (PAGE_SPACE_SIZE ** BigInt(MANIFESTO_LOCATION.page - 1));
-
-function physicalBookIndexForBaseBookIndex(baseIndex) {
-  if (baseIndex === MANIFESTO_TARGET_BOOK_INDEX) return MANIFESTO_SOURCE_BOOK_INDEX;
-  if (baseIndex === MANIFESTO_SOURCE_BOOK_INDEX) return MANIFESTO_TARGET_BOOK_INDEX;
-  return baseIndex;
-}
-
-function baseBookIndexForPhysicalBookIndex(bookIndex) {
-  return physicalBookIndexForBaseBookIndex(bookIndex);
-}
-
-function rawBlockForBaseBookIndex(bookIndex, pageIndex) {
+function rawBlockForBookIndex(bookIndex, pageIndex) {
   if (pageIndex < 0 || pageIndex >= PAGES_PER_VOLUME) throw new RangeError('page block is outside the book.');
-  if (bookIndex === MANIFESTO_SOURCE_BOOK_INDEX) return pageIndex === MANIFESTO_LOCATION.page - 1 ? MANIFESTO_SOURCE_BLOCK : 0n;
   // A page block is a base-P digit of the whole-book index.  Extract it with
   // BigInt arithmetic instead of materialising the 1,312,000-digit base-29
   // representation.  This keeps an arbitrary exact v3 room cheap enough to
@@ -405,12 +387,11 @@ function rawBlockForBaseBookIndex(bookIndex, pageIndex) {
 }
 
 export function pageValueForBookIndex(bookIndex, page) {
-  const physical = assertBookIndex(bookIndex);
+  const book = assertBookIndex(bookIndex);
   const pageNumber = positiveInteger(page, PAGES_PER_VOLUME, 'page');
-  const baseBookIndex = baseBookIndexForPhysicalBookIndex(physical);
-  const r0 = rawBlockForBaseBookIndex(baseBookIndex, 0);
+  const r0 = rawBlockForBookIndex(book, 0);
   if (pageNumber === 1) return modulo(PAGE_BLOCK_MULTIPLIER * r0 + PAGE_OFFSET, PAGE_SPACE_SIZE);
-  const rp = rawBlockForBaseBookIndex(baseBookIndex, pageNumber - 1);
+  const rp = rawBlockForBookIndex(book, pageNumber - 1);
   return modulo(
     PAGE_BLOCK_MULTIPLIER * rp
       + BigInt(pageNumber) * PAGE_SPREAD * r0
@@ -453,14 +434,6 @@ export function titleForBookIndex(bookIndex) {
   return trailingTextForPageValue(spineTitleValueForBookIndex(value), 12).trim() || 'untitled';
 }
 
-export function isManifestoBookIndex(bookIndex) {
-  return assertBookIndex(bookIndex) === MANIFESTO_TARGET_BOOK_INDEX;
-}
-
-export function initialPageForBookIndex(bookIndex) {
-  return isManifestoBookIndex(bookIndex) ? MANIFESTO_LOCATION.page : 1;
-}
-
 export function titleForVolume(addressOrLocation) {
   const location = typeof addressOrLocation === 'string'
     ? parseVolumeAddress(addressOrLocation)
@@ -468,21 +441,10 @@ export function titleForVolume(addressOrLocation) {
   return titleForBookIndex(bookIndexForNormalizedLocation(location));
 }
 
-export function initialPageForVolume(addressOrLocation) {
-  const location = typeof addressOrLocation === 'string'
-    ? parseVolumeAddress(addressOrLocation)
-    : normalizedLocation({ ...addressOrLocation, page: 1 });
-  return initialPageForBookIndex(bookIndexForNormalizedLocation(location));
-}
-
-function addressForPhysicalBookIndex(bookIndex, page = 1) {
-  return createPageAddressForBookIndex(bookIndex, page);
-}
-
 export function canonicalAddressForPage(text) {
   const pageValue = pageValueForText(text);
-  const baseBookIndex = modulo((pageValue - PAGE_OFFSET) * PAGE_BLOCK_INVERSE, PAGE_SPACE_SIZE);
-  return addressForPhysicalBookIndex(physicalBookIndexForBaseBookIndex(baseBookIndex), 1);
+  const bookIndex = modulo((pageValue - PAGE_OFFSET) * PAGE_BLOCK_INVERSE, PAGE_SPACE_SIZE);
+  return createPageAddressForBookIndex(bookIndex, 1);
 }
 
 export function search(text, depth = 0) {
@@ -507,7 +469,7 @@ export function addressForBook(pages) {
       PAGE_SPACE_SIZE,
     );
   }
-  let baseBookIndex = 0n;
-  for (let index = raw.length - 1; index >= 0; index--) baseBookIndex = baseBookIndex * PAGE_SPACE_SIZE + raw[index];
-  return addressForPhysicalBookIndex(physicalBookIndexForBaseBookIndex(baseBookIndex), 1);
+  let bookIndex = 0n;
+  for (let index = raw.length - 1; index >= 0; index--) bookIndex = bookIndex * PAGE_SPACE_SIZE + raw[index];
+  return createPageAddressForBookIndex(bookIndex, 1);
 }
