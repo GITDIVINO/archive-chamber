@@ -36,7 +36,6 @@
 
 import {
   BOOK_SPACE_SIZE,
-  MANIFESTO_LOCATION,
   PAGES_PER_VOLUME,
   SHELVES_PER_WALL,
   VOLUMES_PER_SHELF,
@@ -235,23 +234,15 @@ export function worldLocationForSlotIndex(index, page = 1) {
   };
 }
 
-const MANIFESTO_CATALOG_BOOK_INDEX = bookIndexFor(MANIFESTO_LOCATION);
-// Room (0,0,0) still encodes to index 0. The offset is chosen so the manifesto
-// stands in the origin room at wall 2, shelf 2, volume 13.
+// Room (0,0,0) still encodes to index 0. The offset puts catalogue volume
+// v3;129d19;2;2;13 in the origin room at wall 2, shelf 2, volume 13. That
+// volume held the manifesto until the transposition was removed from v3; the
+// anchor stays so that every shelf of w4 keeps the books it already had.
+const ORIGIN_CATALOG_BOOK_INDEX = bookIndexFor({ q: 362n, r: -419n, wall: 2, shelf: 2, volume: 13 });
 export const WORLD_BOOK_OFFSET = modulo(
-  MANIFESTO_CATALOG_BOOK_INDEX - volumeSlotForNormalizedLocation({ wall: 2, shelf: 2, volume: 13 }),
+  ORIGIN_CATALOG_BOOK_INDEX - volumeSlotForNormalizedLocation({ wall: 2, shelf: 2, volume: 13 }),
   WORLD_BOOK_COUNT,
 );
-export const WORLD_MANIFESTO_LOCATION = Object.freeze({
-  q: 0n,
-  r: 0n,
-  level: 0n,
-  worldRoom: 0n,
-  wall: 2,
-  shelf: 2,
-  volume: 13,
-  page: MANIFESTO_LOCATION.page,
-});
 
 export function catalogBookIndexForWorldSlotIndex(index) {
   const worldSlot = nonNegativeBigInt(index, 'world slot index');

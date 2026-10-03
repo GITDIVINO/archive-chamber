@@ -325,7 +325,7 @@ for (const id of ['open-search', 'open-register', 'cell']) {
   );
 }
 
-// --- the physical manifesto opens on its fixed page --------------------------
+// --- a world record opens on the page it names -------------------------------
 // The reader covers the status bar, so it has to be dismissed the way a player
 // would before the catalogue can be reached again.
 //
@@ -370,10 +370,10 @@ assert.equal(await page.locator('.page-counter span').first().textContent(), '19
 assert.equal(await page.locator('#book-address').textContent(), 'w4;0;2;2;13;197');
 assert.equal(await page.locator('#location-record').textContent(), 'copy world record');
 assert.equal(await page.locator('#catalogue-record').isHidden(), false, 'a world record also exposes its catalogue address');
-const manifestoPage = (await page.locator('#book-page').textContent()).replace(/\n/g, '');
+const originPage = (await page.locator('#book-page').textContent()).replace(/\n/g, '');
 assert.ok(
-  manifestoPage.includes('the library is larger than the universe'),
-  'the physical manifesto copy carries the manifesto text',
+  !originPage.includes('the library is larger than the universe'),
+  'no volume in the origin room carries a planted text',
 );
 
 // paging keeps the address and the counter in step

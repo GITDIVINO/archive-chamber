@@ -10,7 +10,6 @@ import {
   PAGES_PER_VOLUME,
   createPageAddressForBookIndex,
   getPageForBookIndex,
-  initialPageForBookIndex,
   titleForBookIndex,
 } from '../../babel-v3.js';
 import { createWorldPageAddress } from '../../world-engine.js';
@@ -115,7 +114,7 @@ export function showCatalogueVolume(bookIndex, initialPage, titleHint = null, wo
     bookIndex: BigInt(bookIndex),
     worldLocation: worldLocation ? { ...worldLocation, page: 1 } : null,
   };
-  currentPage = initialPage ?? initialPageForBookIndex(activeVolume.bookIndex);
+  currentPage = initialPage ?? 1;
   bookPanel.classList.add('visible');
   intro.classList.add('gone');
   onOpen?.();

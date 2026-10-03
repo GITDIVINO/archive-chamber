@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import {
   BOOK_SPACE_SIZE,
-  MANIFESTO_LOCATION,
   bookIndexFor,
 } from '../babel-v3.js';
 import {
@@ -10,7 +9,6 @@ import {
   WORLD_BOOK_COUNT,
   WORLD_BOOK_OFFSET,
   WORLD_FINGERPRINT,
-  WORLD_MANIFESTO_LOCATION,
   WORLD_SHELVES_PER_WALL,
   WORLD_VOLUMES_PER_ROOM,
   WORLD_VOLUMES_PER_SHELF,
@@ -164,10 +162,10 @@ assert.equal(catalogBookIndexForWorldSlotIndex(placementSlot), 4242n);
 assert.equal(worldLocationForCatalogPlacement(4242n, 2).worldRoom >= 0n, true);
 assert.equal(worldLocationForSlotIndex(someSlot).page, 1);
 
-// --- the manifesto keeps its place ------------------------------------------
-assert.equal(WORLD_MANIFESTO_LOCATION.level, 0n);
-assert.equal(catalogBookIndexFor(WORLD_MANIFESTO_LOCATION), bookIndexFor(MANIFESTO_LOCATION));
-assert.equal(createWorldPageAddress(WORLD_MANIFESTO_LOCATION), 'w4;0;2;2;13;197');
+// --- the origin anchor keeps every shelf where it was ---------------------
+const originSlot = { q: 0n, r: 0n, level: 0n, wall: 2, shelf: 2, volume: 13, page: 197 };
+assert.equal(catalogBookIndexFor(originSlot), bookIndexFor({ q: 362n, r: -419n, wall: 2, shelf: 2, volume: 13 }));
+assert.equal(createWorldPageAddress(originSlot), 'w4;0;2;2;13;197');
 assert.equal(createWorldRoomAddress({ q: 0n, r: 0n, level: 0n }), 'w4;0');
 
 // --- addresses -------------------------------------------------------------

@@ -16,7 +16,7 @@ export const RING_LINES = Object.freeze([
   'some say the twelve died long ago.',
   'some say they still type below the lowest gallery.',
   'if they still type, some say the library is still growing.',
-  'the ring first told the tale. so the rumour goes.',
+  'the ring said a text proves only a text, not its author.',
   'no one has seen the ring for longer than memory.',
   'the tale outlived the ones who first told it.',
   'the monkeys became a legend, then almost a faith.',

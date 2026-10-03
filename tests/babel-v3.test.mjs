@@ -5,9 +5,6 @@ import {
   ALPHABET,
   BOOK_SPACE_SIZE,
   HEX_COUNT,
-  MANIFESTO_LOCATION,
-  MANIFESTO_TEXT,
-  MANIFESTO_TEXT_OFFSET,
   PAGE_LENGTH,
   PAGES_PER_VOLUME,
   V3_FINGERPRINT,
@@ -21,9 +18,6 @@ import {
   createVolumeAddressForBookIndex,
   getPage,
   getPageForBookIndex,
-  initialPageForBookIndex,
-  initialPageForVolume,
-  isManifestoBookIndex,
   locationForBookIndex,
   pageValueForBookIndex,
   parsePageAddress,
@@ -42,14 +36,19 @@ assert.equal(ALPHABET.length, 29);
 assert.equal(PAGE_LENGTH, 3200);
 assert.equal(PAGES_PER_VOLUME, 410);
 assert.equal(VOLUMES_PER_HEX, 640n);
-assert.equal(V3_FINGERPRINT, 'v3-book-block-affine-29-3200-410-20260802');
+assert.equal(V3_FINGERPRINT, 'v3-book-block-affine-29-3200-410-20261003');
+
+// The volume that stands at wall 2, shelf 2, volume 13 of the origin room.  It
+// held the planted manifesto until that transposition was removed.
+const ORIGIN_VOLUME = Object.freeze({ q: 362n, r: -419n, wall: 2, shelf: 2, volume: 13, page: 197 });
+const WELCOME_TEXT = 'the library is larger than the universe.';
 
 // These normal-book vectors freeze the published v3 universe.  A change here
 // is a new algorithm and must not silently retain the v3 prefix.
 const vectors = [
   [{ q: 0n, r: 0n, wall: 1, shelf: 1, volume: 1, page: 1 }, 'a91e5320198208a968ad6e10702b02c29a922e62d34391c25edda993bedf8fc1'],
   [{ q: 12n, r: -7n, wall: 4, shelf: 5, volume: 32, page: 410 }, '8a7d6209b6a44982a2735b72173bae0f09e812d7ffc597685a3a5f7e92d38418'],
-  [MANIFESTO_LOCATION, '3058ec2d75e90780818198a3932627bf4ecb478e4977854bd25df24196370034'],
+  [ORIGIN_VOLUME, 'a0d21fc6b75c815964a88e6f4d104e5eb94a2b19fbf2d9a0555f4f0d1ee6cc84'],
 ];
 for (const [location, expectedHash] of vectors) {
   const address = createPageAddress(location);
@@ -57,26 +56,26 @@ for (const [location, expectedHash] of vectors) {
   assert.equal(getPage(address).length, PAGE_LENGTH);
 }
 
-const manifestoAddress = 'v3;129d19;2;2;13;197';
-const manifestoVolume = 'v3;129d19;2;2;13';
-assert.equal(createPageAddress(MANIFESTO_LOCATION), manifestoAddress);
-assert.equal(createVolumeAddress(MANIFESTO_LOCATION), manifestoVolume);
-assert.equal(initialPageForVolume(manifestoVolume), 197);
-assert.equal(getPage(manifestoAddress).slice(MANIFESTO_TEXT_OFFSET, MANIFESTO_TEXT_OFFSET + MANIFESTO_TEXT.length), MANIFESTO_TEXT);
-
-const manifestoIndex = bookIndexFor(MANIFESTO_LOCATION);
-assert.equal(createPageAddressForBookIndex(manifestoIndex, 197), manifestoAddress, 'book-index addresses must retain the published manifesto wire record');
-assert.equal(createVolumeAddressForBookIndex(manifestoIndex), manifestoVolume);
-assert.equal(getPageForBookIndex(manifestoIndex, 197).slice(MANIFESTO_TEXT_OFFSET, MANIFESTO_TEXT_OFFSET + MANIFESTO_TEXT.length), MANIFESTO_TEXT);
-assert.equal(isManifestoBookIndex(manifestoIndex), true);
-assert.equal(initialPageForBookIndex(manifestoIndex), 197);
+// No volume is planted: the one that held the manifesto is an ordinary book,
+// keeps its wire records, and opens on its first page like every other.
+const originAddress = 'v3;129d19;2;2;13;197';
+const originVolume = 'v3;129d19;2;2;13';
+assert.equal(createPageAddress(ORIGIN_VOLUME), originAddress);
+assert.equal(createVolumeAddress(ORIGIN_VOLUME), originVolume);
+const originIndex = bookIndexFor(ORIGIN_VOLUME);
+assert.equal(createPageAddressForBookIndex(originIndex, 197), originAddress, 'book-index addresses must retain the published wire record');
+assert.equal(createVolumeAddressForBookIndex(originIndex), originVolume);
+assert.equal(getPageForBookIndex(originIndex, 197), getPage(originAddress));
+for (let page = 1; page <= PAGES_PER_VOLUME; page++) {
+  assert.equal(getPageForBookIndex(originIndex, page).includes(WELCOME_TEXT), false, 'no page of the origin volume carries a planted text');
+}
 
 // A valid v3 volume is atomic: every one of its 410 pages exists.
 for (let page = 1; page <= PAGES_PER_VOLUME; page++) {
-  const address = createPageAddress({ ...MANIFESTO_LOCATION, page });
+  const address = createPageAddress({ ...ORIGIN_VOLUME, page });
   assert.equal(parsePageAddress(address).page, page);
 }
-assert.equal(parseVolumeAddress(manifestoVolume).page, 1);
+assert.equal(parseVolumeAddress(originVolume).page, 1);
 
 const ordinary = { q: -12n, r: 42n, wall: 4, shelf: 5, volume: 32, page: 1 };
 const ordinaryIndex = bookIndexFor(ordinary);
@@ -86,9 +85,6 @@ assert.equal(getPageForBookIndex(ordinaryIndex, 410), getPage({ ...ordinary, pag
 assert.equal(titleForBookIndex(ordinaryIndex), 'e esyowkndaj', 'the spine-title mixer must stay stable without changing page content');
 assert.equal(titleForVolume(ordinary), titleForBookIndex(ordinaryIndex));
 assert.notEqual(titleForBookIndex(ordinaryIndex), titleForBookIndex(ordinaryIndex + 1n), 'neighbouring book indices should not share a spine title');
-assert.notEqual(titleForBookIndex(manifestoIndex), 'manifesto', 'the engine must not give the manifesto a special spine title');
-assert.equal(isManifestoBookIndex(ordinaryIndex), false);
-assert.equal(initialPageForBookIndex(ordinaryIndex), 1);
 const ordinaryPages = Array.from({ length: PAGES_PER_VOLUME }, (_, index) => getPage({ ...ordinary, page: index + 1 }));
 const ordinaryRoundTrip = parsePageAddress(addressForBook(ordinaryPages));
 assert.equal(bookIndexFor(ordinaryRoundTrip), ordinaryIndex, 'a complete ordinary book must round trip to its unique volume');
