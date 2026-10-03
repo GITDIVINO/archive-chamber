@@ -51,13 +51,33 @@ function pencilTexture(base, ink, density = 130) {
   return texture;
 }
 
-/** Neutral long grain and knots; tinting it happens exactly once in material. */
-function timberTexture() {
+/**
+ * Neutral long grain and knots; tinting it happens exactly once in material.
+ * With `ribbon`, broad soft bands run along the grain, lighter and darker in
+ * turn: the stripe figure of quarter-sawn mahogany, which is what makes an old
+ * bookcase read as one heavy piece of timber rather than painted board.
+ */
+function timberTexture({ ribbon = false } = {}) {
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = 256;
   const context = canvas.getContext('2d');
   context.fillStyle = '#c9c9c9';
   context.fillRect(0, 0, 256, 256);
+  if (ribbon) {
+    // Band widths and strengths vary so the stripe never reads as a ruled
+    // pattern; every band still spans the whole tile, so the repeat is seamless.
+    // Kept faint: on a post the grain runs across rather than along, and a
+    // strong stripe there reads as corrugated board instead of timber.
+    for (let y = 0, band = 0; y < 256; band++) {
+      const height = 14 + ((band * 7) % 19);
+      const light = band % 2 === 0;
+      context.fillStyle = light
+        ? `rgba(255, 255, 255, ${0.025 + (band % 3) * 0.012})`
+        : `rgba(0, 0, 0, ${0.04 + (band % 4) * 0.015})`;
+      context.fillRect(0, y, 256, Math.min(height, 256 - y));
+      y += height;
+    }
+  }
   for (let line = 0; line < 92; line++) {
     const y = (line * 37) % 256;
     const wave = 1.5 + (line % 5) * 0.7;
@@ -124,7 +144,7 @@ function shellMaterial(color, roughness = 0.94) {
   });
 }
 
-const woodTexture = timberTexture();
+const woodTexture = timberTexture({ ribbon: true });
 const graphiteTexture = timberTexture();
 const leatherTexture = pencilTexture('#c4c4c4', '#171717', 145);
 
@@ -150,9 +170,10 @@ export const vistaCeilingMaterial = ceilingMaterial;
 // a flat paint chip: the grain is the same pencil the rest of the room is in.
 // Old varnish, not raw board: rough enough to stay wood, smooth enough that
 // every lantern leaves a small warm glint along a rail or a shelf edge. Those
-// glints are most of what draws the timber in the reference.
-export const shelfMaterial = shadedMaterial(woodTexture, WOOD_COLOR, 0.68);
-export const trimMaterial = shadedMaterial(graphiteTexture, TRIM_WOOD_COLOR, 0.6);
+// glints are most of what draws the timber in the reference, and a century of
+// polish is what makes mahogany look heavy.
+export const shelfMaterial = shadedMaterial(woodTexture, WOOD_COLOR, 0.58);
+export const trimMaterial = shadedMaterial(graphiteTexture, TRIM_WOOD_COLOR, 0.52);
 export const wallMaterial = shellMaterial(WORLD_SURFACE_COLOR);
 export const metalMaterial = new THREE.MeshStandardMaterial({
   color: 0x171514,

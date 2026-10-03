@@ -37,13 +37,16 @@ export const WORLD_AMBIENT_COLOR = 0xb4c4d4;
 
 // --- the warm palette ---------------------------------------------------------
 // Everything a hand touches is wood; everything that holds the building up is
-// paper. The distinction is the whole colour scheme: shelves, treads and rails
-// are warm because people made and use them, and the shell stays pale because
+// stone. The distinction is the whole colour scheme: shelves, treads and rails
+// are warm because people made and use them, and the shell stays grey because
 // it is architecture and was always there.
-export const WOOD_COLOR = 0x6a3b20;
+// Old mahogany, not pine: heavy, dark and red, like a reading-room table or a
+// bookcase that has stood for a century. The orange-brown it replaces read as
+// new joinery against the grey stone.
+export const WOOD_COLOR = 0x5e2016;
 // Rails and newels a shade deeper than the casework, so a handrail crossing a
 // cabinet still reads as a separate thing at distance.
-export const TRIM_WOOD_COLOR = 0x24170f;
+export const TRIM_WOOD_COLOR = 0x2a0d09;
 // All bindings belong to one catalogue and therefore keep one colour.  Their
 // lettering is stamped in warm metal rather than printed in black, so it stays
 // legible in the pools of lantern light without turning the wall into a white
