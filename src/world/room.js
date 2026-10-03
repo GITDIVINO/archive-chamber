@@ -605,11 +605,18 @@ export const CARCASE_BACK_Z = CARCASE_CENTRE_Z + CARCASE_DEPTH / 2 - CARCASE_BAC
 // strip above the human-reachable cabinet and catch the lanterns one profile at
 // a time, adding the layered density of an old library without inventing more
 // addressable shelves beyond a reader's reach.
+// Each stands against the wall and juts out from it: the inset is half the
+// depth plus the 0.09 that puts its back face just inside the plaster. Deep
+// enough that the underside is a real shadowed face and the ledge a real step
+// in the wall, which is what makes fourteen metres of plaster read as built.
 export const WALL_CORNICE_BANDS = Object.freeze([
-  { y: CARCASE_HEIGHT + 0.18, height: 0.12, depth: 0.22, inset: 0.2 },
-  { y: WALL_HEIGHT - 0.56, height: 0.16, depth: 0.28, inset: 0.14 },
-  { y: WALL_HEIGHT - 0.23, height: 0.09, depth: 0.18, inset: 0.1 },
+  { y: CARCASE_HEIGHT + 0.22, height: 0.2, depth: 0.64, inset: 0.41 },
+  { y: WALL_HEIGHT - 0.7, height: 0.34, depth: 0.96, inset: 0.57 },
+  { y: WALL_HEIGHT - 0.27, height: 0.18, depth: 0.6, inset: 0.39 },
 ]);
+// How dark the foot of a ledge is against its top: the vertex tone runs from
+// one to the other across the front face, a shadow thrown by the course above.
+const CORNICE_FOOT_TONE = 0.5;
 export const WALL_PILASTER_WIDTH = 0.18;
 
 // Where a cornice band runs along a wall, as [tangent, width] pairs. On a
@@ -636,7 +643,7 @@ function addWallJoinery(room, index, doorway = false) {
         pointOnWall(basis, tangent, band.y, band.inset),
         basis.rotation,
         null,
-        { outlined: false },
+        { outlined: false, shade: vertex => (vertex.y < band.y ? CORNICE_FOOT_TONE : 1) },
       );
     }
   }
@@ -915,6 +922,13 @@ function addCabinetCarving(room, { labels = true, dentils = true } = {}) {
 }
 
 // The carcase of one run of cases along a wall, its foot at `frame`'s origin.
+const BACK_GLOW_HEIGHT = 0.022;
+const BACK_GLOW_DEPTH = 0.012;
+// Above the tallest volume (0.515 over its board) and clear of the board above.
+const BACK_GLOW_ABOVE_SHELF = 0.565;
+const BACK_GLOW_TONE = 0.28;
+const CARCASE_BACK_FRONT_Z = CARCASE_BACK_Z - CARCASE_BACK_THICKNESS / 2;
+
 function addCaseRun(room, frame) {
   const postHeight = CARCASE_HEIGHT - 2 * RAIL_THICKNESS;
   const carcase = { outlined: false, shade: nicheShade };
@@ -941,6 +955,14 @@ function addCaseRun(room, frame) {
       new THREE.Vector3(0, shelfY, SHELF_CENTRE_Z), 0, frameMatrix,
       { outlined: false, shade: shelfBoardShade(shelfY) });
     addShelfEdge(outlinePositions, frameMatrix, shelfY, CABINET_RUN_WIDTH);
+    // A thread of light along the back of the niche, in the gap above the
+    // tallest book. It is what the reference does between its volumes: the case
+    // is lit from behind as well as from the lanterns, so each shelf has a
+    // glowing edge to its dark. Tone only, in the lamp batch the room draws
+    // anyway.
+    addBox(room, lampMaterial, [CABINET_RUN_WIDTH - 2 * CABINET_POST_WIDTH, BACK_GLOW_HEIGHT, BACK_GLOW_DEPTH],
+      new THREE.Vector3(0, shelfY + BACK_GLOW_ABOVE_SHELF, CARCASE_BACK_FRONT_Z - BACK_GLOW_DEPTH / 2),
+      0, frameMatrix, { outlined: false, shade: () => BACK_GLOW_TONE });
   }
 }
 
@@ -1147,6 +1169,9 @@ function galleryShellFor(doorWalls, shelvedWalls) {
       addBox(scratch, stone ? wallMaterial : shelfMaterial, size, position, rotation, null, { outlined: false });
     }
   }
+  // The mouldings and pilasters of the six walls: fixed by which walls are
+  // doorways, so one set of them serves every chamber of an orientation.
+  for (let index = 0; index < 6; index++) addWallJoinery(scratch, index, doorWalls.includes(index));
   // A desk and a lamp in every corner: the same in every chamber, so they are
   // built once with the rest of the shell and cost a copy, not a build. Only
   // boxes, in materials the chamber already batches, so they add no draw call.
@@ -1988,7 +2013,6 @@ export function makeRoom(q, r, level, { deferSpines = false } = {}) {
     addSolidWall(room, index);
     if (shelvedWalls.includes(index)) collectBookWall(room, index, q, r, level, traces.disturbed);
   }
-  for (let index = 0; index < 6; index++) addWallJoinery(room, index, doorWalls.includes(index));
   // After every catalogued volume, so that theirs are the first records.
   if (traces.tally) addTally(room, traces.tally);
   const shell = galleryShellFor(doorWalls, shelvedWalls);
