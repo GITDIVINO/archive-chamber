@@ -5,11 +5,14 @@ import {
   PLAYER_START_X,
   PLAYER_START_Z,
   WORLD_AMBIENT_COLOR,
+  WORLD_AMBIENT_INTENSITY,
   WORLD_DISTANCE_COLOR,
   WORLD_GROUND_FILL_COLOR,
+  WORLD_HEMISPHERE_INTENSITY,
   WORLD_SKY_FILL_COLOR,
 } from '../constants.js';
 import { composeFrame, resizeBloom, sceneTarget } from './bloom.js';
+import { hazeBackground } from './haze.js';
 
 // A hidden or zero-height viewport would otherwise make the aspect NaN, which
 // poisons the projection matrix and silently breaks picking as well as render.
@@ -21,7 +24,10 @@ export const scene = new THREE.Scene();
 // real opening, so a different clear colour showed through it as a vast beige
 // panel when a chamber was viewed from its passage.
 const DISTANCE = WORLD_DISTANCE_COLOR;
-scene.background = new THREE.Color(DISTANCE);
+// Past the last storey there is only haze, in the colour the fog itself takes
+// in that direction: pale overhead, near black underfoot, the distance tone
+// level with the eye (core/haze.js). Distant floors fade into it without a seam.
+scene.background = hazeBackground();
 // Recession comes from the density of graphite lines rather than a second
 // colour field. Keeping distance on the same paper tone prevents the open well
 // from dividing a room into false foreground and background panels.
@@ -95,27 +101,23 @@ renderer.shadowMap.render = function (lights, shadowScene, shadowCamera) {
   shadowSignatures.set(shadowScene, signature);
   drawShadows.call(this, lights, shadowScene, shadowCamera);
 };
+// Inert as things stand: three.js tone-maps only what is drawn straight to the
+// canvas, and the world is drawn into the bloom buffer (bloom.js), whose
+// composite does not tone-map. Brightness is set by the lights below and the
+// composite, not by these two lines.
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 2.4;
 document.body.prepend(renderer.domElement);
 
-// Warmed, and left near its old strength rather than cut. A vertical wall takes
-// nothing at all from a key pointing straight down, so the ambient is what
-// carries every wall in the building; halving it turned the galleries to mud
-// before a single lantern had been placed. The lantern earns its pool by being
-// bright, not by the room being dark, and the tone mapping above is what keeps
-// the top end from flattening into paper again.
-// Darkness is the base state. A small neutral sky fill preserves the shape of
-// an unlit wall; all warmth belongs to actual lanterns in the architecture.
-// Nearly nothing, and nearly directionless. Almost three units of flat fill
-// used to be poured in from here, which meant the darkness in this room was
-// paint rather than light: every corner was already lit, so no lantern could
-// carve anything out of it and no surface had a falloff. Sky and ground are
-// held close together on purpose — a hemisphere with a bright sky lights every
-// upward face at full strength, and that is what made the floor the brightest
-// thing in the frame when it should be among the darkest.
-scene.add(new THREE.HemisphereLight(WORLD_SKY_FILL_COLOR, WORLD_GROUND_FILL_COLOR, 1.6));
-scene.add(new THREE.AmbientLight(WORLD_AMBIENT_COLOR, 0.5));
+// Darkness is the base state; a cold fill only keeps the shape of unlit stone,
+// and all warmth belongs to actual lanterns. The fill sets how dark the room is
+// between two lamps (the tone mapping above does nothing), so its strength and
+// colour live in constants.js, shared with every doorway's scene in rooms.js.
+// The ambient is what carries every wall, since a vertical face takes nothing
+// from a key pointing straight down; the hemisphere's ground term is what
+// lights a ceiling.
+scene.add(new THREE.HemisphereLight(WORLD_SKY_FILL_COLOR, WORLD_GROUND_FILL_COLOR, WORLD_HEMISPHERE_INTENSITY));
+scene.add(new THREE.AmbientLight(WORLD_AMBIENT_COLOR, WORLD_AMBIENT_INTENSITY));
 // Straight down, and it has to be. A crossing is the same corridor four times
 // and a chamber is the same wall six times, so the world claims two symmetries:
 // a quarter turn about the passage axis and a sixth turn about the room. The
@@ -131,7 +133,9 @@ scene.add(new THREE.AmbientLight(WORLD_AMBIENT_COLOR, 0.5));
 // their arrises, never by their tone. What is kept is the separation of floor
 // from wall from ceiling, which depends only on how far a surface is turned
 // from the vertical, and the shadow the cabinets drop on the floor.
-export const keyLight = new THREE.DirectionalLight(0xffe8cc, 0.18);
+// Neutral to cold, like the haze it stands for: the warm tint it used to carry
+// was laid over every surface in the building, lamp or no lamp.
+export const keyLight = new THREE.DirectionalLight(0xe8edf2, 0.22);
 keyLight.position.set(0, 72, 0);
 keyLight.castShadow = true;
 keyLight.shadow.mapSize.set(1536, 1536);

@@ -51,13 +51,33 @@ function pencilTexture(base, ink, density = 130) {
   return texture;
 }
 
-/** Neutral long grain and knots; tinting it happens exactly once in material. */
-function timberTexture() {
+/**
+ * Neutral long grain and knots; tinting it happens exactly once in material.
+ * With `ribbon`, broad soft bands run along the grain, lighter and darker in
+ * turn: the stripe figure of quarter-sawn mahogany, which is what makes an old
+ * bookcase read as one heavy piece of timber rather than painted board.
+ */
+function timberTexture({ ribbon = false } = {}) {
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = 256;
   const context = canvas.getContext('2d');
   context.fillStyle = '#c9c9c9';
   context.fillRect(0, 0, 256, 256);
+  if (ribbon) {
+    // Band widths and strengths vary so the stripe never reads as a ruled
+    // pattern; every band still spans the whole tile, so the repeat is seamless.
+    // Kept faint: on a post the grain runs across rather than along, and a
+    // strong stripe there reads as corrugated board instead of timber.
+    for (let y = 0, band = 0; y < 256; band++) {
+      const height = 14 + ((band * 7) % 19);
+      const light = band % 2 === 0;
+      context.fillStyle = light
+        ? `rgba(255, 255, 255, ${0.025 + (band % 3) * 0.012})`
+        : `rgba(0, 0, 0, ${0.04 + (band % 4) * 0.015})`;
+      context.fillRect(0, y, 256, Math.min(height, 256 - y));
+      y += height;
+    }
+  }
   for (let line = 0; line < 92; line++) {
     const y = (line * 37) % 256;
     const wave = 1.5 + (line % 5) * 0.7;
@@ -124,7 +144,7 @@ function shellMaterial(color, roughness = 0.94) {
   });
 }
 
-const woodTexture = timberTexture();
+const woodTexture = timberTexture({ ribbon: true });
 const graphiteTexture = timberTexture();
 const leatherTexture = pencilTexture('#c4c4c4', '#171717', 145);
 
@@ -150,9 +170,10 @@ export const vistaCeilingMaterial = ceilingMaterial;
 // a flat paint chip: the grain is the same pencil the rest of the room is in.
 // Old varnish, not raw board: rough enough to stay wood, smooth enough that
 // every lantern leaves a small warm glint along a rail or a shelf edge. Those
-// glints are most of what draws the timber in the reference.
-export const shelfMaterial = shadedMaterial(woodTexture, WOOD_COLOR, 0.68);
-export const trimMaterial = shadedMaterial(graphiteTexture, TRIM_WOOD_COLOR, 0.6);
+// glints are most of what draws the timber in the reference, and a century of
+// polish is what makes mahogany look heavy.
+export const shelfMaterial = shadedMaterial(woodTexture, WOOD_COLOR, 0.58);
+export const trimMaterial = shadedMaterial(graphiteTexture, TRIM_WOOD_COLOR, 0.52);
 export const wallMaterial = shellMaterial(WORLD_SURFACE_COLOR);
 export const metalMaterial = new THREE.MeshStandardMaterial({
   color: 0x171514,
@@ -200,11 +221,6 @@ export const roomLineMaterial = new THREE.LineBasicMaterial({
 // flame is still a point of light at the bottom of the shaft: that is how the
 // reference shows its depth, as hundreds of lanterns hanging in dark air.
 export const lampMaterial = new THREE.MeshBasicMaterial({ color: LAMP_GLOBE_COLOR, toneMapped: false, fog: false });
-// Distant fixtures occupy only a few pixels and receive no useful modelling
-// from a lit metal shader. Sharing the emissive material with their flame keeps
-// the constellation in one draw call. This alias belongs after lampMaterial:
-// module initialisation must never read the binding before it exists.
-export const distantFixtureMaterial = lampMaterial;
 export const lampHaloMaterial = new THREE.MeshBasicMaterial({
   color: 0xffaa62,
   transparent: true,
@@ -220,9 +236,11 @@ function dustTexture() {
   canvas.width = canvas.height = 32;
   const context = canvas.getContext('2d');
   const gradient = context.createRadialGradient(16, 16, 0, 16, 16, 15);
-  gradient.addColorStop(0, 'rgba(255, 226, 172, .95)');
-  gradient.addColorStop(0.18, 'rgba(255, 184, 98, .42)');
-  gradient.addColorStop(1, 'rgba(255, 154, 64, 0)');
+  // Neutral: a mote's colour is its own (DUST_WARM_COLOR out in the shaft,
+  // the column's inside it), carried by its vertex colour.
+  gradient.addColorStop(0, 'rgba(255, 255, 255, .95)');
+  gradient.addColorStop(0.18, 'rgba(255, 255, 255, .42)');
+  gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
   context.fillStyle = gradient;
   context.fillRect(0, 0, 32, 32);
   return new THREE.CanvasTexture(canvas);
@@ -267,11 +285,13 @@ export const lanternGlowMaterial = new THREE.PointsMaterial({
 // face is drawn: it is the one every line of sight meets, from outside the
 // column or standing in it, and one face instead of two halves what the light
 // costs to fill. The column thins out up and down the
-// shaft over the same distance the fog takes the lanterns, and is a little
-// stronger overhead, the way light is nearer its source.
+// shaft over the same distance the fog takes the lanterns. It is pale and
+// cold, the light of the haze overhead (core/haze.js) rather than of a flame,
+// and it belongs to the shaft above the walker: below their storey it is
+// almost gone, so the light is something one would have to climb towards.
 export const lightShaftMaterial = new THREE.ShaderMaterial({
   uniforms: {
-    color: { value: new THREE.Color(0xffbe70) },
+    color: { value: new THREE.Color(0xd3dbe1) },
     strength: { value: 0.24 },
     halfHeight: { value: 1 },
   },
@@ -280,6 +300,7 @@ export const lightShaftMaterial = new THREE.ShaderMaterial({
     varying vec3 vView;
     varying float vHeight;
     varying float vAngle;
+    varying float vRise;
     uniform float halfHeight;
     void main() {
       vec4 world = modelMatrix * vec4(position, 1.0);
@@ -287,6 +308,10 @@ export const lightShaftMaterial = new THREE.ShaderMaterial({
       vNormal = normalize(mat3(modelMatrix) * normal);
       vView = cameraPosition - world.xyz;
       vHeight = position.y / halfHeight;
+      // Height above the eye rather than above the storey's floor: the column
+      // is re-centred on each new storey as a climb crosses it, and the eye
+      // drops by the same storey in the same frame, so this does not jump.
+      vRise = (world.y - cameraPosition.y) / halfHeight;
       gl_Position = projectionMatrix * viewMatrix * world;
     }
   `,
@@ -295,6 +320,7 @@ export const lightShaftMaterial = new THREE.ShaderMaterial({
     varying vec3 vView;
     varying float vHeight;
     varying float vAngle;
+    varying float vRise;
     uniform vec3 color;
     uniform float strength;
     void main() {
@@ -308,7 +334,9 @@ export const lightShaftMaterial = new THREE.ShaderMaterial({
         + 0.16 * sin(vAngle * 30.0 + 1.3);
       body *= rays;
       float fade = 1.0 - smoothstep(0.35, 1.0, abs(vHeight));
-      float source = mix(0.7, 1.15, clamp(vHeight * 0.5 + 0.5, 0.0, 1.0));
+      // Brightest overhead, gone a little below the eye: the light comes from
+      // above and does not reach the bottom, so nothing down there is lit.
+      float source = mix(0.0, 1.3, smoothstep(-0.3, 0.7, vRise));
       gl_FragColor = vec4(color * body * fade * source * strength, 1.0);
     }
   `,
@@ -320,8 +348,11 @@ export const lightShaftMaterial = new THREE.ShaderMaterial({
   toneMapped: false,
 });
 
+// Dust out in the shaft is lit by the lanterns: amber, as it always was (the
+// old texture's own tint is folded in, so these motes are unchanged).
+export const DUST_WARM_COLOR = new THREE.Color(0xe4a361).multiply(new THREE.Color(1, 0.84, 0.6));
 export const dustMaterial = new THREE.PointsMaterial({
-  color: 0xe4a361,
+  color: 0xffffff,
   map: dustTexture(),
   transparent: true,
   opacity: 0.3,
@@ -347,11 +378,13 @@ export const bookMaterials = [shadedMaterial(leatherTexture, BOOK_COLOR)];
 // The gallery tiers and the shaft's distant volumes stand far from any lamp,
 // and a real light for every tier costs the whole frame (about 40% in
 // software rendering). Their leather glows faintly of its own instead, as if
-// lit by the lamps on the tier, at no cost per light.
+// lit by the lamps on the tier, at no cost per light. Faintly: only a quarter
+// of the tier lamps burn, and at 0.3 the books outshone the lit stone around
+// them several times over, warm where no lamp was.
 export const galleryBookMaterial = shadedMaterial(leatherTexture, BOOK_COLOR);
 galleryBookMaterial.emissive = new THREE.Color(0xa56a42);
 galleryBookMaterial.emissiveMap = leatherTexture;
-galleryBookMaterial.emissiveIntensity = 0.3;
+galleryBookMaterial.emissiveIntensity = 0.14;
 // The glow takes each volume's own binding and shade, as its colour does, so a
 // gallery reads as bound in many colours like the floor and not as one cream
 // wash.

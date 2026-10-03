@@ -7,35 +7,60 @@
 
 export const ROOM_SCALE = 6;
 export const ROOM_RADIUS = 8.9 * ROOM_SCALE;
-// The library is built out of smoke-darkened timber and dark umber plaster.  The
-// opening of the well is deliberately darker than a lit surface: it is depth,
-// not another panel inserted into the floor.  Earlier versions made both
-// colours nearly white to hide seams, which also erased every useful plane.
-export const WORLD_SURFACE_COLOR = 0x5b4a3e;
-export const WORLD_FLOOR_COLOR = 0x5a4230;
-export const WORLD_CEILING_COLOR = 0x3a2c24;
-// Dark amber, as in the reference: the haze is where the timber goes, and only
-// the lanterns come back out of it. It used to sit brighter than an unlit wall
-// (0x2e1e12) so each further plane came up out of the dark; that gave depth,
-// but it turned the whole shaft into one flat brown field. Depth is now carried
-// by the lantern glows, which fog does not touch (see lanternGlowMaterial).
+// The library is built out of smoke-darkened timber and grey stone, as both
+// reference halls are: the architecture is cold and old, and warmth comes only
+// from lamps and the wood people handle. The stone had been a dark umber, which
+// with every lamp's orange light on it read as one brown field. The opening of
+// the well is deliberately darker than a lit surface: it is depth, not another
+// panel inserted into the floor. Earlier versions made both colours nearly white
+// to hide seams, which also erased every useful plane.
+export const WORLD_SURFACE_COLOR = 0x5f5e5b;
+export const WORLD_FLOOR_COLOR = 0x52514e;
+export const WORLD_CEILING_COLOR = 0x37373a;
+// The floor and ceiling around the well are toned a little below the walls,
+// so the floor stays the darkest plane in the room rather than a lit sheet
+// under the walker's feet. The same tone on every storey of the shaft.
+export const SHELL_RING_TONE = 0.75;
+// Slate, as in the reference: the haze is where the stone goes, and only the
+// lanterns come back out of it. It used to be a dark amber that turned the
+// whole shaft into one flat brown field. Depth is carried by the lantern
+// glows, which fog does not touch (see lanternGlowMaterial).
 export const WORLD_DISTANCE_COLOR = 0x35414b;
+// The same haze seen steeply up or down the shaft (see core/haze.js). Above it
+// is pale and cold, light from a source no one has reached; below it is
+// black, with only enough blue left in it that the glows of distant lamps
+// still sit in air rather than on a painted ground. Level with the eye the
+// haze is WORLD_DISTANCE_COLOR exactly.
+export const WORLD_HAZE_ABOVE_COLOR = 0x7b8895;
+export const WORLD_HAZE_BELOW_COLOR = 0x030406;
 // Cold air, warm flames: the reference's whole trick. Fill light and haze are
-// slate; only lanterns, glows and the light column stay amber, so a flame reads
-// as a flame against air it does not colour.
+// slate, and so is the column of light down the well; only lanterns and their
+// glows stay amber, so a flame reads as a flame against air it does not colour.
 export const WORLD_SKY_FILL_COLOR = 0x6f8296;
-export const WORLD_GROUND_FILL_COLOR = 0x2a2a30;
-export const WORLD_AMBIENT_COLOR = 0xb4c4d4;
+// The fill is about half what it was, and colder, so that the stone
+// between two lamps is in shadow rather than merely unlit. What it loses comes
+// out of the ambient, which lit every face alike; the ground term, which is
+// what lights a ceiling, is raised a little instead, so the vault overhead
+// stays a shape on a dark phone screen rather than going to black.
+export const WORLD_GROUND_FILL_COLOR = 0x464a52;
+export const WORLD_AMBIENT_COLOR = 0xa9bdd4;
+// Shared by the main scene (view.js) and every doorway's scene (rooms.js): a
+// difference between the two is a seam down the middle of a doorway.
+export const WORLD_HEMISPHERE_INTENSITY = 0.9;
+export const WORLD_AMBIENT_INTENSITY = 0.25;
 
 // --- the warm palette ---------------------------------------------------------
 // Everything a hand touches is wood; everything that holds the building up is
-// paper. The distinction is the whole colour scheme: shelves, treads and rails
-// are warm because people made and use them, and the shell stays pale because
+// stone. The distinction is the whole colour scheme: shelves, treads and rails
+// are warm because people made and use them, and the shell stays grey because
 // it is architecture and was always there.
-export const WOOD_COLOR = 0x6a3b20;
+// Old mahogany, not pine: heavy, dark and red, like a reading-room table or a
+// bookcase that has stood for a century. The orange-brown it replaces read as
+// new joinery against the grey stone.
+export const WOOD_COLOR = 0x5e2016;
 // Rails and newels a shade deeper than the casework, so a handrail crossing a
 // cabinet still reads as a separate thing at distance.
-export const TRIM_WOOD_COLOR = 0x24170f;
+export const TRIM_WOOD_COLOR = 0x2a0d09;
 // All bindings belong to one catalogue and therefore keep one colour.  Their
 // lettering is stamped in warm metal rather than printed in black, so it stays
 // legible in the pools of lantern light without turning the wall into a white
@@ -46,22 +71,27 @@ export const BOOK_LETTER_COLOR = '#dec18a';
 // rather than receives. The globe is painted near its own flame colour so it
 // still reads as the source when the pool it casts is washed out by distance.
 export const LAMP_GLOBE_COLOR = 0xffd18a;
-export const LAMP_LIGHT_COLOR = 0xffad62;
+// The light a flame throws is paler than the flame looks: a deep orange pool
+// turned the grey stone it fell on back into brown.
+export const LAMP_LIGHT_COLOR = 0xffc48a;
 // A pool, not a flood. At 720 the old lamp still delivered 2.8 units at the far
 // end of its own range, which is why one lantern washed a whole gallery and
 // nothing anywhere had a falloff. Twenty-two gives about one unit at three
 // metres and a sixth of that at twelve, so the light has an edge and the dark
-// between two lanterns is genuinely dark.
-export const LAMP_INTENSITY = 30.0;
+// between two lanterns is genuinely dark. Lowered again from 30 when the stone
+// went grey, so that a pool lights the stone without dyeing it.
+export const LAMP_INTENSITY = 22.0;
 // Far enough to wash the wall behind it and reach the treads, short enough that
-// two lanterns do not add into a flat field.
-export const LAMP_RANGE = 30;
+// two lanterns do not add into a flat field. Shortened from 30 when the fill
+// was cut: against a darker room a lamp's tail carried its warmth a third of
+// the way across the chamber, and warmth belongs near the flame.
+export const LAMP_RANGE = 20;
 export const LANTERN_HEIGHT = 1.42;
 // A reading lamp over a cabinet, not a lantern on a rail: shorter reach, and
 // there are twenty of them to a chamber rather than a handful. Sized so that
 // its own stretch of shelving is lit and the next lamp's is not, which is what
 // gives a wall of books a rhythm of light instead of an even wash.
-export const SCONCE_INTENSITY = 10.0;
+export const SCONCE_INTENSITY = 7.0;
 export const SCONCE_RANGE = 13;
 export const APOTHEM = ROOM_RADIUS * Math.cos(Math.PI / 6);
 // In a regular hexagon the side length is exactly its circumradius. Deriving

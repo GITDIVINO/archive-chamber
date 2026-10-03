@@ -6,7 +6,7 @@
   "scripts": {
     "start": "python3 launch.py",
     "lint": "eslint .",
-    "test": "node tests/babel-v3.test.mjs && node tests/world-engine.test.mjs && node tests/world-model.test.mjs && node tests/passage.test.mjs",
+    "test": "node tests/babel-v3.test.mjs && node tests/world-engine.test.mjs && node tests/world-model.test.mjs && node tests/passage.test.mjs && node tests/lamps.test.mjs",
     "test:smoke": "node tests/smoke.test.mjs",
     "test:route": "node tests/route.test.mjs",
     "test:stairs": "node tests/stairs.test.mjs",

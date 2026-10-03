@@ -51,6 +51,7 @@ import {
   LAMP_RANGE,
   SCONCE_INTENSITY,
   SCONCE_RANGE,
+  SHELL_RING_TONE,
   WELL_RADIUS,
   WELL_SLAB_THICKNESS,
   DOOR_WALL_OFFSET,
@@ -108,6 +109,7 @@ import { GALLERY_LEVELS, galleryBalustrade, galleryParts } from './galleries.js'
 import {
   LANTERN_GLOBE_SIZE, balusterGeometry, distantBalusterGeometry, instancedBalusters, stoneShade,
 } from './balustrade.js';
+import { lampIsLit, storeyResidue } from './lamps.js';
 
 // Split up its height so the spine can carry a three-stop tone: a box corner
 // only has vertices at top and bottom, which is not enough to darken a volume
@@ -445,9 +447,13 @@ function addBalustradeParts(room, parts) {
   for (const part of parts) {
     if (part.distantOnly) continue;
     if (part.kind === 'lamp') {
+      // Most globes are out (lamps.js): the same ones as when this storey is
+      // seen from the shaft. An unlit globe is dark glass.
+      const burning = lampIsLit('balustrade', part.position, room.userData.level);
       staticLocalMatrix.makeScale(BALUSTRADE_GLOBE_SCALE, BALUSTRADE_GLOBE_SCALE, BALUSTRADE_GLOBE_SCALE)
         .setPosition(part.position.x, part.position.y, part.position.z);
-      appendMergedGeometry(staticBatchFor(room, lampMaterial), lampGeometry, staticLocalMatrix);
+      appendMergedGeometry(staticBatchFor(room, burning ? lampMaterial : metalMaterial), lampGeometry,
+        staticLocalMatrix);
       continue;
     }
     addBox(room, BALUSTRADE_MATERIALS[part.kind], part.size, part.position, part.rotation, null, {
@@ -457,9 +463,6 @@ function addBalustradeParts(room, parts) {
   }
 }
 
-// Toned a little below the walls, so the floor stays the darkest plane in the
-// room rather than a lit sheet under the walker's feet.
-const SHELL_RING_TONE = 0.75;
 function litRing() {
   const ring = new THREE.RingGeometry(WELL_RADIUS, ROOM_RADIUS, 6);
   const count = ring.getAttribute('position').count;
@@ -1122,8 +1125,9 @@ function addGalleryCases(room, index) {
       const tangent = ratio * CABINET_RUN_WIDTH;
       addBox(room, brassMaterial, [0.44, 0.045, 0.045],
         pointOnWall(basis, tangent, level + CARCASE_HEIGHT - 0.04, 0.42), basis.rotation, null, { outlined: false });
-      addBox(room, lampMaterial, [0.19, 0.13, 0.14],
-        pointOnWall(basis, tangent, level + CARCASE_HEIGHT - 0.22, 0.62), basis.rotation, null, { outlined: false });
+      const globePosition = pointOnWall(basis, tangent, level + CARCASE_HEIGHT - 0.22, 0.62);
+      addBox(room, lampIsLit('tier', globePosition, room.userData.level) ? lampMaterial : metalMaterial,
+        [0.19, 0.13, 0.14], globePosition, basis.rotation, null, { outlined: false });
     }
   }
 }
@@ -1152,12 +1156,16 @@ function addGalleries(room, doorWalls) {
 // doubled the time it took to put up a chamber, and drawing them as meshes of
 // their own cost a draw call per material in every chamber on screen.
 const galleryShells = new Map();
-function galleryShellFor(doorWalls, shelvedWalls) {
-  const key = doorWalls.join(',');
+function galleryShellFor(level, doorWalls, shelvedWalls) {
+  // Which lamps burn depends on the level's residue too (lamps.js), which is
+  // the same cycle the doorways follow.
+  const residue = storeyResidue(level);
+  const key = residue + ':' + doorWalls.join(',');
   let shell = galleryShells.get(key);
   if (shell) return shell;
   const scratch = {
     userData: {
+      level: residue,
       staticBatches: new Map(),
       outlinePositions: [],
       galleryVolumes: { matrices: [], tints: [] },
@@ -1953,7 +1961,9 @@ export function makeRoom(q, r, level, { deferSpines = false } = {}) {
     room.add(light);
   }
 
-  // Five sconces to every cabinet wall, and every one of them a real light.
+  // Five sconces to every cabinet wall, and every burning one a real light.
+  // Most are out (lamps.js), the same ones as when this storey is seen from
+  // the shaft; an unlit sconce is dark glass on its bracket and throws nothing.
   //
   // They used to be emissive bodies only, on the reasoning that another twenty
   // point lights would cost thousands of fragment evaluations a frame. Measured
@@ -1975,7 +1985,10 @@ export function makeRoom(q, r, level, { deferSpines = false } = {}) {
         pointOnWall(basis, tangent, CARCASE_HEIGHT - 0.04, 0.42), basis.rotation, null, { outlined: false });
       addBox(room, brassMaterial, [0.045, 0.3, 0.045],
         pointOnWall(basis, tangent, CARCASE_HEIGHT - 0.18, 0.43), basis.rotation, null, { outlined: false });
-      addBox(room, lampMaterial, [0.19, 0.13, 0.14], globePosition, basis.rotation, null, { outlined: false });
+      const burning = lampIsLit('sconce', globePosition, level);
+      addBox(room, burning ? lampMaterial : metalMaterial, [0.19, 0.13, 0.14], globePosition, basis.rotation, null,
+        { outlined: false });
+      if (!burning) continue;
       // No painted halo: see the note by the well lanterns. The bloom pass
       // takes the glow from the bright core and spreads it into the haze.
       const reading = new THREE.PointLight(LAMP_LIGHT_COLOR, SCONCE_INTENSITY, SCONCE_RANGE, 2);
@@ -2005,13 +2018,15 @@ export function makeRoom(q, r, level, { deferSpines = false } = {}) {
   // them; only some carry an actual light, because past a few metres a lantern
   // contributes nothing but its own brightness and there is no reason to pay a
   // shadow map to say so.
+  // Of the stair's lanterns only some burn at all (lamps.js); of those, only
+  // the ones marked `lit` carry a light.
   const wellLanterns = [
-    ...WELL_LANTERN_POSITIONS.map(position => ({ position, lit: true, shadowed: true })),
-    ...WELL_STAIR_LANTERNS,
+    ...WELL_LANTERN_POSITIONS.map(position => ({ position, lit: true, shadowed: true, burning: true })),
+    ...WELL_STAIR_LANTERNS.map(lantern => ({ ...lantern, burning: lampIsLit('stair', lantern.position, level) })),
   ];
   room.userData.lanternCount = wellLanterns.length;
-  room.userData.litLanternCount = wellLanterns.filter(lantern => lantern.lit).length;
-  for (const { position, lit, shadowed } of wellLanterns) {
+  room.userData.litLanternCount = wellLanterns.filter(lantern => lantern.lit && lantern.burning).length;
+  for (const { position, lit, shadowed, burning } of wellLanterns) {
     // Dark frame plus a luminous core: the light is a recognisable lantern
     // rather than an unexplained cube hovering over the rail.
     addBox(room, brassMaterial, [0.34, 0.08, 0.34],
@@ -2025,13 +2040,13 @@ export function makeRoom(q, r, level, { deferSpines = false } = {}) {
     // The glazing bar across the face, which is what makes it read as a lantern
     // and not a glowing block once a walker is close enough to see it at all.
     addBox(room, brassMaterial, [0.21, 0.022, 0.21], position, 0, null, { outlined: false });
-    addBox(room, lampMaterial, [0.19, 0.28, 0.19], position, 0, null, { outlined: false });
+    addBox(room, burning ? lampMaterial : metalMaterial, [0.19, 0.28, 0.19], position, 0, null, { outlined: false });
     // No painted halo. There used to be a translucent additive cube here
     // standing in for a glow, and against real bloom it is worse than nothing:
     // it reads as exactly what it is, a square, hanging around every flame.
     // The glow belongs to the composite pass, which gets it from the bright
     // core above and spreads it into the haze the way light actually goes.
-    if (!lit) continue;
+    if (!lit || !burning) continue;
     const light = new THREE.PointLight(LAMP_LIGHT_COLOR, LAMP_INTENSITY, LAMP_RANGE, 2);
     light.position.copy(position);
     // The pair on the deck throw the barred shadow of the balustrade across
@@ -2062,7 +2077,7 @@ export function makeRoom(q, r, level, { deferSpines = false } = {}) {
   for (let index = 0; index < 6; index++) addWallJoinery(room, index, doorWalls.includes(index));
   // After every catalogued volume, so that theirs are the first records.
   if (traces.tally) addTally(room, traces.tally);
-  const shell = galleryShellFor(doorWalls, shelvedWalls);
+  const shell = galleryShellFor(level, doorWalls, shelvedWalls);
   finalizeRoom(room, shell);
   addGalleryVolumes(room, shell);
   addBalusters(room, shell);
