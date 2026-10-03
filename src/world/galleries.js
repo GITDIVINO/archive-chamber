@@ -33,6 +33,7 @@ import {
   WALL_HEIGHT,
   WALL_THICKNESS,
 } from '../constants.js';
+import { addPillar, addRun, BALUSTRADE_DEPTH, balustradeSet } from './balustrade.js';
 import { pointOnWall, wallBasis } from './geometry.js';
 
 /** Floor levels of the two galleries, a third and two thirds of the storey. */
@@ -97,7 +98,6 @@ export function spiralsFor(doorWalls) {
 
 // --- geometry ----------------------------------------------------------------
 
-const BALUSTER_PITCH = 0.62;
 const RAIL_HEIGHT = 1.02;
 const CONSOLE_PITCH = 3.1;
 
@@ -110,43 +110,98 @@ function slabPart(basis, level, left, right) {
   };
 }
 
-// One run of railing along a gallery's inner edge, from tangent `from` to `to`,
-// leaving out the stretches in `gaps`.
-function railingParts(parts, basis, level, from, to, gaps, detailed) {
-  const inward = WALL_THICKNESS / 2 + GALLERY_DEPTH - 0.05;
-  const pieces = [];
-  let start = from;
-  for (const [gapFrom, gapTo] of [...gaps].sort((a, b) => a[0] - b[0])) {
-    if (gapFrom > start) pieces.push([start, gapFrom]);
-    start = Math.max(start, gapTo);
+// The galleries are railed in the same stone as the well, by balustrade.js.
+// The run's centre line stands half its depth in from the slab's edge, so the
+// stone is wholly on the slab.
+const GUARD_INWARD = WALL_THICKNESS / 2 + GALLERY_DEPTH - BALUSTRADE_DEPTH / 2;
+const GUARD_LINE = APOTHEM - GUARD_INWARD;
+const GUARD_HALF_SIDE = HALF_SIDE(GUARD_LINE);
+// Where a doorway wall's gallery stops, towards the opening, measured to the
+// centre line of the short run that closes it.
+const GUARD_DOOR_END = GALLERY_DOOR_END + BALUSTRADE_DEPTH / 2;
+const GUARD_BAY = 5;
+/** How far in from a railed edge the walker is held: the stone, and a little air. */
+const GUARD_REACH = BALUSTRADE_DEPTH + 0.16;
+
+function wallAngle(basis) {
+  return Math.atan2(basis.tz, basis.tx);
+}
+
+// Stations along a run from `from` to `to`, in equal bays no longer than
+// GUARD_BAY. The ends are corners another run shares unless `ownEnds` says a
+// pillar of this run's own stands there; `lanterns` picks pillars by distance.
+function bayStations(from, to, ownEnds, lanterns) {
+  const count = Math.max(1, Math.ceil((to - from) / GUARD_BAY - 1e-6));
+  const stations = [];
+  for (let index = 0; index <= count; index++) {
+    const t = from + (to - from) * index / count;
+    const end = index === 0 || index === count;
+    stations.push({
+      t,
+      build: !end || ownEnds.includes(index === 0 ? 'from' : 'to'),
+      lantern: lanterns(t),
+    });
   }
-  if (to > start) pieces.push([start, to]);
-  for (const [a, b] of pieces) {
-    const length = b - a;
-    const middle = (a + b) / 2;
-    parts.push({
-      size: [length, 0.07, 0.09],
-      position: pointOnWall(basis, middle, level + RAIL_HEIGHT, inward),
-      rotation: basis.rotation,
-      kind: 'wood',
-    });
-    if (!detailed) continue;
-    parts.push({
-      size: [length, 0.035, 0.035],
-      position: pointOnWall(basis, middle, level + 0.12, inward),
-      rotation: basis.rotation,
-      kind: 'iron',
-    });
-    const count = Math.max(1, Math.round(length / BALUSTER_PITCH));
-    for (let index = 0; index <= count; index++) {
-      parts.push({
-        size: [0.035, RAIL_HEIGHT, 0.035],
-        position: pointOnWall(basis, a + length * index / count, level + RAIL_HEIGHT / 2, inward),
-        rotation: basis.rotation,
-        kind: 'iron',
-      });
+  return stations;
+}
+
+const balustradeCache = new Map();
+
+/**
+ * Every gallery's balustrade for a chamber whose doorways are on `doorWalls`:
+ * box parts and baluster placements, on both tiers. The same for every chamber
+ * of an orientation, so built once per orientation.
+ */
+export function galleryBalustrade(doorWalls) {
+  const key = [...doorWalls].sort().join(',');
+  let set = balustradeCache.get(key);
+  if (set) return set;
+  set = balustradeSet();
+  GALLERY_LEVELS.forEach((level, tier) => {
+    for (let wall = 0; wall < 6; wall++) {
+      const basis = wallBasis(wall);
+      const origin = pointOnWall(basis, 0, 0, GUARD_INWARD);
+      const angle = wallAngle(basis);
+      const seed = 40 + tier * 12 + wall * 2;
+      if (!doorWalls.includes(wall)) {
+        // Two lanterns to a wall, two bays either side of its middle.
+        const lanternAt = GUARD_HALF_SIDE * 0.4;
+        const stations = bayStations(-GUARD_HALF_SIDE, GUARD_HALF_SIDE, [],
+          t => Math.abs(Math.abs(t) - lanternAt) < GUARD_BAY / 2);
+        addRun(set, { origin, angle, floor: level, from: -GUARD_HALF_SIDE, to: GUARD_HALF_SIDE, stations, seed });
+      } else {
+        for (const side of [-1, 1]) {
+          // From the pillar at the doorway end, which carries a lantern, to the
+          // corner.
+          const from = side > 0 ? GUARD_DOOR_END : -GUARD_HALF_SIDE;
+          const to = side > 0 ? GUARD_HALF_SIDE : -GUARD_DOOR_END;
+          const stations = bayStations(from, to, [side > 0 ? 'from' : 'to'],
+            t => Math.abs(Math.abs(t) - GUARD_DOOR_END) < 1e-6);
+          addRun(set, { origin, angle, floor: level, from, to, stations, seed: seed + (side > 0 ? 1 : 0) });
+          // The short run across the end of the gallery, at a right angle to
+          // the wall, from the wall to the gap where the stair arrives, and a
+          // pillar there to close it.
+          const gapFrom = SPIRAL_INWARD - SPIRAL_LANDING_HALF;
+          addRun(set, {
+            origin: pointOnWall(basis, side * GUARD_DOOR_END, 0, 0),
+            angle: Math.atan2(-basis.nz, -basis.nx),
+            floor: level,
+            from: WALL_THICKNESS / 2,
+            to: gapFrom,
+            stations: [{ t: gapFrom, build: true, lantern: false }],
+            seed: seed + 7 + (side > 0 ? 1 : 0),
+          });
+        }
+      }
+      // The corner this wall shares with the next, on the bisector.
+      const corner = Math.PI / 6 + wall * Math.PI / 3 + Math.PI / 6;
+      const radius = GUARD_LINE / Math.cos(Math.PI / 6);
+      addPillar(set, Math.cos(corner) * radius, Math.sin(corner) * radius, level, -corner,
+        { seed: 200 + tier * 6 + wall });
     }
-  }
+  });
+  balustradeCache.set(key, set);
+  return set;
 }
 
 function consoleParts(parts, basis, level, from, to) {
@@ -252,7 +307,6 @@ export function galleryParts(doorWalls, detailed = true) {
     for (const level of GALLERY_LEVELS) {
       if (!doorway) {
         parts.push(slabPart(basis, level, [-inner, -outer], [inner, outer]));
-        railingParts(parts, basis, level, -inner, inner, [], detailed);
         if (detailed) consoleParts(parts, basis, level, -inner + 1.2, inner - 1.2);
         continue;
       }
@@ -262,22 +316,6 @@ export function galleryParts(doorWalls, detailed = true) {
         parts.push(side > 0
           ? slabPart(basis, level, [-inner, -outer], [-end, -end])
           : slabPart(basis, level, [end, end], [inner, outer]));
-        const from = side > 0 ? end : -inner;
-        const to = side > 0 ? inner : -end;
-        railingParts(parts, basis, level, from, to, [], detailed);
-        // The end of the gallery, railed across towards the doorway but for
-        // the gap where the stair arrives.
-        const gapFrom = SPIRAL_INWARD - SPIRAL_LANDING_HALF;
-        const gapTo = SPIRAL_INWARD + SPIRAL_LANDING_HALF;
-        const edge = WALL_THICKNESS / 2 + GALLERY_DEPTH - 0.05;
-        for (const [a, b] of [[WALL_THICKNESS / 2, gapFrom], [gapTo, edge]]) {
-          parts.push({
-            size: [0.09, 0.07, b - a],
-            position: pointOnWall(basis, side * end, level + RAIL_HEIGHT, (a + b) / 2),
-            rotation: basis.rotation,
-            kind: 'wood',
-          });
-        }
         if (detailed) {
           consoleParts(parts, basis, level, Math.min(side * (end + 0.6), side * (inner - 1.2)),
             Math.max(side * (end + 0.6), side * (inner - 1.2)));
@@ -301,13 +339,16 @@ function onGallery(x, z, doorWalls) {
     if (normal < GALLERY_EDGE - SPIRAL_RADIUS) continue;
     const tangent = basis.tx * x + basis.tz * z;
     if (doorWalls.includes(wall)) {
-      if (normal < GALLERY_EDGE + EDGE_MARGIN) continue;
-      // Stepping off a stair at a landing crosses the end railing's line.
+      // Stepping off a stair at a landing crosses the end railing's line, and
+      // comes off the stair closer to the edge than the balustrade lets a
+      // walker stand elsewhere: the landing is the gap in it.
       const atLanding = Math.abs(APOTHEM - SPIRAL_INWARD - normal) < SPIRAL_LANDING_HALF - EDGE_MARGIN;
-      if (Math.abs(tangent) >= (atLanding ? LANDING_REACH : GALLERY_DOOR_END + EDGE_MARGIN)) return true;
+      const overStair = atLanding && Math.abs(tangent) < GALLERY_DOOR_END;
+      if (normal < GALLERY_EDGE + (overStair ? EDGE_MARGIN : GUARD_REACH)) continue;
+      if (Math.abs(tangent) >= (atLanding ? LANDING_REACH : GALLERY_DOOR_END + GUARD_REACH)) return true;
       continue;
     }
-    if (normal >= GALLERY_EDGE + EDGE_MARGIN) return true;
+    if (normal >= GALLERY_EDGE + GUARD_REACH) return true;
   }
   return false;
 }

@@ -27,6 +27,7 @@
  */
 
 import * as THREE from 'three';
+import { addPillar, addRun, balustradeSet } from './balustrade.js';
 import {
   LANTERN_HEIGHT,
   PLAYER_RADIUS,
@@ -41,7 +42,6 @@ import {
   STAIR_TREAD,
   STAIR_WELL_EDGE,
   STAIR_WIDTH,
-  WELL_BALUSTERS_PER_EDGE,
   WELL_GUARD_HEIGHT,
   WELL_GUARD_RADIUS,
   WELL_POST_WIDTH,
@@ -55,7 +55,6 @@ import {
 // along it sits. Working in that pair rather than in x/z is what lets a length
 // of guard be left out where the bridge crosses it, without special-casing
 // corners.
-const EDGE_LENGTH = WELL_GUARD_RADIUS;
 const GUARD_APOTHEM = WELL_GUARD_RADIUS * Math.cos(Math.PI / 6);
 const LIP_APOTHEM = WELL_RADIUS * Math.cos(Math.PI / 6);
 
@@ -109,95 +108,80 @@ function bridgePoint(u, v, y) {
 }
 
 // --- the guard around the lip -------------------------------------------------
-
-const parts = [];
-
-for (let index = 0; index < 6; index++) {
-  const angle = index * Math.PI / 3;
-  parts.push({
-    size: [WELL_POST_WIDTH, WELL_GUARD_HEIGHT, WELL_POST_WIDTH],
-    position: new THREE.Vector3(
-      Math.cos(angle) * WELL_GUARD_RADIUS,
-      WELL_GUARD_HEIGHT / 2,
-      Math.sin(angle) * WELL_GUARD_RADIUS,
-    ),
-    rotation: 0,
-  });
-}
+//
+// The stone balustrade of balustrade.js, one run along each edge of the lip.
+// Its centre line stands a little in from the guard plane, so its back is
+// flush with the lip and its front, the side a walker leans on, is still short
+// of where collision holds them.
+const GUARD_LINE = GUARD_APOTHEM - 0.08;
+const GUARD_HALF_EDGE = GUARD_LINE * Math.tan(Math.PI / 6);
 
 // The bridge leaves through the middle of two opposite edges, so those two are
 // the ones with a length of railing missing.
 const BRIDGE_EDGES = [STAIR_WELL_EDGE, (STAIR_WELL_EDGE + 3) % 6];
 const CROSSING_HALF = BRIDGE_HALF_WIDTH + 0.3;
+// Every edge carries a pair of gate pillars at its middle, open between them
+// where the bridge goes through and railed across where it does not, so all
+// six edges are set out alike. From each gate pillar to the corner the edge is
+// divided into equal bays.
+const GUARD_BAYS_PER_HALF = 4;
+// Lanterns stand on the gate pillars and on the pillar halfway to each
+// corner: four to an edge, twenty-four round the well, every edge the same.
+const GUARD_LANTERN_BAYS = [0, GUARD_BAYS_PER_HALF / 2];
 
-// Spacing of balusters on every railing in the well, so the guard and the
-// crossing read as one system because they are set out the same.
-const BALUSTER_PITCH = 0.78;
-
-/** How much of an edge's guard is left out, where the crossing goes through. */
-function gapHalfFor(edge) {
-  return BRIDGE_EDGES.includes(edge) ? CROSSING_HALF : 0;
-}
-
-function guardRunsForEdge(edge) {
-  const half = EDGE_LENGTH / 2;
-  const gap = gapHalfFor(edge);
-  if (!gap) return [[-half, half]];
-  return [[-half, -gap], [gap, half]];
-}
-
-for (let edge = 0; edge < 6; edge++) {
-  const angle = edgeAngle(edge);
-  const rotation = edgeRotation(angle);
-  const half = EDGE_LENGTH / 2;
-
-  for (const [from, to] of guardRunsForEdge(edge)) {
-    const length = to - from;
-    if (length <= 0) continue;
-    const centre = (from + to) / 2;
-    for (const height of [WELL_GUARD_HEIGHT, WELL_GUARD_HEIGHT * 0.53]) {
-      parts.push({
-        size: [length + WELL_POST_WIDTH, WELL_RAIL_THICKNESS, WELL_RAIL_THICKNESS],
-        position: edgePoint(angle, GUARD_APOTHEM, centre, height),
-        rotation,
+function guardStations() {
+  const stations = [];
+  const bay = (GUARD_HALF_EDGE - CROSSING_HALF) / GUARD_BAYS_PER_HALF;
+  for (const side of [-1, 1]) {
+    for (let index = 0; index <= GUARD_BAYS_PER_HALF; index++) {
+      stations.push({
+        t: side * (CROSSING_HALF + index * bay),
+        // The corners' pillars stand on the bisector, built once below.
+        build: index < GUARD_BAYS_PER_HALF,
+        lantern: GUARD_LANTERN_BAYS.includes(index),
       });
     }
   }
-
-  for (let index = 1; index <= WELL_BALUSTERS_PER_EDGE; index++) {
-    const along = -half + EDGE_LENGTH * index / (WELL_BALUSTERS_PER_EDGE + 1);
-    if (Math.abs(along) < gapHalfFor(edge)) continue;
-    parts.push({
-      size: [WELL_POST_WIDTH * 0.58, WELL_GUARD_HEIGHT - WELL_RAIL_THICKNESS, WELL_POST_WIDTH * 0.58],
-      position: edgePoint(
-        angle,
-        GUARD_APOTHEM,
-        along,
-        (WELL_GUARD_HEIGHT - WELL_RAIL_THICKNESS) / 2,
-      ),
-      rotation: 0,
-    });
-  }
-
-  // The railing has to stop against something, or an opening reads as broken
-  // rather than opened.
-  if (!gapHalfFor(edge)) continue;
-  for (const side of [-1, 1]) {
-    parts.push({
-      size: [WELL_POST_WIDTH, WELL_GUARD_HEIGHT, WELL_POST_WIDTH],
-      position: edgePoint(angle, GUARD_APOTHEM, side * gapHalfFor(edge), WELL_GUARD_HEIGHT / 2),
-      rotation: 0,
-    });
-  }
+  return stations;
 }
 
-export const WELL_BALUSTRADE_PARTS = Object.freeze(parts);
+const guard = balustradeSet();
+for (let edge = 0; edge < 6; edge++) {
+  const angle = edgeAngle(edge);
+  // Along the edge, the same direction edgePoint measures `along` in.
+  const along = angle + Math.PI / 2;
+  const origin = edgePoint(angle, GUARD_LINE, 0, 0);
+  const stations = guardStations();
+  const runs = BRIDGE_EDGES.includes(edge)
+    ? [[-GUARD_HALF_EDGE, -CROSSING_HALF], [CROSSING_HALF, GUARD_HALF_EDGE]]
+    : [[-GUARD_HALF_EDGE, GUARD_HALF_EDGE]];
+  runs.forEach(([from, to], run) => {
+    addRun(guard, {
+      origin,
+      angle: along,
+      from,
+      to,
+      stations: stations.filter(station => station.t >= from - 1e-6 && station.t <= to + 1e-6),
+      seed: edge * 2 + run + 1,
+    });
+  });
+  // The corner at the end of this edge, square to the bisector so the two
+  // runs meeting there are mirror images across it.
+  const corner = edge * Math.PI / 3 + Math.PI / 3;
+  const radius = GUARD_LINE / Math.cos(Math.PI / 6);
+  addPillar(guard, Math.cos(corner) * radius, Math.sin(corner) * radius, 0, -corner,
+    { seed: 100 + edge });
+}
+
+export const WELL_BALUSTRADE_PARTS = Object.freeze(guard.parts);
+export const WELL_BALUSTERS = Object.freeze(guard.balusters);
 
 // --- the bridge ---------------------------------------------------------------
 
 const DECK_RUNS = [[-DECK_REACH, -OPENING_HALF], [OPENING_HALF, DECK_REACH]];
 const bridgeParts = [];
 const DECK_BOARD_WIDTH = 0.34;
+const BRIDGE_BALUSTER_PITCH = 0.78;
 
 for (const [from, to] of DECK_RUNS) {
   const length = to - from;
@@ -227,7 +211,7 @@ for (const [from, to] of DECK_RUNS) {
         wood: true,
       });
     }
-    const count = Math.max(1, Math.round(length / BALUSTER_PITCH));
+    const count = Math.max(1, Math.round(length / BRIDGE_BALUSTER_PITCH));
     for (let index = 1; index < count; index++) {
       bridgeParts.push({
         size: [WELL_POST_WIDTH * 0.58, WELL_GUARD_HEIGHT - WELL_RAIL_THICKNESS, WELL_POST_WIDTH * 0.58],

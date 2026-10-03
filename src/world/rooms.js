@@ -500,6 +500,10 @@ function cloneDestinationVista(template, arrivalWall) {
   const clone = template.clone(true);
   for (const child of [...clone.children]) {
     if (child.userData.vistaPassageWall !== undefined) clone.remove(child);
+    // The balusters of the storeys above and below are one more draw in every
+    // doorway; through a doorway those storeys are far enough off that their
+    // rails and footings carry the balustrade on their own.
+    else if (child.userData.balusters) clone.remove(child);
   }
   clone.userData.omittedArrivalPassage = arrivalWall;
   clone.userData.remainingPassageWalls = [];

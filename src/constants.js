@@ -99,7 +99,6 @@ export const WELL_GUARD_RADIUS = WELL_RADIUS + 0.32;
 export const WELL_GUARD_HEIGHT = 1.03;
 export const WELL_POST_WIDTH = 0.095;
 export const WELL_RAIL_THICKNESS = 0.085;
-export const WELL_BALUSTERS_PER_EDGE = Math.ceil(WELL_GUARD_RADIUS / 0.78);
 export const WELL_SLAB_THICKNESS = 0.16;
 export const PLAYER_START_DISTANCE = (
   WELL_GUARD_RADIUS * Math.cos(Math.PI / 6) + APOTHEM

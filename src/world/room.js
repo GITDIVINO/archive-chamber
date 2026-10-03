@@ -87,6 +87,7 @@ import {
   wallBasis,
 } from './geometry.js';
 import {
+  WELL_BALUSTERS,
   WELL_BALUSTRADE_PARTS,
   WELL_BRIDGE_PARTS,
   WELL_LANTERN_POSITIONS,
@@ -95,7 +96,8 @@ import {
   WELL_STAIR_PARTS,
 } from './well.js';
 import { WELL_PIER_PARTS, doorColumnLanternPoints, doorColumnParts } from './columns.js';
-import { GALLERY_LEVELS, galleryParts } from './galleries.js';
+import { GALLERY_LEVELS, galleryBalustrade, galleryParts } from './galleries.js';
+import { LANTERN_GLOBE_SIZE, balusterGeometry, instancedBalusters, stoneShade } from './balustrade.js';
 
 // Split up its height so the spine can carry a three-stop tone: a box corner
 // only has vertices at top and bottom, which is not enough to darken a volume
@@ -104,6 +106,7 @@ export const bookGeometry = new THREE.BoxGeometry(BOOK_WIDTH, BOOK_HEIGHT, BOOK_
 sharedGeometries.add(bookGeometry);
 const lampGeometry = new THREE.SphereGeometry(0.17, 14, 10);
 sharedGeometries.add(lampGeometry);
+sharedGeometries.add(balusterGeometry);
 
 // The catalogue still addresses six logical groups, but the furniture does not
 // reveal them. All 192 volumes in a row share one even physical rhythm across
@@ -419,6 +422,28 @@ function addBox(room, material, size, position, rotation = 0, parentMatrix = nul
   // transform, so depth into the niche is simply its z.
   appendMergedGeometry(staticBatchFor(room, material), entry.geometry, staticBoxMatrix, shade, staticLocalMatrix);
   if (outlined) appendMergedEdges(room.userData.outlinePositions, entry.edges, staticBoxMatrix);
+}
+
+// The stone balustrade's plinths, rails, pillars and lantern fittings (see
+// balustrade.js), merged into the batches the room already draws: the stone is
+// the walls' own material, toned down through vertex colour, so it costs no
+// draw call of its own. The lantern globes on the pillars are round here.
+const BALUSTRADE_MATERIALS = { stone: wallMaterial, metal: metalMaterial };
+const BALUSTRADE_GLOBE_SCALE = LANTERN_GLOBE_SIZE / 2 / 0.17;
+function addBalustradeParts(room, parts) {
+  for (const part of parts) {
+    if (part.distantOnly) continue;
+    if (part.kind === 'lamp') {
+      staticLocalMatrix.makeScale(BALUSTRADE_GLOBE_SCALE, BALUSTRADE_GLOBE_SCALE, BALUSTRADE_GLOBE_SCALE)
+        .setPosition(part.position.x, part.position.y, part.position.z);
+      appendMergedGeometry(staticBatchFor(room, lampMaterial), lampGeometry, staticLocalMatrix);
+      continue;
+    }
+    addBox(room, BALUSTRADE_MATERIALS[part.kind], part.size, part.position, part.rotation, null, {
+      outlined: false,
+      shade: part.kind === 'stone' ? stoneShade(part.tone, part.floor) : null,
+    });
+  }
 }
 
 // Toned a little below the walls, so the floor stays the darkest plane in the
@@ -1089,6 +1114,7 @@ function addGalleryCases(room, index) {
 }
 
 function addGalleries(room, doorWalls) {
+  addBalustradeParts(room, galleryBalustrade(doorWalls).parts);
   for (const part of galleryParts(doorWalls)) {
     const material = part.kind === 'iron' ? metalMaterial : (part.kind === 'stone' ? wallMaterial : shelfMaterial);
     if (part.slab) {
@@ -1135,6 +1161,16 @@ function galleryShellFor(doorWalls, shelvedWalls) {
       addBox(scratch, stone ? wallMaterial : shelfMaterial, size, position, rotation, null, { outlined: false });
     }
   }
+  // So does the stone balustrade round the well, and every baluster in the
+  // chamber, round the well and along both galleries: those are one instanced
+  // draw whose buffers every chamber of the orientation shares. Three thousand
+  // faceted stones merged into the batches would be a quarter of a million
+  // vertices.
+  addBalustradeParts(scratch, WELL_BALUSTRADE_PARTS);
+  const balusterTemplate = instancedBalusters(balusterGeometry, wallMaterial, [
+    { balusters: WELL_BALUSTERS },
+    { balusters: galleryBalustrade(doorWalls).balusters },
+  ]);
   const batches = new Map();
   for (const [material, batch] of scratch.userData.staticBatches) {
     batches.set(material, {
@@ -1162,6 +1198,12 @@ function galleryShellFor(doorWalls, shelvedWalls) {
       walls: Object.freeze([...shelvedWalls]),
       centres: Float32Array.from({ length: matrices.length * 3 }, (_, element) =>
         matrixArray[Math.floor(element / 3) * 16 + 12 + element % 3]),
+    },
+    balusters: {
+      count: balusterTemplate.count,
+      matrix: balusterTemplate.instanceMatrix,
+      color: balusterTemplate.instanceColor,
+      sphere: balusterTemplate.boundingSphere,
     },
   };
   galleryShells.set(key, shell);
@@ -1214,6 +1256,20 @@ function addGalleryVolumes(room, shell) {
   volumes.receiveShadow = true;
   room.add(volumes);
   room.userData.galleryBooks = volumes;
+}
+
+// The chamber's balusters, on the buffers its orientation's shell holds.
+function addBalusters(room, shell) {
+  const { count, matrix, color, sphere } = shell.balusters;
+  const balusters = new THREE.InstancedMesh(balusterGeometry, wallMaterial, count);
+  balusters.instanceMatrix = matrix;
+  balusters.instanceColor = color;
+  balusters.boundingSphere = sphere.clone();
+  balusters.userData.balusters = count;
+  balusters.raycast = () => {};
+  balusters.castShadow = true;
+  balusters.receiveShadow = true;
+  room.add(balusters);
 }
 
 // Picking runs every frame, and three.js tests every instance of a mesh
@@ -1439,7 +1495,7 @@ function cloneVisualRoom(source, q, r, level, template = false) {
     const clone = cloneVisualChild(child);
     if (!clone) continue;
     room.add(clone);
-    if (clone.isInstancedMesh && !clone.userData.galleryVolumes) bookMeshes.push(clone);
+    if (clone.isInstancedMesh && !clone.userData.galleryVolumes && !clone.userData.balusters) bookMeshes.push(clone);
     if (clone.userData.galleryVolumes) galleryBooks = clone;
   }
   const sourceDisturbed = source.userData.templateDisturbed
@@ -1781,11 +1837,9 @@ export function makeRoom(q, r, level, { deferSpines = false } = {}) {
   ceiling.receiveShadow = true;
   room.add(ceiling);
 
-  // The guard is part of the room's structural batch. It costs no draw calls
-  // per post and repeats unchanged in every chamber and every vista level.
-  for (const part of WELL_BALUSTRADE_PARTS) {
-    addBox(room, metalMaterial, part.size, part.position, part.rotation, null, { outlined: false });
-  }
+  // The guard is part of the room's structural batch, at no draw call of its
+  // own. The stone balustrade on the lip rides with the gallery shell below:
+  // it is the same in every chamber, so it is merged once, not per chamber.
   for (const part of WELL_LIP_PARTS) {
     addBox(room, wallMaterial, part.size, part.position, part.rotation, null, { outlined: false });
   }
@@ -1961,6 +2015,7 @@ export function makeRoom(q, r, level, { deferSpines = false } = {}) {
   const shell = galleryShellFor(doorWalls, shelvedWalls);
   finalizeRoom(room, shell);
   addGalleryVolumes(room, shell);
+  addBalusters(room, shell);
   return room;
 }
 
@@ -1972,7 +2027,8 @@ export function disposeRoom(room) {
     // geometry itself is shared across every room.
     // The galleries' volumes share one buffer between every chamber of an
     // orientation; releasing it would only make the next chamber upload it.
-    if (object.isInstancedMesh && !object.userData.galleryVolumes) object.dispose();
+    // So do the balusters.
+    if (object.isInstancedMesh && !object.userData.galleryVolumes && !object.userData.balusters) object.dispose();
     // A lantern that casts shadows owns its shadow map, a render target the
     // renderer keeps until the light itself is disposed. Removing the room
     // from the scene does not release it, so without this every chamber
