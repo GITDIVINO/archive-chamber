@@ -349,7 +349,7 @@ export const bookMaterials = [shadedMaterial(leatherTexture, BOOK_COLOR)];
 // software rendering). Their leather glows faintly of its own instead, as if
 // lit by the lamps on the tier, at no cost per light.
 export const galleryBookMaterial = shadedMaterial(leatherTexture, BOOK_COLOR);
-galleryBookMaterial.emissive = new THREE.Color(0x8a6f52);
+galleryBookMaterial.emissive = new THREE.Color(0xa56a42);
 galleryBookMaterial.emissiveMap = leatherTexture;
 galleryBookMaterial.emissiveIntensity = 0.3;
 // The glow takes each volume's own binding and shade, as its colour does, so a
