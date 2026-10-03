@@ -95,6 +95,14 @@ import {
   WELL_STAIR_PARTS,
 } from './well.js';
 import { WELL_PIER_PARTS, doorColumnLanternPoints, doorColumnParts } from './columns.js';
+import {
+  DESK_LAMP_LOCAL,
+  DESK_LIGHT_INTENSITY,
+  DESK_LIGHT_RANGE,
+  READING_CORNERS,
+  READING_CORNER_PARTS,
+  readingPartPlacement,
+} from './reading.js';
 import { GALLERY_LEVELS, galleryParts } from './galleries.js';
 
 // Split up its height so the spine can carry a three-stop tone: a box corner
@@ -1139,6 +1147,16 @@ function galleryShellFor(doorWalls, shelvedWalls) {
       addBox(scratch, stone ? wallMaterial : shelfMaterial, size, position, rotation, null, { outlined: false });
     }
   }
+  // A desk and a lamp in every corner: the same in every chamber, so they are
+  // built once with the rest of the shell and cost a copy, not a build. Only
+  // boxes, in materials the chamber already batches, so they add no draw call.
+  const readingMaterials = { wood: shelfMaterial, dark: metalMaterial, brass: brassMaterial, lamp: lampMaterial };
+  for (const corner of READING_CORNERS) {
+    for (const { kind, size, local } of READING_CORNER_PARTS) {
+      const { position, rotation } = readingPartPlacement(corner, local);
+      addBox(scratch, readingMaterials[kind], size, position, rotation, null, { outlined: false });
+    }
+  }
   const batches = new Map();
   for (const [material, batch] of scratch.userData.staticBatches) {
     batches.set(material, {
@@ -1896,6 +1914,17 @@ export function makeRoom(q, r, level, { deferSpines = false } = {}) {
       room.userData.readingLampCount++;
     }
   }
+
+  // The lamp on each desk is a real, small light: it is what puts a pool of
+  // warmth on the page and the boards, and a second warm point in each corner
+  // for the eye to find across the well.
+  for (const corner of READING_CORNERS) {
+    const lamp = new THREE.PointLight(LAMP_LIGHT_COLOR, DESK_LIGHT_INTENSITY, DESK_LIGHT_RANGE, 2);
+    lamp.position.copy(readingPartPlacement(corner, DESK_LAMP_LOCAL).position);
+    lamp.castShadow = false;
+    room.add(lamp);
+  }
+  room.userData.deskLampCount = READING_CORNERS.length;
 
   // Two more on the crossing, at either end of the opening in its deck. These
   // are what put warmth on the treads and on the rails a walker has a hand on,
